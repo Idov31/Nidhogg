@@ -66,4 +66,4 @@ sc start nidhogg
 
 ## Contributions
 
-I'm not responsible in any way for any kind of damage that is done to your computer / program as cause of this project. I'm happily accept contribution, make a pull request and I will review it!
+I'll happily accept contribution, make a pull request and I will review it!
