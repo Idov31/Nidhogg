@@ -2,7 +2,7 @@
 
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
-Nidhogg is a multi-functional kernel driver for red teams. The goal of Nidhogg is to provide an easy to use kernel driver with multiple helpful functionalities for red team engagements that can be integrated with your own C2 framework via single header file with simple usage (EXAMPLES COMING SOON).
+Nidhogg is a multi-functional kernel driver for red teams. The goal of Nidhogg is to provide an easy to use kernel driver with multiple helpful functionalities for red team engagements that can be integrated with your own C2 framework via single header file with simple usage, you can see an [example here](./Example).
 
 Nidhogg can work on any version of Windows 10 and Windows 11.
 
@@ -15,9 +15,10 @@ This repository contains a kernel driver with C++ header to communicate with it.
 - Process hiding
 - Process elevation
 - Anti process kill
-- Anti process dumping & Anti pe-sieve
+- Anti process dumping
+- Anti pe-sieve
 
-## Usage
+## Basic Usage
 
 It has a very simple usage, just include the header and get started!
 
