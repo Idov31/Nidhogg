@@ -14,7 +14,7 @@ rule Nidhogg {
       author = "Ido Veltzman"
       reference = "https://github.com/Idov31/Nidhogg"
       date = "2022-06-01"
-      hash1 = "6a01a57e73d98a723ed1d433d53e216c92fdbd36753b9a279972b37a4698843b"
+      
    strings:
       $s1 = "P:\\Nidhogg\\x64\\Release\\Nidhogg.pdb" fullword ascii
       $s2 = "AQAPRQPH" fullword ascii
