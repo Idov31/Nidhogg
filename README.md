@@ -16,7 +16,9 @@ This repository contains a kernel driver with C++ header to communicate with it.
 - Process elevation
 - Anti process kill
 - Anti process dumping
-- Anti pe-sieve
+- Bypass pe-sieve
+- Anti file deletion
+- Anti file overwritting
 
 ## Basic Usage
 
