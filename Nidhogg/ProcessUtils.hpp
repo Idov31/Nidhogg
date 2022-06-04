@@ -1,6 +1,13 @@
 #pragma once
 #include "pch.h"
 
+// Definitions.
+#define SYSTEM_PROCESS_PID 4
+#define PROCESS_TERMINATE 1
+#define PROCESS_CREATE_THREAD 0x2
+#define PROCESS_VM_READ 0x10
+#define PROCESS_VM_OPERATION 8
+
 // Prototypes.
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
