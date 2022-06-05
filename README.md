@@ -8,7 +8,7 @@ Nidhogg can work on any version of Windows 10 and Windows 11.
 
 This repository contains a kernel driver with C++ header to communicate with it.
 
-**NOTE: This project is currently on its alpha, more features will be released in the coming weeks.**
+**NOTE: This project is currently on its beta, more features will be released in the coming weeks.**
 
 ## Current Features
 
