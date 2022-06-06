@@ -3,7 +3,11 @@
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 
+<<<<<<< HEAD
 // ** IOCTL ************************************************************************************
+=======
+// ** IOCTL *************************************************************************************************
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -11,6 +15,7 @@
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -18,6 +23,15 @@
 #define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+=======
+#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 // *********************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -27,8 +41,11 @@
 #define NIDHOGG_ERROR_CONNECT_DRIVER 2
 #define NIDHOGG_ERROR_DEVICECONTROL_DRIVER 3
 
+<<<<<<< HEAD
 #define MAX_PIDS 256
 
+=======
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 #define REG_TYPE_KEY 0
 #define REG_TYPE_VALUE 1
 #define REG_KEY_LEN 255
@@ -46,11 +63,14 @@
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
+<<<<<<< HEAD
 struct ProcessesList {
     int PidsCount;
     ULONG Pids[MAX_PIDS];
 };
 
+=======
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 struct RegItem {
     int Type;
     WCHAR KeyPath[REG_KEY_LEN];

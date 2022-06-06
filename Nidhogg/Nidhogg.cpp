@@ -487,8 +487,13 @@ void ClearAll() {
 	// Clearing the process array.
 	AutoLock processLocker(pGlobals.Lock);
 
+<<<<<<< HEAD
 	memset(&pGlobals.Processes.Pids, 0, sizeof(pGlobals.Processes.Pids));
 	pGlobals.Processes.PidsCount = 0;
+=======
+	memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
+	pGlobals.PidsCount = 0;
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 
 	// Clearing the files array.
 	AutoLock filesLocker(fGlobals.Lock);

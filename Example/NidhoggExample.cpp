@@ -5,7 +5,11 @@
 
 enum class Options {
 	Unknown,
+<<<<<<< HEAD
 	Add, Remove, Clear, Hide, Elevate, Query
+=======
+	Add, Remove, Clear, Hide, Elevate
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 };
 
 int Error(int errorCode) {
@@ -29,9 +33,15 @@ int Error(int errorCode) {
 
 int PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
+<<<<<<< HEAD
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query] [pid| pid1 pid2...]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | query] [key] [value]" << std::endl;
+=======
+	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate] [pid| pid1 pid2...]" << std::endl;
+	std::cout << "\tNidhoggClient.exe file [add | remove | clear] [path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide] [key] [value]" << std::endl;
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 	return 0;
 }
 
@@ -152,6 +162,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			PrintUsage();
 			return 1;
 		}
+<<<<<<< HEAD
 		break;
 	}
 
@@ -182,6 +193,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 			PrintUsage();
 			return 1;
 		}
+=======
+>>>>>>> 0a9676d (Pre version 0.1 (#6))
 		break;
 	}
 	}
