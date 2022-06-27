@@ -15,6 +15,10 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 		return OB_PREOP_SUCCESS;
 	}
 
+	if (!Info->Object || !MmIsAddressValid(Info->Object)) {
+		return OB_PREOP_SUCCESS;
+	}
+
 	PFILE_OBJECT FileObject = (PFILE_OBJECT)Info->Object;
 
 	if (!FileObject->FileName.Buffer || !MmIsAddressValid(FileObject->FileName.Buffer) ||
@@ -28,7 +32,11 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 		return OB_PREOP_SUCCESS;
 	}
 
+	if (!ObjectNameInfo->Name.Buffer || !MmIsAddressValid(ObjectNameInfo->Name.Buffer))
+		return OB_PREOP_SUCCESS;
+
 	filePath = ObjectNameInfo->Name;
+	AutoLock locker(fGlobals.Lock);
 
 	// Removing write and delete permissions.
 	if (FindFile(filePath.Buffer)) {
@@ -40,7 +48,6 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 	}
 
 	ExFreePool(ObjectNameInfo);
-
 	return OB_PREOP_SUCCESS;
 }
 
@@ -55,7 +62,7 @@ bool AddFile(WCHAR* path) {
 	for (int i = 0; i < MAX_FILES; i++)
 		if (fGlobals.Files[i] == nullptr) {
 			auto len = (wcslen(path) + 1) * sizeof(WCHAR);
-			auto buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+			auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 			// Not enough resources.
 			if (!buffer) {
