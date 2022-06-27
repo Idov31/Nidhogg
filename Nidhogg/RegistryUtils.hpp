@@ -26,9 +26,9 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	case RegNtPreDeleteKey:
 		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
 		break;
-		/*case RegNtPreDeleteValueKey:
-			status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
-			break;*/
+	case RegNtPreDeleteValueKey:
+		status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
+		break;
 		/*case RegNtPostEnumerateKey:
 			status = RegNtPostEnumerateKeyHandler((PREG_POST_OPERATION_INFORMATION)regInfo);
 			break;
@@ -65,7 +65,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	if (FindRegItem(regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Protected: %ws\n", regItem.KeyPath));
+		KdPrint((DRIVER_PREFIX "Protected key %ws\n", regItem.KeyPath));
 		KeRaiseIrql(prevIrql, &prevIrql);
 		status = STATUS_ACCESS_DENIED;
 	}
@@ -98,7 +98,10 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	regItem.Type = REG_TYPE_VALUE;
 
 	if (FindRegItem(regItem)) {
-		KdPrint((DRIVER_PREFIX "protected from deletion! (value)\n"));
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Protected value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
+		KeRaiseIrql(prevIrql, &prevIrql);
 		status = STATUS_ACCESS_DENIED;
 	}
 
