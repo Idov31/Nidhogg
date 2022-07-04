@@ -486,7 +486,9 @@ void ClearAll() {
 
 	for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
 		ExFreePoolWithTag(rGlobals.Values.ValuesPath[i], DRIVER_TAG);
+		ExFreePoolWithTag(rGlobals.Values.ValuesName[i], DRIVER_TAG);
 		rGlobals.Values.ValuesPath[i] = nullptr;
+		rGlobals.Values.ValuesName[i] = nullptr;
 		rGlobals.Values.ValuesCount--;
 	}
 
