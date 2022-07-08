@@ -7,15 +7,15 @@
 
 // Prototypes.
 bool FindRegItem(RegItem& item);
-bool ContainsProtectedRegKey(PCUNICODE_STRING regKey, int type);
+bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type);
 bool AddRegItem(RegItem& item);
 bool RemoveRegItem(RegItem& item);
 bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
-NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info);
-NTSTATUS RegNtPostEnumerateValueKeyHandler(PREG_POST_OPERATION_INFORMATION info);
+NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
+NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
 NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
@@ -29,10 +29,10 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	case RegNtPreDeleteValueKey:
 		status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
 		break;
-		/*case RegNtPostEnumerateKey:
-			status = RegNtPostEnumerateKeyHandler((PREG_POST_OPERATION_INFORMATION)regInfo);
-			break;
-		case RegNtPostEnumerateValueKey:
+	case RegNtPostEnumerateKey:
+		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
+		break;
+		/*case RegNtPostEnumerateValueKey:
 			status = RegNtPostEnumerateValueKeyHandler((PREG_POST_OPERATION_INFORMATION)regInfo);
 			break;*/
 	}
@@ -109,14 +109,14 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
-NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
+NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempKeyInformation;
-	PREG_ENUMERATE_KEY_INFORMATION preInfo;
+	REG_ENUMERATE_KEY_INFORMATION* preInfo;
 	PCUNICODE_STRING regPath;
-	UNICODE_STRING keyName;
 	ULONG resultLength;
 	RegItem item;
+	UNICODE_STRING keyName;
 	NTSTATUS status = STATUS_SUCCESS;
 	bool copyKeyInformationData = true;
 	int counter = 1;
@@ -132,17 +132,19 @@ NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
 		return STATUS_SUCCESS;
 
 	// Checking if the registry key contains any protected registry key.
-	if (!ContainsProtectedRegKey(regPath, REG_TYPE_KEY)) {
+	if (!ContainsProtectedRegKey(*regPath, REG_TYPE_KEY)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
+	RtlInitUnicodeString(&keyName, L"");
 
-	preInfo = (PREG_ENUMERATE_KEY_INFORMATION)info->PreInformation;
+	preInfo = (REG_ENUMERATE_KEY_INFORMATION*)info->PreInformation;
 
 	if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, preInfo->KeyInformation, &keyName)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
+	keyName.Buffer[keyName.Length / sizeof(WCHAR)] = L'\0';
 
 	// Rebuilding the KeyInformation without the hidden keys.
 	status = ObOpenObjectByPointerWithTag(info->Object, OBJ_KERNEL_HANDLE, NULL, KEY_ALL_ACCESS, *CmKeyObjectType, KernelMode, DRIVER_TAG, &key);
@@ -152,52 +154,19 @@ NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
 		return STATUS_SUCCESS;
 	}
 
-	tempKeyInformation = (PVOID)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
+	tempKeyInformation = (LPWSTR)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
 
 	if (tempKeyInformation) {
-		// item = (RegItem*)ExAllocatePoolWithTag(PagedPool, sizeof(RegItem), DRIVER_TAG);
-
-		//if (item) {
-		//	item->Type = REG_TYPE_KEY;
-
-		//	// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
-		//	while (copyKeyInformationData) {
-		//		wcscpy_s(item->KeyPath, wcslen(keyName.Buffer) + 1, keyName.Buffer);
-		//		status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation, preInfo->Length, &resultLength);
-
-		//		if (!NT_SUCCESS(status)) {
-		//			copyKeyInformationData = false;
-		//			continue;
-		//		}
-
-		//		if (!FindRegItem(item)) {
-		//			*preInfo->ResultLength = resultLength;
-
-		//			// Adding the try & except to be sure, copying memory shouldn't cause a problem.
-		//			__try {
-		//				RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
-		//			}
-		//			__except (EXCEPTION_EXECUTE_HANDLER) {}
-
-		//			copyKeyInformationData = false;
-		//			continue;
-		//		}
-
-		//		if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
-		//			copyKeyInformationData = false;
-		//		}
-		//	}
-
-		//	ExFreePoolWithTag(item, DRIVER_TAG);
-		//	item = nullptr;
-		//}
-
 		item.Type = REG_TYPE_KEY;
+		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
 		while (copyKeyInformationData) {
-			// wcscpy_s(item.KeyPath, wcslen(keyName.Buffer) + 1, keyName.Buffer);
-			wcsncpy_s(item.KeyPath, keyName.Buffer, wcslen(keyName.Buffer));
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "KeyName is %ws\n", keyName.Buffer));
+			KeRaiseIrql(prevIrql, &prevIrql);
+
 			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
@@ -205,22 +174,31 @@ NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
 				continue;
 			}
 
+			// Concatenating the key path and name to check against FindRegItem.
+			wcscat_s(item.KeyPath, L"\\");
+			wcscat_s(item.KeyPath, keyName.Buffer);
+
 			if (!FindRegItem(item)) {
 				*preInfo->ResultLength = resultLength;
 
 				// Adding the try & except to be sure, copying memory shouldn't cause a problem.
 				__try {
 					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
+					prevIrql = KeGetCurrentIrql();
+					KeLowerIrql(PASSIVE_LEVEL);
+					KdPrint((DRIVER_PREFIX "Copied the data of %ws\n", item.KeyPath));
+					KeRaiseIrql(prevIrql, &prevIrql);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {}
 
 				copyKeyInformationData = false;
-				continue;
 			}
 
 			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
 				copyKeyInformationData = false;
+				continue;
 			}
+			keyName.Buffer[keyName.Length / sizeof(WCHAR)] = L'\0';
 		}
 
 		ExFreePoolWithTag(tempKeyInformation, DRIVER_TAG);
@@ -235,7 +213,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS RegNtPostEnumerateValueKeyHandler(PREG_POST_OPERATION_INFORMATION info) {
+NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempValueInformation;
 	PREG_ENUMERATE_VALUE_KEY_INFORMATION preInfo;
@@ -257,8 +235,8 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(PREG_POST_OPERATION_INFORMATION info)
 	if (!NT_SUCCESS(status))
 		return STATUS_SUCCESS;
 
-	// Checking if the registry key contains any protected registry key.
-	if (!ContainsProtectedRegKey(regPath, REG_TYPE_KEY)) {
+	// Checking if the registry key contains any protected registry value.
+	if (!ContainsProtectedRegKey(*regPath, REG_TYPE_VALUE)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -324,8 +302,8 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(PREG_POST_OPERATION_INFORMATION info)
 		while (copyKeyInformationData) {
 			/*wcscpy_s(item->KeyPath, wcslen(regPath->Buffer) + 1, regPath->Buffer);
 			wcscpy_s(item->ValueName, wcslen(valueName.Buffer) + 1, valueName.Buffer);*/
-			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR) - 1);
-			wcsncpy_s(item.KeyPath, valueName.Buffer, wcslen(valueName.Buffer));
+			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+			wcsncpy_s(item.KeyPath, valueName.Buffer, valueName.Length / sizeof(WCHAR));
 			status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
@@ -392,7 +370,7 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 	switch (infoClass) {
 	case KeyBasicInformation:
 	{
-		PKEY_BASIC_INFORMATION basicInfo = (PKEY_BASIC_INFORMATION)information;
+		KEY_BASIC_INFORMATION* basicInfo = (KEY_BASIC_INFORMATION*)information;
 		keyName->Buffer = basicInfo->Name;
 		keyName->Length = (USHORT)basicInfo->NameLength;
 		keyName->MaximumLength = (USHORT)basicInfo->NameLength;
@@ -400,7 +378,7 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 	}
 	case KeyNameInformation:
 	{
-		PKEY_NAME_INFORMATION nameInfo = (PKEY_NAME_INFORMATION)information;
+		KEY_NAME_INFORMATION* nameInfo = (KEY_NAME_INFORMATION*)information;
 		keyName->Buffer = nameInfo->Name;
 		keyName->Length = (USHORT)nameInfo->NameLength;
 		keyName->MaximumLength = (USHORT)nameInfo->NameLength;
@@ -408,7 +386,7 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 	}
 	case KeyNodeInformation:
 	{
-		PKEY_NODE_INFORMATION nodeInfo = (PKEY_NODE_INFORMATION)information;
+		KEY_NODE_INFORMATION* nodeInfo = (KEY_NODE_INFORMATION*)information;
 		keyName->Buffer = nodeInfo->Name;
 		keyName->Length = (USHORT)nodeInfo->NameLength;
 		keyName->MaximumLength = (USHORT)nodeInfo->NameLength;
@@ -437,16 +415,16 @@ bool FindRegItem(RegItem& item) {
 	return false;
 }
 
-bool ContainsProtectedRegKey(PCUNICODE_STRING regKey, int type) {
+bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type) {
 	if (type == REG_TYPE_KEY) {
 		for (int i = 0; i < rGlobals.Keys.KeysCount; i++) {
-			if (wcsstr(regKey->Buffer, rGlobals.Keys.KeysPath[i]))
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.Keys.KeysPath[i]) && _wcsnicmp(rGlobals.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
 	else if (type == REG_TYPE_VALUE) {
 		for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
-			if (wcsstr(regKey->Buffer, rGlobals.Values.ValuesPath[i]))
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.Values.ValuesPath[i]) && _wcsnicmp(rGlobals.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
