@@ -117,9 +117,9 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	ULONG resultLength;
 	RegItem item;
 	UNICODE_STRING keyName;
+	int counter = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	bool copyKeyInformationData = true;
-	int counter = 1;
 
 	if (!NT_SUCCESS(info->Status)) {
 		return STATUS_SUCCESS;
@@ -162,17 +162,18 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
 		while (copyKeyInformationData) {
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "KeyName is %ws\n", keyName.Buffer));
-			KeRaiseIrql(prevIrql, &prevIrql);
-
 			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
 				copyKeyInformationData = false;
 				continue;
 			}
+
+			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
+				copyKeyInformationData = false;
+				continue;
+			}
+			keyName.Buffer[keyName.Length / sizeof(WCHAR)] = L'\0';
 
 			// Concatenating the key path and name to check against FindRegItem.
 			wcscat_s(item.KeyPath, L"\\");
@@ -181,24 +182,24 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 			if (!FindRegItem(item)) {
 				*preInfo->ResultLength = resultLength;
 
-				// Adding the try & except to be sure, copying memory shouldn't cause a problem.
 				__try {
 					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
-					prevIrql = KeGetCurrentIrql();
-					KeLowerIrql(PASSIVE_LEVEL);
-					KdPrint((DRIVER_PREFIX "Copied the data of %ws\n", item.KeyPath));
-					KeRaiseIrql(prevIrql, &prevIrql);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {}
 
 				copyKeyInformationData = false;
 			}
-
-			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
-				copyKeyInformationData = false;
-				continue;
+			else {
+				counter = 1;
+				auto prevIrql = KeGetCurrentIrql();
+				KeLowerIrql(PASSIVE_LEVEL);
+				KdPrint((DRIVER_PREFIX "Hid registry key %ws\n", item.KeyPath));
+				KeRaiseIrql(prevIrql, &prevIrql);
 			}
-			keyName.Buffer[keyName.Length / sizeof(WCHAR)] = L'\0';
+
+			// To avoid concatenating bad data.
+			item.KeyPath[0] = L'\0';
+			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 		}
 
 		ExFreePoolWithTag(tempKeyInformation, DRIVER_TAG);
@@ -400,18 +401,18 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 }
 
 bool FindRegItem(RegItem& item) {
-
 	if (item.Type == REG_TYPE_KEY) {
 		for (int i = 0; i < rGlobals.Keys.KeysCount; i++)
-			if (_wcsicmp(rGlobals.Keys.KeysPath[i], item.KeyPath) == 0)
+			if (_wcsnicmp(rGlobals.Keys.KeysPath[i], item.KeyPath, wcslen(rGlobals.Keys.KeysPath[i])) == 0)
 				return true;
 	}
 	else if (item.Type == REG_TYPE_VALUE) {
 		for (int i = 0; i < rGlobals.Values.ValuesCount; i++)
-			if (_wcsicmp(rGlobals.Values.ValuesPath[i], item.KeyPath) == 0 &&
-				_wcsicmp(rGlobals.Values.ValuesName[i], item.ValueName) == 0)
+			if (_wcsnicmp(rGlobals.Values.ValuesPath[i], item.KeyPath, wcslen(rGlobals.Values.ValuesPath[i])) == 0 &&
+				_wcsnicmp(rGlobals.Values.ValuesName[i], item.ValueName, wcslen(rGlobals.Values.ValuesName[i])) == 0)
 				return true;
 	}
+
 	return false;
 }
 
