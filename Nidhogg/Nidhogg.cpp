@@ -2,17 +2,20 @@
 #include "Nidhogg.h"
 #include "ProcessUtils.hpp"
 #include "FileUtils.hpp"
+#include "RegistryUtils.hpp"
 
 extern "C"
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	auto status = STATUS_SUCCESS;
 	pGlobals.Init();
 	fGlobals.Init();
+	rGlobals.Init();
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
-	UNICODE_STRING altitude = RTL_CONSTANT_STRING(DRIVER_ALTITUDE);
+	UNICODE_STRING altitude = RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE);
+	UNICODE_STRING regAltitude = RTL_CONSTANT_STRING(REG_CALLBACK_ALTITUDE);
 	PDEVICE_OBJECT DeviceObject = nullptr;
 
 	// Creating device and symbolic link.
@@ -32,8 +35,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	}
 
 	// Enabling file callbacks.
-	POBJECT_TYPE ObjectTypeTemp = (POBJECT_TYPE)*IoFileObjectType;
-	*(UCHAR*)((UINT64)ObjectTypeTemp + SupportsObjectCallbacks) = AllowObjectCallbacks;
+	POBJECT_TYPE_TEMP ObjectTypeTemp = (POBJECT_TYPE_TEMP)*IoFileObjectType;
+	ObjectTypeTemp->TypeInfo.SupportsObjectCallbacks = 1;
 
 	// Registering the process and file hooking function.
 	OB_OPERATION_REGISTRATION operations[] = {
@@ -51,7 +54,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	OB_CALLBACK_REGISTRATION registrationCallbacks = {
 		OB_FLT_REGISTRATION_VERSION,
 		2,				// operation count
-		RTL_CONSTANT_STRING(DRIVER_ALTITUDE),		// altitude
+		RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),		// altitude
 		nullptr,		// context
 		operations
 	};
@@ -60,6 +63,20 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to register process and file callbacks: (0x%08X)\n", status));
+		IoDeleteSymbolicLink(&symbolicLink);
+		IoDeleteDevice(DeviceObject);
+		return status;
+	}
+
+	status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to register registry callback: (0x%08X)\n", status));
+
+		if (registrationHandle) {
+			ObUnRegisterCallbacks(registrationHandle);
+			registrationHandle = NULL;
+		}
 		IoDeleteSymbolicLink(&symbolicLink);
 		IoDeleteDevice(DeviceObject);
 		return status;
@@ -77,12 +94,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	KdPrint((DRIVER_PREFIX "Unloading...\n"));
+
+	NTSTATUS status = CmUnRegisterCallback(rGlobals.RegCookie);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to unregister registry callbacks: (0x%08X)\n", status));
+	}
 	ClearAll();
 
 	// To avoid BSOD.
 	if (registrationHandle) {
-		POBJECT_TYPE ObjectTypeTemp = (POBJECT_TYPE)*IoFileObjectType;
-		*(UCHAR*)((UINT64)ObjectTypeTemp + SupportsObjectCallbacks) = AllowObjectCallbacks;
 		ObUnRegisterCallbacks(registrationHandle);
 		registrationHandle = NULL;
 	}
@@ -323,6 +344,108 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
+	case IOCTL_NIDHOGG_PROTECT_REGITEM:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(RegItem) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto& data = *(RegItem*)Irp->AssociatedIrp.SystemBuffer;	
+
+		if ((data.Type != REG_TYPE_KEY && data.Type != REG_TYPE_VALUE) || wcslen(data.KeyPath) == 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(rGlobals.Lock);
+
+		if (data.Type == REG_TYPE_KEY) {
+			if (rGlobals.Keys.KeysCount == MAX_REG_ITEMS) {
+				KdPrint((DRIVER_PREFIX "List is full.\n"));
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+		}
+		else if (data.Type == REG_TYPE_VALUE) {
+			if (rGlobals.Values.ValuesCount == MAX_REG_ITEMS) {
+				KdPrint((DRIVER_PREFIX "List is full.\n"));
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+		}
+		else {
+			KdPrint((DRIVER_PREFIX "Unknown registry object type.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (!FindRegItem(data)) {
+			if (!AddRegItem(data)) {
+				KdPrint((DRIVER_PREFIX "Failed to add new registry item.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
+			KdPrint((DRIVER_PREFIX "Added new registry item.\n"));
+		}
+		break;
+	}
+
+	case IOCTL_NIDHOGG_UNPROTECT_REGITEM:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(RegItem) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto& data = *(RegItem*)Irp->AssociatedIrp.SystemBuffer;
+		
+		if ((data.Type != REG_TYPE_KEY && data.Type != REG_TYPE_VALUE) || wcslen(data.KeyPath) == 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(rGlobals.Lock);
+
+		if (!RemoveRegItem(data)) {
+			KdPrint((DRIVER_PREFIX "Registry item not found.\n"));
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		break;
+	}
+
+	case IOCTL_NIDHOGG_CLEAR_REGITEMS:
+	{
+		AutoLock registryLocker(rGlobals.Lock);
+
+		for (int i = 0; i < rGlobals.Keys.KeysCount; i++) {
+			ExFreePoolWithTag(rGlobals.Keys.KeysPath[i], DRIVER_TAG);
+			rGlobals.Keys.KeysPath[i] = nullptr;
+			rGlobals.Keys.KeysCount--;
+		}
+
+		rGlobals.Keys.KeysCount = 0;
+
+		for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
+			ExFreePoolWithTag(rGlobals.Values.ValuesPath[i], DRIVER_TAG);
+			rGlobals.Values.ValuesPath[i] = nullptr;
+			rGlobals.Values.ValuesCount--;
+		}
+
+		rGlobals.Values.ValuesCount = 0;
+		break;
+	}
+
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;
@@ -337,6 +460,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 void ClearAll() {
 	// Clearing the process array.
 	AutoLock processLocker(pGlobals.Lock);
+
 	memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
 	pGlobals.PidsCount = 0;
 
@@ -349,5 +473,24 @@ void ClearAll() {
 		fGlobals.FilesCount--;
 	}
 
-	fGlobals.FilesCount = 0;
+	// Clearing the registry keys and values.
+	AutoLock registryLocker(rGlobals.Lock);
+
+	for (int i = 0; i < rGlobals.Keys.KeysCount; i++) {
+		ExFreePoolWithTag(rGlobals.Keys.KeysPath[i], DRIVER_TAG);
+		rGlobals.Keys.KeysPath[i] = nullptr;
+		rGlobals.Keys.KeysCount--;
+	}
+
+	rGlobals.Keys.KeysCount = 0;
+
+	for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
+		ExFreePoolWithTag(rGlobals.Values.ValuesPath[i], DRIVER_TAG);
+		ExFreePoolWithTag(rGlobals.Values.ValuesName[i], DRIVER_TAG);
+		rGlobals.Values.ValuesPath[i] = nullptr;
+		rGlobals.Values.ValuesName[i] = nullptr;
+		rGlobals.Values.ValuesCount--;
+	}
+
+	rGlobals.Values.ValuesCount = 0;
 }

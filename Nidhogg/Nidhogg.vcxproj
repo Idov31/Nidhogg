@@ -192,6 +192,7 @@
     <ClInclude Include="Nidhogg.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessUtils.hpp" />
+    <ClInclude Include="RegistryUtils.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp" />
