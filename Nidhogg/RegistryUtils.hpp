@@ -24,7 +24,7 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
-
+  
 	switch ((REG_NOTIFY_CLASS)(ULONG_PTR)arg1) {
 	case RegNtPreDeleteKey:
 		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
