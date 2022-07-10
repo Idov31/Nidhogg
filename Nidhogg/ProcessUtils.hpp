@@ -40,27 +40,27 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_P
 }
 
 bool FindProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.PidsCount; i++)
-		if (pGlobals.Pids[i] == pid)
+	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
+		if (pGlobals.Processes.Pids[i] == pid)
 			return true;
 	return false;
 }
 
 bool AddProcess(ULONG pid) {
 	for (int i = 0; i < MAX_PIDS; i++)
-		if (pGlobals.Pids[i] == 0) {
-			pGlobals.Pids[i] = pid;
-			pGlobals.PidsCount++;
+		if (pGlobals.Processes.Pids[i] == 0) {
+			pGlobals.Processes.Pids[i] = pid;
+			pGlobals.Processes.PidsCount++;
 			return true;
 		}
 	return false;
 }
 
 bool RemoveProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.PidsCount; i++)
-		if (pGlobals.Pids[i] == pid) {
-			pGlobals.Pids[i] = 0;
-			pGlobals.PidsCount--;
+	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
+		if (pGlobals.Processes.Pids[i] == pid) {
+			pGlobals.Processes.Pids[i] = 0;
+			pGlobals.Processes.PidsCount--;
 			return true;
 		}
 	return false;

