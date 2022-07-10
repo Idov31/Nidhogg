@@ -16,6 +16,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
+NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
@@ -23,7 +24,7 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// Need to also add: PreQueryKey, PreQueryValue, PreQueryMultipleValue, SetValueKey
+	// Need to also add: PreQueryMultipleValue, SetValueKey
 	switch ((REG_NOTIFY_CLASS)(ULONG_PTR)arg1) {
 	case RegNtPreDeleteKey:
 		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
@@ -36,6 +37,9 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 		break;
 	case RegNtPreQueryValueKey:
 		status = RegNtPreQueryValueKeyHandler(static_cast<REG_QUERY_VALUE_KEY_INFORMATION*>(arg2));
+		break;
+	case RegNtPreQueryMultipleValueKey:
+		status = RegNtPreQueryMultipleValueKeyHandler(static_cast<REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPostEnumerateKey:
 		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
@@ -180,6 +184,48 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 		KdPrint((DRIVER_PREFIX "Hid value from query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
 		KeRaiseIrql(prevIrql, &prevIrql);
 		status = STATUS_NOT_FOUND;
+	}
+
+	CmCallbackReleaseKeyObjectIDEx(regPath);
+	return status;
+}
+
+NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
+	ULONG index;
+	RegItem regItem;
+	PCUNICODE_STRING regPath;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// To avoid BSOD.
+	if (!MmIsAddressValid(info->Object))
+		return STATUS_SUCCESS;
+
+	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+
+	if (!NT_SUCCESS(status)) {
+		return STATUS_SUCCESS;
+	}
+
+	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+		return STATUS_SUCCESS;
+	}
+
+	regItem.Type = REG_TYPE_VALUE;
+	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+
+	for (index = 0; index < info->EntryCount; index++) {
+		wcsncpy_s(regItem.ValueName, info->ValueEntries[index].ValueName->Buffer, info->ValueEntries[index].ValueName->Length / sizeof(WCHAR));
+
+		if (FindRegItem(regItem)) {
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "Hid value from multiple query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
+			KeRaiseIrql(prevIrql, &prevIrql);
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		regItem.ValueName[0] = L'\0';
 	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
