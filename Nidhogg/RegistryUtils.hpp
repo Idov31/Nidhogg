@@ -14,6 +14,8 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
+NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
+NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
@@ -21,13 +23,19 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// Need to also add: PreQueryValue, PreQueryMultipleValue, SetValueKey
+	// Need to also add: PreQueryKey, PreQueryValue, PreQueryMultipleValue, SetValueKey
 	switch ((REG_NOTIFY_CLASS)(ULONG_PTR)arg1) {
 	case RegNtPreDeleteKey:
 		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreDeleteValueKey:
 		status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
+		break;
+	case RegNtPreQueryKey:
+		status = RegNtPreQueryKeyHandler(static_cast<REG_QUERY_KEY_INFORMATION*>(arg2));
+		break;
+	case RegNtPreQueryValueKey:
+		status = RegNtPreQueryValueKeyHandler(static_cast<REG_QUERY_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPostEnumerateKey:
 		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
@@ -103,6 +111,75 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 		KdPrint((DRIVER_PREFIX "Protected value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
 		KeRaiseIrql(prevIrql, &prevIrql);
 		status = STATUS_ACCESS_DENIED;
+	}
+
+	CmCallbackReleaseKeyObjectIDEx(regPath);
+	return status;
+}
+
+NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
+	RegItem regItem;
+	PCUNICODE_STRING regPath;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// To avoid BSOD.
+	if (!info->Object || !MmIsAddressValid(info->Object))
+		return STATUS_SUCCESS;
+
+	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+
+	if (!NT_SUCCESS(status)) {
+		return STATUS_SUCCESS;
+	}
+
+	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+		return STATUS_SUCCESS;
+	}
+	
+	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+	regItem.Type = REG_TYPE_KEY;
+
+	if (FindRegItem(regItem)) {
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Hid key from query %ws\n", regItem.KeyPath));
+		KeRaiseIrql(prevIrql, &prevIrql);
+		status = STATUS_NOT_FOUND;
+	}
+
+	CmCallbackReleaseKeyObjectIDEx(regPath);
+	return status;
+}
+
+NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
+	RegItem regItem;
+	PCUNICODE_STRING regPath;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// To avoid BSOD.
+	if (!MmIsAddressValid(info->Object))
+		return STATUS_SUCCESS;
+
+	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+
+	if (!NT_SUCCESS(status)) {
+		return STATUS_SUCCESS;
+	}
+
+	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+		return STATUS_SUCCESS;
+	}
+
+	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
+	regItem.Type = REG_TYPE_VALUE;
+
+	if (FindRegItem(regItem)) {
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Hid value from query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
+		KeRaiseIrql(prevIrql, &prevIrql);
+		status = STATUS_NOT_FOUND;
 	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
