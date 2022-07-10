@@ -139,6 +139,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	case IOCTL_NIDHOGG_PROTECT_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		
 		if (size % sizeof(ULONG) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
@@ -157,7 +158,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			if (FindProcess(pid))
 				continue;
 
-			if (pGlobals.PidsCount == MAX_PIDS) {
+			if (pGlobals.Processes.PidsCount == MAX_PIDS) {
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
@@ -166,6 +167,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
+
+			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", pid));
 
 			len += sizeof(ULONG);
 		}
@@ -200,7 +203,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 			len += sizeof(ULONG);
 
-			if (pGlobals.PidsCount == 0)
+			if (pGlobals.Processes.PidsCount == 0)
 				break;
 		}
 
@@ -210,8 +213,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	case IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION:
 	{
 		AutoLock locker(pGlobals.Lock);
-		memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
-		pGlobals.PidsCount = 0;
+		memset(&pGlobals.Processes.Pids, 0, sizeof(pGlobals.Processes.Pids));
+		pGlobals.Processes.PidsCount = 0;
 		break;
 	}
 
@@ -264,6 +267,29 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 		}
+		break;
+	}
+
+	case IOCTL_NIDHOGG_QUERY_PROCESSES:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(ProcessesList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ProcessesList*)Irp->AssociatedIrp.SystemBuffer;
+
+		AutoLock locker(pGlobals.Lock);
+		data->PidsCount = pGlobals.Processes.PidsCount;
+
+		for (int i = 0; i < pGlobals.Processes.PidsCount; i++) {
+			data->Pids[i] = pGlobals.Processes.Pids[i];
+		}
+
+		len += sizeof(ProcessesList);
+
 		break;
 	}
 
@@ -461,8 +487,8 @@ void ClearAll() {
 	// Clearing the process array.
 	AutoLock processLocker(pGlobals.Lock);
 
-	memset(&pGlobals.Pids, 0, sizeof(pGlobals.Pids));
-	pGlobals.PidsCount = 0;
+	memset(&pGlobals.Processes.Pids, 0, sizeof(pGlobals.Processes.Pids));
+	pGlobals.Processes.PidsCount = 0;
 
 	// Clearing the files array.
 	AutoLock filesLocker(fGlobals.Lock);
