@@ -17,6 +17,7 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info);
+NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
@@ -40,6 +41,9 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 		break;
 	case RegNtPreQueryMultipleValueKey:
 		status = RegNtPreQueryMultipleValueKeyHandler(static_cast<REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION*>(arg2));
+		break;
+	case RegNtPreSetValueKey:
+		status = RegNtPreSetValueKeyHandler(static_cast<REG_SET_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPostEnumerateKey:
 		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
@@ -226,6 +230,41 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 		}
 
 		regItem.ValueName[0] = L'\0';
+	}
+
+	CmCallbackReleaseKeyObjectIDEx(regPath);
+	return status;
+}
+
+NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
+	RegItem regItem;
+	PCUNICODE_STRING regPath;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// To avoid BSOD.
+	if (!MmIsAddressValid(info->Object))
+		return STATUS_SUCCESS;
+
+	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+
+	if (!NT_SUCCESS(status)) {
+		return STATUS_SUCCESS;
+	}
+
+	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+		return STATUS_SUCCESS;
+	}
+
+	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
+	regItem.Type = REG_TYPE_VALUE;
+
+	if (FindRegItem(regItem)) {
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Blocked setting value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
+		KeRaiseIrql(prevIrql, &prevIrql);
+		status = STATUS_ACCESS_DENIED;
 	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
