@@ -313,7 +313,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		AutoLock locker(fGlobals.Lock);
 
-		if (fGlobals.FilesCount == MAX_FILES) {
+		if (fGlobals.Files.FilesCount == MAX_FILES) {
 			KdPrint((DRIVER_PREFIX "List is full.\n"));
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
@@ -321,9 +321,15 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		if (!FindFile(data)) {
 			if (!AddFile(data)) {
+				KdPrint((DRIVER_PREFIX "Failed to add file.\n"));
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
+			
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "Protecting file %ws.\n", data));
+			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
 		break;
@@ -360,13 +366,39 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		AutoLock locker(fGlobals.Lock);
 
-		for (int i = 0; i < fGlobals.FilesCount; i++) {
-			ExFreePoolWithTag(fGlobals.Files[i], DRIVER_TAG);
-			fGlobals.Files[i] = nullptr;
-			fGlobals.FilesCount--;
+		for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
+			ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
+			fGlobals.Files.FilesPath[i] = nullptr;
+			fGlobals.Files.FilesCount--;
 		}
 
-		fGlobals.FilesCount = 0;
+		fGlobals.Files.FilesCount = 0;
+		break;
+	}
+
+	case IOCTL_NIDHOGG_QUERY_FILES:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		size_t pathLength = 0;
+
+		if (size % sizeof(FilesList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (FilesList*)Irp->AssociatedIrp.SystemBuffer;
+
+		AutoLock locker(fGlobals.Lock);
+		data->FilesCount = fGlobals.Files.FilesCount;
+
+		// For some reason, wcscpy_s not working and data->FilesPath[i] is still null.
+		for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
+			pathLength = (wcslen(fGlobals.Files.FilesPath[i]) + 1) * sizeof(WCHAR);
+			wcscpy_s((*data).FilesPath[i], pathLength / sizeof(WCHAR), fGlobals.Files.FilesPath[i]);
+		}
+
+		len += sizeof(FilesList);
+
 		break;
 	}
 
@@ -380,9 +412,10 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		auto& data = *(RegItem*)Irp->AssociatedIrp.SystemBuffer;	
+		// TODO: Undo the dereference thing.
+		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;	
 
-		if ((data.Type != REG_TYPE_KEY && data.Type != REG_TYPE_VALUE) || wcslen(data.KeyPath) == 0) {
+		if ((data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) || wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -390,14 +423,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		AutoLock locker(rGlobals.Lock);
 
-		if (data.Type == REG_TYPE_KEY) {
+		if (data->Type == REG_TYPE_KEY) {
 			if (rGlobals.Keys.KeysCount == MAX_REG_ITEMS) {
 				KdPrint((DRIVER_PREFIX "List is full.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 		}
-		else if (data.Type == REG_TYPE_VALUE) {
+		else if (data->Type == REG_TYPE_VALUE) {
 			if (rGlobals.Values.ValuesCount == MAX_REG_ITEMS) {
 				KdPrint((DRIVER_PREFIX "List is full.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
@@ -410,8 +443,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!FindRegItem(data)) {
-			if (!AddRegItem(data)) {
+		if (!FindRegItem(*data)) {
+			if (!AddRegItem(*data)) {
 				KdPrint((DRIVER_PREFIX "Failed to add new registry item.\n"));
 				status = STATUS_UNSUCCESSFUL;
 				break;
@@ -432,9 +465,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		auto& data = *(RegItem*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 		
-		if ((data.Type != REG_TYPE_KEY && data.Type != REG_TYPE_VALUE) || wcslen(data.KeyPath) == 0) {
+		if ((data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) || wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -442,7 +475,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		AutoLock locker(rGlobals.Lock);
 
-		if (!RemoveRegItem(data)) {
+		if (!RemoveRegItem(*data)) {
 			KdPrint((DRIVER_PREFIX "Registry item not found.\n"));
 			status = STATUS_NOT_FOUND;
 			break;
@@ -493,10 +526,10 @@ void ClearAll() {
 	// Clearing the files array.
 	AutoLock filesLocker(fGlobals.Lock);
 
-	for (int i = 0; i < fGlobals.FilesCount; i++) {
-		ExFreePoolWithTag(fGlobals.Files[i], DRIVER_TAG);
-		fGlobals.Files[i] = nullptr;
-		fGlobals.FilesCount--;
+	for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
+		ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
+		fGlobals.Files.FilesPath[i] = nullptr;		
+		fGlobals.Files.FilesCount--;
 	}
 
 	// Clearing the registry keys and values.
