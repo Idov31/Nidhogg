@@ -169,8 +169,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	case Options::Query:
 	{
 		if (_wcsicmp(argv[1], L"process") == 0) {
-			pids = ParsePids(argv + 3, argc - 3);
-			std::vector result = NidhoggProcessQuery();
+			std::vector result = NidhoggQueryProcesses();
 
 			if (result[0] < 4) {
 				success = result[0];
@@ -184,14 +183,58 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
-			std::cerr << "[ - ] TBA" << std::endl;
-			PrintUsage();
-			return 1;
+			std::vector result = NidhoggQueryFiles();
+
+			if (std::isdigit(result[0][0])) {
+				success = std::stoi(result[0]);
+				break;
+			}
+
+			std::cout << "[ + ] Protected files:" << std::endl;
+
+			for (int i = 0; i < result.size(); i++) {
+				std::wcout << "\t" << result[i] << std::endl;
+			}
 		}
 		else if (_wcsicmp(argv[1], L"reg") == 0) {
-			std::cerr << "[ - ] TBA" << std::endl;
-			PrintUsage();
-			return 1;
+			if (argc != 4) {
+				PrintUsage();
+				return 1;
+			}
+
+			if (_wcsicmp(argv[3], L"value") == 0) {
+				auto [values, keys] = NidhoggRegistryQueryValue();
+
+				if (std::isdigit(values[0][0])) {
+					success = std::stoi(values[0]);
+					break;
+				}
+
+				std::cout << "[ + ] Protected registry values:" << std::endl;
+
+				for (int i = 0; i < values.size(); i++) {
+					std::wcout << "\tKeyName: " << keys[i] << std::endl;
+					std::wcout << "\tValueName: " << values[i] << std::endl;
+				}
+			}
+			else if (_wcsicmp(argv[3], L"key") == 0) {
+				std::vector result = NidhoggRegistryQueryKey();
+
+				if (std::isdigit(result[0][0])) {
+					success = std::stoi(result[0]);
+					break;
+				}
+
+				std::cout << "[ + ] Protected registry keys:" << std::endl;
+
+				for (int i = 0; i < result.size(); i++) {
+					std::wcout << "\t" << result[i] << std::endl;
+				}
+			}
+			else {
+				PrintUsage();
+				return 1;
+			}
 		}
 =======
 >>>>>>> 0a9676d (Pre version 0.1 (#6))

