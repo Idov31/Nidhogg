@@ -465,7 +465,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Added new registry item.\n"));
+			KdPrint((DRIVER_PREFIX "Added new registry item of type %d.\n", data->Type));
 		}
 		break;
 	}
@@ -517,6 +517,97 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		rGlobals.Values.ValuesCount = 0;
+		break;
+	}
+
+	case IOCTL_NIDHOGG_QUERY_REGITEMS: 
+	{
+		errno_t err;
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(RegItem) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
+		AutoLock locker(rGlobals.Lock);
+
+		if (data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) {
+			status = STATUS_INVALID_PARAMETER;
+			KdPrint((DRIVER_PREFIX "Invalid RegItem type.\n"));
+		}
+
+		if (data->RegItemsIndex == 0) {
+			if (data->Type == REG_TYPE_KEY) {
+				data->RegItemsIndex = rGlobals.Keys.KeysCount;
+
+				if (rGlobals.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.Keys.KeysPath[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_VALUE) {
+				data->RegItemsIndex = rGlobals.Values.ValuesCount;
+
+				if (rGlobals.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.Values.ValuesPath[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+
+					err = wcscpy_s(data->ValueName, rGlobals.Values.ValuesName[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+		}
+		else if ((data->Type == REG_TYPE_KEY && data->RegItemsIndex > rGlobals.Keys.KeysCount) ||
+				  (data->Type == REG_TYPE_VALUE && data->RegItemsIndex > rGlobals.Values.ValuesCount) ||
+				  data->RegItemsIndex < 0) {
+			status = STATUS_INVALID_PARAMETER;
+		}
+		else {
+			if (data->Type == REG_TYPE_KEY) {
+				if (rGlobals.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.Keys.KeysPath[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_VALUE) {
+				if (rGlobals.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.Values.ValuesPath[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+
+					err = wcscpy_s(data->ValueName, rGlobals.Values.ValuesName[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+		}
+
+		len += sizeof(RegItem);
+
 		break;
 	}
 
