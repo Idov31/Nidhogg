@@ -378,26 +378,42 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_NIDHOGG_QUERY_FILES:
 	{
+		errno_t err;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
-		size_t pathLength = 0;
 
-		if (size % sizeof(FilesList) != 0) {
+		if (size % sizeof(FileItem) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (FilesList*)Irp->AssociatedIrp.SystemBuffer;
-
+		auto data = (FileItem*)Irp->AssociatedIrp.SystemBuffer;
 		AutoLock locker(fGlobals.Lock);
-		data->FilesCount = fGlobals.Files.FilesCount;
 
-		// For some reason, wcscpy_s not working and data->FilesPath[i] is still null.
-		for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
-			pathLength = (wcslen(fGlobals.Files.FilesPath[i]) + 1) * sizeof(WCHAR);
-			wcscpy_s((*data).FilesPath[i], pathLength / sizeof(WCHAR), fGlobals.Files.FilesPath[i]);
+		if (data->FileIndex == 0) {
+			data->FileIndex = fGlobals.Files.FilesCount;
+
+			if (fGlobals.Files.FilesCount > 0) {
+				err = wcscpy_s(data->FilePath, fGlobals.Files.FilesPath[0]);
+
+				if (err != 0) {
+					status = STATUS_INVALID_USER_BUFFER;
+					KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+				}
+			}
+		}
+		else if (data->FileIndex > fGlobals.Files.FilesCount || data->FileIndex < 0) {
+			status = STATUS_INVALID_PARAMETER;
+		}
+		else {
+			err = wcscpy_s(data->FilePath, fGlobals.Files.FilesPath[data->FileIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
 		}
 
-		len += sizeof(FilesList);
+		len += sizeof(FileItem);
 
 		break;
 	}
@@ -412,7 +428,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		// TODO: Undo the dereference thing.
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;	
 
 		if ((data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) || wcslen((*data).KeyPath) == 0) {
@@ -528,7 +543,7 @@ void ClearAll() {
 
 	for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
 		ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
-		fGlobals.Files.FilesPath[i] = nullptr;		
+		fGlobals.Files.FilesPath[i] = nullptr;
 		fGlobals.Files.FilesCount--;
 	}
 
