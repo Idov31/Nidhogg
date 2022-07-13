@@ -5,7 +5,7 @@
 
 enum class Options {
 	Unknown,
-	Add, Remove, Clear, Hide, Elevate
+	Add, Remove, Clear, Hide, Elevate, Query
 };
 
 int Error(int errorCode) {
@@ -29,9 +29,9 @@ int Error(int errorCode) {
 
 int PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
-	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate] [pid| pid1 pid2...]" << std::endl;
-	std::cout << "\tNidhoggClient.exe file [add | remove | clear] [path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide] [key] [value]" << std::endl;
+	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query] [pid| pid1 pid2...]" << std::endl;
+	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | query] [key] [value]" << std::endl;
 	return 0;
 }
 
@@ -60,6 +60,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 		option = Options::Hide;
 	else if (_wcsicmp(argv[2], L"elevate") == 0)
 		option = Options::Elevate;
+	else if (_wcsicmp(argv[2], L"query") == 0)
+		option = Options::Query;
 	else {
 		std::cout << "[ - ] Unknown option." << std::endl;
 		return PrintUsage();
@@ -152,6 +154,79 @@ int wmain(int argc, const wchar_t* argv[]) {
 		}
 		break;
 	}
+
+	case Options::Query:
+	{
+		if (_wcsicmp(argv[1], L"process") == 0) {
+			std::vector result = NidhoggQueryProcesses();
+
+			if (result[0] < 4) {
+				success = result[0];
+				break;
+			}
+
+			std::cout << "[ + ] Protected pids:" << std::endl;
+
+			for (int i = 0; i < result.size(); i++) {
+				std::cout << "\t" << result[i] << std::endl;
+			}
+		}
+		else if (_wcsicmp(argv[1], L"file") == 0) {
+			std::vector result = NidhoggQueryFiles();
+
+			if (std::isdigit(result[0][0])) {
+				success = std::stoi(result[0]);
+				break;
+			}
+
+			std::cout << "[ + ] Protected files:" << std::endl;
+
+			for (int i = 0; i < result.size(); i++) {
+				std::wcout << "\t" << result[i] << std::endl;
+			}
+		}
+		else if (_wcsicmp(argv[1], L"reg") == 0) {
+			if (argc != 4) {
+				PrintUsage();
+				return 1;
+			}
+
+			if (_wcsicmp(argv[3], L"value") == 0) {
+				auto [values, keys] = NidhoggRegistryQueryValue();
+
+				if (std::isdigit(values[0][0])) {
+					success = std::stoi(values[0]);
+					break;
+				}
+
+				std::cout << "[ + ] Protected registry values:" << std::endl;
+
+				for (int i = 0; i < values.size(); i++) {
+					std::wcout << "\tKeyName: " << keys[i] << std::endl;
+					std::wcout << "\tValueName: " << values[i] << std::endl;
+				}
+			}
+			else if (_wcsicmp(argv[3], L"key") == 0) {
+				std::vector result = NidhoggRegistryQueryKey();
+
+				if (std::isdigit(result[0][0])) {
+					success = std::stoi(result[0]);
+					break;
+				}
+
+				std::cout << "[ + ] Protected registry keys:" << std::endl;
+
+				for (int i = 0; i < result.size(); i++) {
+					std::wcout << "\t" << result[i] << std::endl;
+				}
+			}
+			else {
+				PrintUsage();
+				return 1;
+			}
+		}
+		break;
+	}
 	}
 
 	if (success != NIDHOGG_SUCCESS)
@@ -159,5 +234,5 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 	std::cout << "[+] Operation succeeded." << std::endl;
 
-	return 0;
+	return success;
 }

@@ -52,15 +52,15 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 }
 
 bool FindFile(WCHAR* path) {
-	for (int i = 0; i < fGlobals.FilesCount; i++)
-		if (_wcsicmp(fGlobals.Files[i], path) == 0)
+	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
+		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0)
 			return true;
 	return false;
 }
 
 bool AddFile(WCHAR* path) {
 	for (int i = 0; i < MAX_FILES; i++)
-		if (fGlobals.Files[i] == nullptr) {
+		if (fGlobals.Files.FilesPath[i] == nullptr) {
 			auto len = (wcslen(path) + 1) * sizeof(WCHAR);
 			auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
@@ -70,19 +70,19 @@ bool AddFile(WCHAR* path) {
 			}
 
 			wcscpy_s(buffer, len / sizeof(WCHAR), path);
-			fGlobals.Files[i] = buffer;
-			fGlobals.FilesCount++;
+			fGlobals.Files.FilesPath[i] = buffer;
+			fGlobals.Files.FilesCount++;
 			return true;
 		}
 	return false;
 }
 
 bool RemoveFile(WCHAR* path) {
-	for (int i = 0; i < fGlobals.FilesCount; i++)
-		if (_wcsicmp(fGlobals.Files[i], path) == 0) {
-			ExFreePoolWithTag(fGlobals.Files[i], DRIVER_TAG);
-			fGlobals.Files[i] = nullptr;
-			fGlobals.FilesCount--;
+	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
+		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0) {
+			ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
+			fGlobals.Files.FilesPath[i] = nullptr;
+			fGlobals.Files.FilesCount--;
 			return true;
 		}
 	return false;
