@@ -8,7 +8,7 @@ Nidhogg can work on any version of Windows 10 and Windows 11.
 
 This repository contains a kernel driver with C++ header to communicate with it.
 
-**NOTE: This project is currently on its beta, more features will be released in the coming weeks.**
+**NOTE: Some functionality might trigger PatchGuard, use it on your own risk!**
 
 ## Current Features
 
@@ -19,6 +19,10 @@ This repository contains a kernel driver with C++ header to communicate with it.
 - Bypass pe-sieve
 - Anti file deletion
 - Anti file overwritting
+- Registry keys and values anti deletion
+- Registry keys and values hiding
+- Registry keys and values anti overwritting
+- Querying currently protected processes, files and registry keys & values
 
 ## Basic Usage
 
@@ -66,6 +70,7 @@ sc start nidhogg
 - [Kernel Structure Documentation](https://www.vergiliusproject.com)
 - [Process Hiding](https://github.com/landhb/HideProcess)
 - [Process Elevation](https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/how-kernel-exploits-abuse-tokens-for-privilege-escalation)
+- [Registry Keys Hiding](https://github.com/JKornev/hidden)
 
 ## Contributions
 
