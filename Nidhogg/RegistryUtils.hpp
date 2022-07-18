@@ -305,7 +305,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-	keyName.Buffer[keyName.Length / sizeof(WCHAR)] = L'\0';
+	keyName.Buffer[keyName.MaximumLength / sizeof(WCHAR)] = L'\0';
 
 	// Rebuilding the KeyInformation without the hidden keys.
 	status = ObOpenObjectByPointerWithTag(info->Object, OBJ_KERNEL_HANDLE, NULL, KEY_ALL_ACCESS, *CmKeyObjectType, KernelMode, DRIVER_TAG, &key);

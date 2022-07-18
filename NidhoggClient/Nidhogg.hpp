@@ -37,6 +37,7 @@
 #define REG_KEY_LEN 255
 #define REG_VALUE_LEN 260
 #define HKLM_HIVE LR"(\Registry\Machine)"
+#define HKCR_HIVE LR"(\Registry\Machine\SOFTWARE\Classes)"
 #define HKU_HIVE LR"(\Registry\User)"
 #define HKLM L"HKEY_LOCAL_MACHINE"
 #define HKLM_SHORT L"HKLM"
@@ -44,7 +45,7 @@
 #define HKU_SHORT L"HKU"
 #define HKCU L"HKEY_CURRENT_USER"
 #define HKCU_SHORT L"HKCU"
-#define HKCR L"HKEY_CLASSES_ROOT" // This is just HKLM\Software\Classes
+#define HKCR L"HKEY_CLASSES_ROOT"
 #define HKCR_SHORT L"HKCR"
 // *********************************************************************************************************
 
@@ -128,6 +129,12 @@ std::wstring ParseRegistryKey(wchar_t* key) {
     }
     else if (result.find(HKLM_SHORT) != std::wstring::npos) {
         result.replace(0, 4, HKLM_HIVE);
+    }
+    else if (result.find(HKCR) != std::wstring::npos) {
+        result.replace(0, 17, HKCR_HIVE);
+    }
+    else if (result.find(HKCR_SHORT) != std::wstring::npos) {
+        result.replace(0, 4, HKCR_HIVE);
     }
     else if (result.find(HKU) != std::wstring::npos) {
         result.replace(0, 10, HKU_HIVE);
