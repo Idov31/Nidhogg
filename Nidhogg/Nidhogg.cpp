@@ -565,8 +565,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		AutoLock locker(rGlobals.Lock);
 
 		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
-			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
-			wcslen((*data).KeyPath) == 0) {
+			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE)) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
