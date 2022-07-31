@@ -430,7 +430,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;	
 
-		if ((data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) || wcslen((*data).KeyPath) == 0) {
+		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY && 
+			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) || 
+			wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -438,15 +440,29 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		AutoLock locker(rGlobals.Lock);
 
-		if (data->Type == REG_TYPE_KEY) {
-			if (rGlobals.Keys.KeysCount == MAX_REG_ITEMS) {
+		if (data->Type == REG_TYPE_PROTECTED_KEY) {
+			if (rGlobals.ProtectedItems.Keys.KeysCount == MAX_REG_ITEMS) {
 				KdPrint((DRIVER_PREFIX "List is full.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 		}
-		else if (data->Type == REG_TYPE_VALUE) {
-			if (rGlobals.Values.ValuesCount == MAX_REG_ITEMS) {
+		else if (data->Type == REG_TYPE_HIDDEN_KEY) {
+			if (rGlobals.HiddenItems.Keys.KeysCount == MAX_REG_ITEMS) {
+				KdPrint((DRIVER_PREFIX "List is full.\n"));
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+		}
+		else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
+			if (rGlobals.ProtectedItems.Values.ValuesCount == MAX_REG_ITEMS) {
+				KdPrint((DRIVER_PREFIX "List is full.\n"));
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+		}
+		else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
+			if (rGlobals.HiddenItems.Values.ValuesCount == MAX_REG_ITEMS) {
 				KdPrint((DRIVER_PREFIX "List is full.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
@@ -482,7 +498,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 		
-		if ((data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) || wcslen((*data).KeyPath) == 0) {
+		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
+			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
+			wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -502,21 +520,34 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		AutoLock registryLocker(rGlobals.Lock);
 
-		for (int i = 0; i < rGlobals.Keys.KeysCount; i++) {
-			ExFreePoolWithTag(rGlobals.Keys.KeysPath[i], DRIVER_TAG);
-			rGlobals.Keys.KeysPath[i] = nullptr;
-			rGlobals.Keys.KeysCount--;
+		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
+			ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+			rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
 		}
+		rGlobals.ProtectedItems.Keys.KeysCount = 0;
 
-		rGlobals.Keys.KeysCount = 0;
-
-		for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
-			ExFreePoolWithTag(rGlobals.Values.ValuesPath[i], DRIVER_TAG);
-			rGlobals.Values.ValuesPath[i] = nullptr;
-			rGlobals.Values.ValuesCount--;
+		for (int i = 0; i < rGlobals.HiddenItems.Keys.KeysCount; i++) {
+			ExFreePoolWithTag(rGlobals.HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
+			rGlobals.HiddenItems.Keys.KeysPath[i] = nullptr;
 		}
+		rGlobals.HiddenItems.Keys.KeysCount = 0;
 
-		rGlobals.Values.ValuesCount = 0;
+		for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
+			ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+			ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+			rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
+			rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
+		}
+		rGlobals.ProtectedItems.Values.ValuesCount = 0;
+
+		for (int i = 0; i < rGlobals.HiddenItems.Values.ValuesCount; i++) {
+			ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+			ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+			rGlobals.HiddenItems.Values.ValuesPath[i] = nullptr;
+			rGlobals.HiddenItems.Values.ValuesName[i] = nullptr;
+		}
+		rGlobals.HiddenItems.Values.ValuesCount = 0;
+
 		break;
 	}
 
@@ -533,17 +564,20 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 		AutoLock locker(rGlobals.Lock);
 
-		if (data->Type != REG_TYPE_KEY && data->Type != REG_TYPE_VALUE) {
+		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
+			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
+			wcslen((*data).KeyPath) == 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer.\n"));
 			status = STATUS_INVALID_PARAMETER;
-			KdPrint((DRIVER_PREFIX "Invalid RegItem type.\n"));
+			break;
 		}
 
 		if (data->RegItemsIndex == 0) {
-			if (data->Type == REG_TYPE_KEY) {
-				data->RegItemsIndex = rGlobals.Keys.KeysCount;
+			if (data->Type == REG_TYPE_PROTECTED_KEY) {
+				data->RegItemsIndex = rGlobals.ProtectedItems.Keys.KeysCount;
 
-				if (rGlobals.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.Keys.KeysPath[0]);
+				if (rGlobals.ProtectedItems.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Keys.KeysPath[0]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
@@ -551,18 +585,49 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					}
 				}
 			}
-			else if (data->Type == REG_TYPE_VALUE) {
-				data->RegItemsIndex = rGlobals.Values.ValuesCount;
+			else if (data->Type == REG_TYPE_HIDDEN_KEY) {
+				data->RegItemsIndex = rGlobals.HiddenItems.Keys.KeysCount;
 
-				if (rGlobals.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.Values.ValuesPath[0]);
+				if (rGlobals.HiddenItems.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Keys.KeysPath[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
+				data->RegItemsIndex = rGlobals.ProtectedItems.Values.ValuesCount;
+
+				if (rGlobals.ProtectedItems.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Values.ValuesPath[0]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
 						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
 					}
 
-					err = wcscpy_s(data->ValueName, rGlobals.Values.ValuesName[0]);
+					err = wcscpy_s(data->ValueName, rGlobals.ProtectedItems.Values.ValuesName[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
+				data->RegItemsIndex = rGlobals.HiddenItems.Values.ValuesCount;
+
+				if (rGlobals.HiddenItems.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Values.ValuesPath[0]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+
+					err = wcscpy_s(data->ValueName, rGlobals.HiddenItems.Values.ValuesName[0]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
@@ -571,15 +636,17 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				}
 			}
 		}
-		else if ((data->Type == REG_TYPE_KEY && data->RegItemsIndex > rGlobals.Keys.KeysCount) ||
-				  (data->Type == REG_TYPE_VALUE && data->RegItemsIndex > rGlobals.Values.ValuesCount) ||
+		else if ((data->Type == REG_TYPE_PROTECTED_KEY && data->RegItemsIndex > rGlobals.ProtectedItems.Keys.KeysCount) ||
+				  (data->Type == REG_TYPE_PROTECTED_VALUE && data->RegItemsIndex > rGlobals.ProtectedItems.Values.ValuesCount) ||
+			  	  (data->Type == REG_TYPE_HIDDEN_KEY && data->RegItemsIndex > rGlobals.HiddenItems.Keys.KeysCount) ||
+				  (data->Type == REG_TYPE_HIDDEN_VALUE && data->RegItemsIndex > rGlobals.HiddenItems.Values.ValuesCount) ||
 				  data->RegItemsIndex < 0) {
 			status = STATUS_INVALID_PARAMETER;
 		}
 		else {
-			if (data->Type == REG_TYPE_KEY) {
-				if (rGlobals.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.Keys.KeysPath[data->RegItemsIndex]);
+			if (data->Type == REG_TYPE_PROTECTED_KEY) {
+				if (rGlobals.ProtectedItems.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Keys.KeysPath[data->RegItemsIndex]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
@@ -587,16 +654,43 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					}
 				}
 			}
-			else if (data->Type == REG_TYPE_VALUE) {
-				if (rGlobals.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.Values.ValuesPath[data->RegItemsIndex]);
+			else if (data->Type == REG_TYPE_HIDDEN_KEY) {
+				if (rGlobals.HiddenItems.Keys.KeysCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Keys.KeysPath[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
+				if (rGlobals.ProtectedItems.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Values.ValuesPath[data->RegItemsIndex]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
 						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
 					}
 
-					err = wcscpy_s(data->ValueName, rGlobals.Values.ValuesName[data->RegItemsIndex]);
+					err = wcscpy_s(data->ValueName, rGlobals.ProtectedItems.Values.ValuesName[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+				}
+			}
+			else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
+				if (rGlobals.HiddenItems.Values.ValuesCount > 0) {
+					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Values.ValuesPath[data->RegItemsIndex]);
+
+					if (err != 0) {
+						status = STATUS_INVALID_USER_BUFFER;
+						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+					}
+
+					err = wcscpy_s(data->ValueName, rGlobals.HiddenItems.Values.ValuesName[data->RegItemsIndex]);
 
 					if (err != 0) {
 						status = STATUS_INVALID_USER_BUFFER;
@@ -641,21 +735,17 @@ void ClearAll() {
 	// Clearing the registry keys and values.
 	AutoLock registryLocker(rGlobals.Lock);
 
-	for (int i = 0; i < rGlobals.Keys.KeysCount; i++) {
-		ExFreePoolWithTag(rGlobals.Keys.KeysPath[i], DRIVER_TAG);
-		rGlobals.Keys.KeysPath[i] = nullptr;
-		rGlobals.Keys.KeysCount--;
+	for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
+		ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+		rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
 	}
+	rGlobals.ProtectedItems.Keys.KeysCount = 0;
 
-	rGlobals.Keys.KeysCount = 0;
-
-	for (int i = 0; i < rGlobals.Values.ValuesCount; i++) {
-		ExFreePoolWithTag(rGlobals.Values.ValuesPath[i], DRIVER_TAG);
-		ExFreePoolWithTag(rGlobals.Values.ValuesName[i], DRIVER_TAG);
-		rGlobals.Values.ValuesPath[i] = nullptr;
-		rGlobals.Values.ValuesName[i] = nullptr;
-		rGlobals.Values.ValuesCount--;
+	for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
+		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+		rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
+		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
 	}
-
-	rGlobals.Values.ValuesCount = 0;
+	rGlobals.ProtectedItems.Values.ValuesCount = 0;
 }
