@@ -28,7 +28,6 @@
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-// #define IOCTL_NIDHOGG_HIDE_REGITEM CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS) --> Currently protect and hide is the same, will be changed in the future.
 // *****************************************************************************************************
 
 #define MAX_PIDS 256
@@ -57,7 +56,7 @@ struct ProcessGlobals {
 	FastMutex Lock;
 
 	void Init() {
-		Processes. PidsCount = 0;
+		Processes.PidsCount = 0;
 		Lock.Init();
 	}
 };
@@ -102,15 +101,22 @@ struct RegValues {
 	WCHAR* ValuesName[REG_VALUE_LEN];
 };
 
-struct RegistryGlobals {
+struct RegItems {
 	RegKeys Keys;
 	RegValues Values;
+};
+
+struct RegistryGlobals {
+	RegItems ProtectedItems;
+	RegItems HiddenItems;
 	LARGE_INTEGER RegCookie;
 	FastMutex Lock;
 
 	void Init() {
-		Keys.KeysCount = 0;
-		Values.ValuesCount = 0;
+		ProtectedItems.Keys.KeysCount = 0;
+		ProtectedItems.Values.ValuesCount = 0;
+		HiddenItems.Keys.KeysCount = 0;
+		HiddenItems.Values.ValuesCount = 0;
 		Lock.Init();
 	}
 };
