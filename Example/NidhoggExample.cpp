@@ -29,17 +29,10 @@ int Error(int errorCode) {
 
 int PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
-	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query] [pid| pid1 pid2...]" << std::endl;
+	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query] [pid | pid1 pid2...]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	return 0;
-}
-
-std::vector<DWORD> ParsePids(const wchar_t* buffer[], int count) {
-	std::vector<DWORD> pids;
-	for (int i = 0; i < count; i++)
-		pids.push_back(_wtoi(buffer[i]));
-	return pids;
 }
 
 int wmain(int argc, const wchar_t* argv[]) {
@@ -73,8 +66,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	case Options::Add:
 	{
 		if (_wcsicmp(argv[1], L"process") == 0) {
-			pids = ParsePids(argv + 3, argc - 3);
-			success = NidhoggProcessProtect(pids);
+			success = NidhoggProcessProtect(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NidhoggFileProtect(_wcsdup(argv[3]));
@@ -92,8 +84,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	case Options::Remove:
 	{
 		if (_wcsicmp(argv[1], L"process") == 0) {
-			pids = ParsePids(argv + 3, argc - 3);
-			success = NidhoggProcessUnprotect(pids);
+			success = NidhoggProcessUnprotect(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NidhoggFileUnprotect(_wcsdup(argv[3]));
@@ -123,8 +114,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	case Options::Hide:
 	{
 		if (_wcsicmp(argv[1], L"process") == 0) {
-			pids = ParsePids(argv + 3, argc - 3);
-			success = NidhoggProcessHide(pids);
+			success = NidhoggProcessHide(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			std::cerr << "[ - ] Invalid option!" << std::endl;
@@ -166,8 +156,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	case Options::Elevate:
 	{
 		if (_wcsicmp(argv[1], L"process") == 0) {
-			pids = ParsePids(argv + 3, argc - 3);
-			success = NidhoggProcessElevate(pids);
+			success = NidhoggProcessElevate(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			std::cerr << "[ - ] Invalid option!" << std::endl;

