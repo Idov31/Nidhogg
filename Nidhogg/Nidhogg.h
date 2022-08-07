@@ -52,10 +52,12 @@ struct ProcessesList {
 };
 
 struct ProcessGlobals {
+	bool BypassAMSI;
 	ProcessesList Processes;
 	FastMutex Lock;
 
 	void Init() {
+		BypassAMSI = false;
 		Processes.PidsCount = 0;
 		Lock.Init();
 	}
