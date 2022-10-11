@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "WindowsTypes.h"
+#include "Nidhogg.h"
 #include "NidhoggHelperFunctions.hpp"
 #include "ProcessUtils.hpp"
 #include "FileUtils.hpp"
