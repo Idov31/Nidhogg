@@ -23,6 +23,18 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
+/*
+* Description:
+* OnRegistryNotify is responsible for handling registry operations and handle some of them.
+*
+* Parameters:
+* @context [PVOID]    -- Unused.
+* @arg1    [PVOID]    -- Type of operation.
+* @arg2    [PVOID]    -- Operation's information.
+*
+* Returns:
+* @status  [NTSTATUS] -- Whether the operation was successful or not.
+*/
 NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
@@ -57,6 +69,16 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreDeleteKeyHandler is responsible for handling registry key deletion and block it for protected registry keys.
+*
+* Parameters:
+* @info   [REG_DELETE_KEY_INFORMATION*] -- Contains important information such as key path, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]					-- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -91,6 +113,16 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreDeleteValueKeyHandler is responsible for handling registry value deletion and block it for protected registry values.
+*
+* Parameters:
+* @info   [REG_DELETE_VALUE_KEY_INFORMATION*] -- Contains important information such as key path, value name, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]						  -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -126,6 +158,16 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreQueryKeyHandler is responsible for handling registry key query and block it for hidden registry keys.
+*
+* Parameters:
+* @info   [REG_QUERY_KEY_INFORMATION*] -- Contains important information such as key path, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]				   -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -160,6 +202,16 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreQueryValueKeyHandler is responsible for handling registry value query and block it for hidden registry values.
+*
+* Parameters:
+* @info   [REG_QUERY_VALUE_KEY_INFORMATION*] -- Contains important information such as key path, value name, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]						 -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -195,6 +247,16 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreQueryMultipleValueKeyHandler is responsible for handling registry multiple value query and block it for hidden registry values.
+*
+* Parameters:
+* @info   [REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION*] -- Contains important information such as key path, values list, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]								  -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
 	ULONG index;
 	RegItem regItem;
@@ -237,6 +299,16 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 	return status;
 }
 
+/*
+* Description:
+* RegNtPreSetValueKeyHandler is responsible for handling registry value modify operation and block it for protected registry values.
+*
+* Parameters:
+* @info   [REG_SET_VALUE_KEY_INFORMATION*] -- Contains important information such as key path, value name, key object, etc.
+*
+* Returns:
+* @status [NTSTATUS]					   -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -272,6 +344,16 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
+/*
+* Description:
+* RegNtPostEnumerateKeyHandler is responsible for handling registry key enumeration and hide the protected registry keys.
+*
+* Parameters:
+* @info   [REG_POST_OPERATION_INFORMATION*] -- Contains important information such as keys list, keys objects, etc.
+*
+* Returns:
+* @status [NTSTATUS]					    -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempKeyInformation;
@@ -377,6 +459,16 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	return STATUS_SUCCESS;
 }
 
+/*
+* Description:
+* RegNtPostEnumerateValueKeyHandler is responsible for handling registry value enumeration and hide the protected registry values.
+*
+* Parameters:
+* @info   [REG_POST_OPERATION_INFORMATION*] -- Contains important information such as keys list, keys objects, etc.
+*
+* Returns:
+* @status [NTSTATUS]					    -- Whether the operation was successful or not.
+*/
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempValueInformation;
@@ -476,6 +568,18 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 	return STATUS_SUCCESS;
 }
 
+/*
+* Description:
+* GetNameFromValueEnumPreInfo is responsible for getting the value name from the key value information.
+*
+* Parameters:
+* @infoClass   [KEY_VALUE_INFORMATION_CLASS] -- Contains the type of key value infromation.
+* @information [PVOID]					     -- Contains the information itself.
+* @valueName   [PUNICODE_STRING]			 -- The value name will be written there.
+*
+* Returns:
+* @status	   [bool]						 -- Whether the operation was successful or not.
+*/
 bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING valueName) {
 	switch (infoClass) {
 	case KeyValueBasicInformation:
@@ -501,6 +605,18 @@ bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID in
 	return true;
 }
 
+/*
+* Description:
+* GetNameFromKeyEnumPreInfo is responsible for getting the key name from the key information.
+*
+* Parameters:
+* @infoClass   [KEY_VALUE_INFORMATION_CLASS] -- Contains the type of the key infromation.
+* @information [PVOID]					     -- Contains the information itself.
+* @keyName     [PUNICODE_STRING]			 -- The key name will be written there.
+*
+* Returns:
+* @status	   [bool]						 -- Whether the operation was successful or not.
+*/
 bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName) {
 	switch (infoClass) {
 	case KeyBasicInformation:
@@ -534,6 +650,16 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 	return true;
 }
 
+/*
+* Description:
+* FindRegItem is responsible for searching if a registry item exists in any of the registry items lists.
+*
+* Parameters:
+* @item	  [RegItem&] -- Registry item to search.
+*
+* Returns:
+* @status [bool]	 -- Whether found or not.
+*/
 bool FindRegItem(RegItem& item) {
 	if (item.Type == REG_TYPE_PROTECTED_KEY) {
 		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++)
@@ -561,6 +687,17 @@ bool FindRegItem(RegItem& item) {
 	return false;
 }
 
+/*
+* Description:
+* ContainsProtectedRegKey is responsible for searching if a registry item is contained inside any registry items lists.
+*
+* Parameters:
+* @regKey [UNICODE_STRING] -- Registry item to search.
+* @type	  [int]			   -- Type of the registry item.
+*
+* Returns:
+* @status [bool]		   -- Whether found or not.
+*/
 bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type) {
 	if (type == REG_TYPE_PROTECTED_KEY) {
 		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
@@ -590,6 +727,16 @@ bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type) {
 	return false;
 }
 
+/*
+* Description:
+* AddRegItem is responsible for adding a registry item to the list of protected registry items.
+*
+* Parameters:
+* @item	  [RegItem&] -- Registry item to add.
+*
+* Returns:
+* @status [bool]	 -- Whether successfully added or not.
+*/
 bool AddRegItem(RegItem& item) {
 	if (item.Type == REG_TYPE_PROTECTED_KEY) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
@@ -688,6 +835,16 @@ bool AddRegItem(RegItem& item) {
 	return false;
 }
 
+/*
+* Description:
+* RemoveRegItem is responsible for remove a registry item from the list of protected registry items.
+*
+* Parameters:
+* @item	  [RegItem&] -- Registry item to remove.
+*
+* Returns:
+* @status [bool]	 -- Whether successfully removed or not.
+*/
 bool RemoveRegItem(RegItem& item) {
 	if (item.Type == REG_TYPE_PROTECTED_KEY) {
 		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
