@@ -771,13 +771,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-
 		status = PatchModule(*data);
 		
 		if (status == STATUS_SUCCESS) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Patched %s for process %d.\n", (*data).FunctionName, data->Pid));
+			KdPrint((DRIVER_PREFIX "Patched module %ws and function %s for process %d.\n", (*data).ModuleName, (*data).FunctionName, data->Pid));
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
