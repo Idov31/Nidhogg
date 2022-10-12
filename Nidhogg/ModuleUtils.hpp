@@ -1,10 +1,6 @@
 #pragma once
 #include "pch.h"
 
-// Function declaration.
-PPEB_LDR_DATA GetLDRFromPEB(PPEB peb);
-PVOID GetModuleImageBase(PPEB_LDR_DATA ldr, WCHAR* moduleName);
-
 /*
 * Description:
 * PatchModule is responsible for patching a certain moudle in a certain process.
@@ -20,6 +16,8 @@ NTSTATUS PatchModule(PatchedModule& ModuleToPatch) {
 	PEPROCESS TargetProcess;
 	ULONG oldProtection;
 	SIZE_T outBytes;
+	KAPC_STATE state;
+	UNICODE_STRING moduleName = { 0 };
 	PVOID moduleImageBase = NULL;
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	MEMORY_BASIC_INFORMATION memInfo = { 0 };
@@ -36,25 +34,39 @@ NTSTATUS PatchModule(PatchedModule& ModuleToPatch) {
 	if (PsLookupProcessByProcessId((HANDLE)ModuleToPatch.Pid, &TargetProcess) != STATUS_SUCCESS)
 		return status;
 
-	KeAttachProcess(TargetProcess);
-
-	PPEB targetPeb = dimGlobals.PsGetProcessPeb(TargetProcess);
+	KeStackAttachProcess(TargetProcess, &state);
+	PREALPEB targetPeb = (PREALPEB)dimGlobals.PsGetProcessPeb(TargetProcess);
 
 	if (!targetPeb)
 		goto CleanUp;
 
-	PPEB_LDR_DATA ldr = GetLDRFromPEB(targetPeb);
-
-	for (int i = 0; !ldr && i < 10; i++)
+	for (int i = 0; !targetPeb->LoaderData && i < 10; i++)
 	{
 		KeDelayExecutionThread(KernelMode, TRUE, &time);
 	}
 
-	if (!ldr)
+	if (!targetPeb->LoaderData)
 		goto CleanUp;
 
 	// Getting the module's image base.
-	moduleImageBase = GetModuleImageBase(ldr, ModuleToPatch.ModuleName);
+	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+		pListEntry = pListEntry->Flink) {
+		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (pEntry->FullDllName.Length == 0)
+			continue;
+		
+		/*if (wcisstr(pEntry->FullDllName.Buffer, ModuleToPatch.ModuleName)) {
+			moduleImageBase = pEntry->DllBase;
+			break;
+		}*/
+
+		/*if (_wcsnicmp(pEntry->FullDllName.Buffer, ModuleToPatch.ModuleName, pEntry->FullDllName.Length / sizeof(WCHAR) - 4) == 0) {
+			moduleImageBase = pEntry->DllBase;
+			break;
+		}*/
+	}
 
 	if (!moduleImageBase)
 		goto CleanUp;
@@ -149,138 +161,7 @@ NTSTATUS PatchModule(PatchedModule& ModuleToPatch) {
 	if (success)
 		status = STATUS_SUCCESS;
 CleanUp:
-	KeAttachProcess(TargetProcess);
+	KeUnstackDetachProcess(&state);
 	ObDereferenceObject(TargetProcess);
 	return status;
-}
-
-PPEB_LDR_DATA GetLDRFromPEB(PPEB peb) {
-	PPEB_LDR_DATA ldr = NULL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
-
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		{
-			PPEB_1507 peb1507 = (PPEB_1507)peb;
-			ldr = peb1507->Ldr;
-			break;
-		}
-		case WIN_1511:
-		case WIN_1607:
-		case WIN_1703:
-		{
-			PPEB_1511 peb1511 = (PPEB_1511)peb;
-			ldr = peb1511->Ldr;
-			break;
-		}
-		case WIN_1709:
-		{
-			PPEB_1709 peb1709 = (PPEB_1709)peb;
-			ldr = peb1709->Ldr;
-			break;
-		}
-		case WIN_1803:
-		{
-			PPEB_1803 peb1803 = (PPEB_1803)peb;
-			ldr = peb1803->Ldr;
-			break;
-		}
-		case WIN_1809:
-		{
-			PPEB_1809 peb1809 = (PPEB_1809)peb;
-			ldr = peb1809->Ldr;
-			break;
-		}
-		case WIN_1903:
-		case WIN_1909:
-		case WIN_2004:
-		case WIN_20H2:
-		case WIN_21H1:
-		case WIN_21H2:
-		case WIN_22H2:
-		{
-			PPEB_1903 peb1903 = (PPEB_1903)peb;
-			ldr = peb1903->Ldr;
-			break;
-		}
-		default:
-		{
-			PPEB_WIN11 peb11 = (PPEB_WIN11)peb;
-			ldr = peb11->Ldr;
-			break;
-		}
-		}
-	}
-
-	return ldr;
-}
-
-
-PVOID GetModuleImageBase(PPEB_LDR_DATA ldr, WCHAR* moduleName) {
-	PVOID imageBase = NULL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
-
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		case WIN_1511:
-		{
-			for (PLIST_ENTRY pListEntry = ldr->InLoadOrderModuleList.Flink;
-				pListEntry != &ldr->InLoadOrderModuleList;
-				pListEntry = pListEntry->Flink) {
-				PLDR_DATA_TABLE_ENTRY_1507 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY_1507, InLoadOrderLinks);
-
-				if (wcisstr(pEntry->BaseDllName.Buffer, moduleName)) {
-					imageBase = pEntry->DllBase;
-					break;
-				}
-			}
-			break;
-		}
-		case WIN_1607:
-		case WIN_1703:
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-		case WIN_1903:
-		case WIN_1909:
-		case WIN_2004:
-		case WIN_20H2:
-		case WIN_21H1:
-		case WIN_21H2:
-		case WIN_22H2:
-		{
-			for (PLIST_ENTRY pListEntry = ldr->InLoadOrderModuleList.Flink;
-				pListEntry != &ldr->InLoadOrderModuleList;
-				pListEntry = pListEntry->Flink) {
-				PLDR_DATA_TABLE_ENTRY_1607 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY_1607, InLoadOrderLinks);
-
-				if (wcisstr(pEntry->BaseDllName.Buffer, moduleName)) {
-					imageBase = pEntry->DllBase;
-					break;
-				}
-			}
-			break;
-		}
-		default:
-		{
-			for (PLIST_ENTRY pListEntry = ldr->InLoadOrderModuleList.Flink;
-				pListEntry != &ldr->InLoadOrderModuleList;
-				pListEntry = pListEntry->Flink) {
-				PLDR_DATA_TABLE_ENTRY_WIN11 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY_WIN11, InLoadOrderLinks);
-
-				if (wcisstr(pEntry->BaseDllName.Buffer, moduleName)) {
-					imageBase = pEntry->DllBase;
-					break;
-				}
-			}
-			break;
-		}
-		}
-	}
-
-	return imageBase;
 }
