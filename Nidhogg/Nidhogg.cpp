@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "Nidhogg.h"
 #include "NidhoggUtils.h"
 
 extern "C"
@@ -8,7 +7,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	pGlobals.Init();
 	fGlobals.Init();
 	rGlobals.Init();
-	pmGlobals.Init();
 	dimGlobals.Init();
 
 	// Setting up the device object.
@@ -68,8 +66,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 		return status;
 	}
 
-	status = PsSetLoadImageNotifyRoutine(OnImageLoad);
-
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to register image notify callback: (0x%08X)\n", status));
 
@@ -86,8 +82,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to register registry callback: (0x%08X)\n", status));
-
-		PsRemoveLoadImageNotifyRoutine(OnImageLoad);
 
 		if (registrationHandle) {
 			ObUnRegisterCallbacks(registrationHandle);
@@ -125,8 +119,6 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to unregister registry callbacks: (0x%08X)\n", status));
 	}
-
-	status = PsRemoveLoadImageNotifyRoutine(OnImageLoad);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to unregister image load callback: (0x%08X)\n", status));
@@ -773,64 +765,22 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (PatchedModule*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (strlen((*data).FunctionName) == 0 || wcslen((*data).ModuleName) == 0 || strlen((char*)(*data).Patch) == 0) {
+		if (strlen((*data).FunctionName) == 0 || wcslen((*data).ModuleName) == 0 || strlen((*data).Patch) == 0 || 
+			data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		AutoLock locker(pmGlobals.Lock);
-
-		if (pmGlobals.ModulesList.PatchedModulesCount == MAX_PATCHED_MODULES) {
-			KdPrint((DRIVER_PREFIX "Module list is full.\n"));
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
-
-		if (!FindModule(*data)) {
-			if (!AddModule(*data)) {
-				KdPrint((DRIVER_PREFIX "Failed to add module.\n"));
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			
+		status = PatchModule(*data);
+		
+		if (status == STATUS_SUCCESS) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Patching module %ws.\n", (*data).ModuleName));
+			KdPrint((DRIVER_PREFIX "Patched %s for process %d.\n", (*data).FunctionName, data->Pid));
 			KeRaiseIrql(prevIrql, &prevIrql);
-			break;
-		}
-	}
-
-	case IOCTL_NIDHOGG_UNPATCH_MODULE:
-	{
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
-
-		if (size % sizeof(PatchedModule) != 0) {
-			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
-			status = STATUS_INVALID_BUFFER_SIZE;
-			break;
 		}
 
-		auto data = (PatchedModule*)Irp->AssociatedIrp.SystemBuffer;
-
-		if (strlen((*data).FunctionName) == 0 || wcslen((*data).ModuleName) == 0) {
-			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		AutoLock locker(pmGlobals.Lock);
-
-		if (!RemoveModule(*data)) {
-			KdPrint((DRIVER_PREFIX "Module not found.\n"));
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Removed patched module %ws.\n", (*data).ModuleName));
-		KeRaiseIrql(prevIrql, &prevIrql);
 		break;
 	}
 
@@ -887,19 +837,4 @@ void ClearAll() {
 		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
 	}
 	rGlobals.ProtectedItems.Values.ValuesCount = 0;
-	
-	AutoLock moduleLocker(pmGlobals.Lock);
-	
-	for (int i = 0; i < pmGlobals.ModulesList.PatchedModulesCount; i++) {
-		if (pmGlobals.ModulesList.Modules[i].FunctionName)
-			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].FunctionName, DRIVER_TAG);
-		if (pmGlobals.ModulesList.Modules[i].ModuleName)
-			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].ModuleName, DRIVER_TAG);
-		if (pmGlobals.ModulesList.Modules[i].Patch)
-			ExFreePoolWithTag(pmGlobals.ModulesList.Modules[i].Patch, DRIVER_TAG);
-		pmGlobals.ModulesList.Modules[i].FunctionName = nullptr;
-		pmGlobals.ModulesList.Modules[i].ModuleName = nullptr;
-		pmGlobals.ModulesList.Modules[i].Patch = nullptr;
-	}
-	pmGlobals.ModulesList.PatchedModulesCount = 0;
 }

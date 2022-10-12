@@ -114,17 +114,17 @@ ULONG GetActiveProcessLinksOffset() {
 
 	if (NT_SUCCESS(result)) {
 		switch (osVersion.dwBuildNumber) {
-		case 10240:
-		case 10586:
-		case 14393:
-		case 18362:
-		case 18363:
+		case WIN_1507:
+		case WIN_1511:
+		case WIN_1607:
+		case WIN_1903:
+		case WIN_1909:
 			activeProcessLinks = 0x2f0;
 			break;
-		case 15063:
-		case 16299:
-		case 17134:
-		case 17763:
+		case WIN_1703:
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
 			activeProcessLinks = 0x2e8;
 			break;
 		default:
@@ -241,17 +241,17 @@ UINT64 GetTokenOffset() {
 
 	if (NT_SUCCESS(result)) {
 		switch (osVersion.dwBuildNumber) {
-		case 18362:
-		case 18363:
+		case WIN_1903:
+		case WIN_1909:
 			tokenOffset = 0x360;
 			break;
-		case 10240:
-		case 10586:
-		case 14393:
-		case 15063:
-		case 16299:
-		case 17134:
-		case 17763:
+		case WIN_1507:
+		case WIN_1511:
+		case WIN_1607:
+		case WIN_1703:
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
 			tokenOffset = 0x358;
 			break;
 		default:
