@@ -771,7 +771,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = PatchModule(*data);
+		status = PatchModule(data);
 		
 		if (status == STATUS_SUCCESS) {
 			auto prevIrql = KeGetCurrentIrql();
