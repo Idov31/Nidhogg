@@ -49,9 +49,6 @@
     <ClInclude Include="NidhoggUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NidhoggHelperFunctions.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">

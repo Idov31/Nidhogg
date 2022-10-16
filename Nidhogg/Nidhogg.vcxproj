@@ -197,7 +197,6 @@
     <ClInclude Include="FileUtils.hpp" />
     <ClInclude Include="ModuleUtils.hpp" />
     <ClInclude Include="Nidhogg.h" />
-    <ClInclude Include="NidhoggHelperFunctions.hpp" />
     <ClInclude Include="NidhoggUtils.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessUtils.hpp" />
