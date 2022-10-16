@@ -143,7 +143,6 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 
 	SIZE_T patchLen = (SIZE_T)ModuleToPatch->PatchLength;
 	PVOID functionAddressToProtect = functionAddress;
-	KdPrint((DRIVER_PREFIX "functionAddressToProtect is %p functionAddress is %p.\n", functionAddressToProtect, functionAddress));
 	status = dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &functionAddressToProtect, &patchLen, PAGE_EXECUTE_READWRITE, &oldProtection);
 
 	if (status != STATUS_SUCCESS) {
@@ -152,7 +151,6 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 		goto CleanUp;
 	}
 	ZwClose(hTargetProcess);
-	KdPrint((DRIVER_PREFIX "functionAddressToProtect is %p functionAddress is %p.\n", functionAddressToProtect, functionAddress));
 
 	// Patching the function.
 	patchLen = (SIZE_T)ModuleToPatch->PatchLength;
@@ -166,7 +164,6 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess) == STATUS_SUCCESS) {
 		dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &functionAddressToProtect, &patchLen, oldProtection, &oldProtection);
 		ZwClose(hTargetProcess);
-		KdPrint((DRIVER_PREFIX "Everything is OK.\n"));
 	}
 
 CleanUp:
