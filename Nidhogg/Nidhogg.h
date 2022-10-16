@@ -17,7 +17,7 @@
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -53,6 +53,7 @@ typedef PPEB(NTAPI* tPsGetProcessPeb)(PEPROCESS Process);
 // Globals.
 PVOID registrationHandle = NULL;
 
+// --- ModuleUtils structs ----------------------------------------------------
 struct DynamicImportedModulesGlobal {
 	tZwProtectVirtualMemory ZwProtectVirtualMemory;
 	tMmCopyVirtualMemory	MmCopyVirtualMemory;
@@ -72,27 +73,45 @@ DynamicImportedModulesGlobal dimGlobals;
 
 struct PatchedModule {
 	ULONG Pid;
-	CHAR* Patch;
+	PVOID Patch;
+	ULONG PatchLength;
 	CHAR* FunctionName;
 	WCHAR* ModuleName;
+};
+// ----------------------------------------------------------------------------
+
+// --- ProcessUtils structs ---------------------------------------------------
+struct Process {
+	int type;
+	ULONG ProcessPid;
+	ULONG SpoofedPid;
+};
+
+struct SpoofedProcessesList {
+	int PidsCount;
+	Process* Processes[MAX_PIDS];
 };
 
 struct ProcessesList {
 	int PidsCount;
-	ULONG Pids[MAX_PIDS];
+	ULONG Processes[MAX_PIDS];
 };
 
 struct ProcessGlobals {
-	ProcessesList Processes;
+	ProcessesList ProtectedProcesses;
+	SpoofedProcessesList SpoofedProcesses;
 	FastMutex Lock;
 
 	void Init() {
-		Processes.PidsCount = 0;
+		ProtectedProcesses.PidsCount = 0;
+		SpoofedProcesses.PidsCount = 0;
 		Lock.Init();
 	}
 };
 ProcessGlobals pGlobals;
+// ----------------------------------------------------------------------------
 
+// --- FilesUtils structs -----------------------------------------------------
 struct FileItem {
 	int FileIndex;
 	WCHAR FilePath[MAX_PATH];
@@ -113,7 +132,9 @@ struct FileGlobals {
 	}
 };
 FileGlobals fGlobals;
+// ----------------------------------------------------------------------------
 
+// --- RegistryUtils structs --------------------------------------------------
 struct RegItem {
 	int RegItemsIndex;
 	ULONG Type;
@@ -152,3 +173,4 @@ struct RegistryGlobals {
 	}
 };
 RegistryGlobals rGlobals;
+// ----------------------------------------------------------------------------
