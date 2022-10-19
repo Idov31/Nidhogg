@@ -31,9 +31,15 @@ UINT64 GetTokenOffset();
 * Returns:
 * @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
 */
-OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info) {
+	UNREFERENCED_PARAMETER(RegistrationContext);
+
 	Process process;
+
 	if (Info->KernelHandle)
+		return OB_PREOP_SUCCESS;
+
+	if (pGlobals.ProtectedProcesses.PidsCount == 0)
 		return OB_PREOP_SUCCESS;
 
 	auto Process = (PEPROCESS)Info->Object;
@@ -42,7 +48,7 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_P
 	process.ProcessPid = pid;
 	process.type = PROCESS_TYPE_PROTECTED;
 
-	AutoLock locker(pGlobals.Lock);
+	AutoLock locker(pGlobals.ProtectedProcesses.Lock);
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
 	if (FindProcess(&process) != PROCESS_NOT_FOUND) {
@@ -56,22 +62,41 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_P
 	return OB_PREOP_SUCCESS;
 }
 
+/*
+* Description:
+* OnProcessNotify is responsible for handling process creation / deletion operations and perform operations on them.
+*
+* Parameters:
+* @LoadedProcess [PEPROCESS]			  -- Unused.
+* @ProcessId	 [HANDLE]				  -- Created process pid.
+* @CreateInfo    [PPS_CREATE_NOTIFY_INFO] -- Contains information about created process.
+*
+* Returns:
+* There is no return value.
+*/
 void OnProcessNotify(PEPROCESS LoadedProcess, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo) {
 	UNREFERENCED_PARAMETER(LoadedProcess);
 
 	int index;
 	Process process;
 
+	if (pGlobals.SpoofedProcesses.PidsCount == 0)
+		return;
+
+	AutoLock locker(pGlobals.SpoofedProcesses.Lock);
+
 	if (CreateInfo) {
 		process.ProcessPid = (ULONG)ProcessId;
 		process.SpoofedPid = (ULONG)CreateInfo->ParentProcessId;
 		process.type = PROCESS_TYPE_SPOOFED;
 
+		KdPrint((DRIVER_PREFIX "PID is %d ParentProcessId is %d.\n", process.ProcessPid, process.SpoofedPid));
+
 		index = FindProcess(&process);
 
 		if (index != PROCESS_NOT_FOUND) {
 			CreateInfo->ParentProcessId = (HANDLE)pGlobals.SpoofedProcesses.Processes[index]->SpoofedPid;
-			KdPrint((DRIVER_PREFIX "Spoofed PID for %d.\n", (ULONG)ProcessId));
+			KdPrint((DRIVER_PREFIX "PPID should be spoofed now.\n"));
 		}
 	}
 }
@@ -206,12 +231,20 @@ bool AddProcess(Process* process) {
 				return true;
 			}
 	}
+	// NEED TO PROPERLY ALLOCATE DATA TO AVOID BSOD.
 	else if (process->type == PROCESS_TYPE_SPOOFED) {
 		for (int i = 0; i < MAX_PIDS; i++)
 			if (pGlobals.SpoofedProcesses.Processes[i] == nullptr || pGlobals.SpoofedProcesses.Processes[i]->ProcessPid == 0) {
+				pGlobals.SpoofedProcesses.Processes[i] = (Process*)ExAllocatePoolWithTag(PagedPool, sizeof(Process), DRIVER_TAG);
+
+				// Not enough resources.
+				if (!pGlobals.SpoofedProcesses.Processes[i]) {
+					break;
+				}
+				
 				pGlobals.SpoofedProcesses.Processes[i]->ProcessPid = process->ProcessPid;
 				pGlobals.SpoofedProcesses.Processes[i]->SpoofedPid = process->SpoofedPid;
-				pGlobals.ProtectedProcesses.PidsCount++;
+				pGlobals.SpoofedProcesses.PidsCount++;
 				return true;
 			}
 	}
@@ -231,7 +264,7 @@ bool AddProcess(Process* process) {
 bool RemoveProcess(Process* process) {
 	if (process->type == PROCESS_TYPE_PROTECTED) {
 		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.ProtectedProcesses.Processes[i] == 0) {
+			if (pGlobals.ProtectedProcesses.Processes[i] == process->ProcessPid) {
 				pGlobals.ProtectedProcesses.Processes[i] = 0;
 				pGlobals.ProtectedProcesses.PidsCount--;
 				return true;
@@ -239,10 +272,10 @@ bool RemoveProcess(Process* process) {
 	}
 	else if (process->type == PROCESS_TYPE_SPOOFED) {
 		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.SpoofedProcesses.Processes[i] == nullptr) {
-				pGlobals.SpoofedProcesses.Processes[i]->ProcessPid = 0;
-				pGlobals.SpoofedProcesses.Processes[i]->SpoofedPid = 0;
-				pGlobals.ProtectedProcesses.PidsCount--;
+			if (pGlobals.SpoofedProcesses.Processes[i]->ProcessPid == process->ProcessPid) {
+				ExFreePoolWithTag(pGlobals.SpoofedProcesses.Processes[i], DRIVER_TAG);
+				pGlobals.SpoofedProcesses.Processes[i] = nullptr;
+				pGlobals.SpoofedProcesses.PidsCount--;
 				return true;
 			}
 	}
@@ -308,11 +341,11 @@ void RemoveProcessLinks(PLIST_ENTRY current) {
 	*
 	* To:
 	*
-	*   | ----------------------------------
-	*   v										|
+	*   | ------------------------------
+	*   v							   |
 	* Prev        Current            Next
-	*   |									   ^
-	*   ---------------------------------- |
+	*   |							   ^
+	*   -------------------------------|
 	*/
 
 	previous = (current->Blink);
