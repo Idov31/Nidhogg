@@ -6,7 +6,7 @@
 * PatchModule is responsible for patching a certain moudle in a certain process.
 *
 * Parameters:
-* @ModuleToPatch [PatchedModule&] -- All the information regarding the Module that needs to be patched.
+* @ModuleToPatch [PatchedModule*] -- All the information regarding the Module that needs to be patched.
 *
 * Returns:
 * @status		 [NTSTATUS]		  -- Whether successfuly patched or not.
@@ -23,12 +23,6 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = -100ll * 10 * 1000;
-
-	// Validate that the required functions are loaded correctly.
-	if (!dimGlobals.ZwProtectVirtualMemory || !dimGlobals.MmCopyVirtualMemory) {
-		KdPrint((DRIVER_PREFIX "Failed to get critical functions.\n"));
-		return status;
-	}
 
 	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
 	WCHAR* moduleName = (WCHAR*)ExAllocatePool(PagedPool, (wcslen(ModuleToPatch->ModuleName) + 1) * sizeof(WCHAR));
@@ -145,7 +139,7 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 	PVOID functionAddressToProtect = functionAddress;
 	status = dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &functionAddressToProtect, &patchLen, PAGE_EXECUTE_READWRITE, &oldProtection);
 
-	if (status != STATUS_SUCCESS) {
+	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to change protection, (0x%08X).\n", status));
 		ZwClose(hTargetProcess);
 		goto CleanUp;
@@ -157,7 +151,7 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 	
 	status = dimGlobals.MmCopyVirtualMemory(PsGetCurrentProcess(), ModuleToPatch->Patch, TargetProcess, functionAddress, patchLen, KernelMode, &written);
 
-	if (status != STATUS_SUCCESS)
+	if (!NT_SUCCESS(status))
 		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
 
 	// Restoring permissions and cleaning up.
