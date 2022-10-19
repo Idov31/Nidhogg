@@ -1,45 +1,46 @@
 #pragma once
 #include "pch.h"
 
+// Definitions.
+PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
+PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
+NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+
 /*
 * Description:
 * PatchModule is responsible for patching a certain moudle in a certain process.
 *
 * Parameters:
-* @ModuleToPatch [PatchedModule*] -- All the information regarding the Module that needs to be patched.
+* @ModuleInformation [PatchedModule*] -- All the information regarding the module that needs to be patched.
 *
 * Returns:
-* @status		 [NTSTATUS]		  -- Whether successfuly patched or not.
+* @status			 [NTSTATUS]		  -- Whether successfuly patched or not.
 */
-NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
-	HANDLE hTargetProcess;
+NTSTATUS PatchModule(PatchedModule* ModuleInformation) {
 	PEPROCESS TargetProcess;
-	ULONG oldProtection;
 	KAPC_STATE state;
-	SIZE_T written;
 
 	PVOID functionAddress = NULL;
 	PVOID moduleImageBase = NULL;
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	LARGE_INTEGER time = { 0 };
-	time.QuadPart = -100ll * 10 * 1000;
 
 	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
-	WCHAR* moduleName = (WCHAR*)ExAllocatePool(PagedPool, (wcslen(ModuleToPatch->ModuleName) + 1) * sizeof(WCHAR));
+	WCHAR* moduleName = (WCHAR*)ExAllocatePool(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
 
 	if (!moduleName)
 		return status;
-	memcpy(moduleName, ModuleToPatch->ModuleName, (wcslen(ModuleToPatch->ModuleName) + 1) * sizeof(WCHAR));
+	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
 
-	CHAR* functionName = (CHAR*)ExAllocatePool(PagedPool, strlen(ModuleToPatch->FunctionName) + 1);
+	CHAR* functionName = (CHAR*)ExAllocatePool(PagedPool, strlen(ModuleInformation->FunctionName) + 1);
 
 	if (!functionName) {
 		ExFreePool(moduleName);
 		return status;
 	}
-	memcpy(functionName, ModuleToPatch->FunctionName, strlen(ModuleToPatch->FunctionName) + 1);
+	memcpy(functionName, ModuleInformation->FunctionName, strlen(ModuleInformation->FunctionName) + 1);
 
-	if (PsLookupProcessByProcessId((HANDLE)ModuleToPatch->Pid, &TargetProcess) != STATUS_SUCCESS) {
+	if (PsLookupProcessByProcessId((HANDLE)ModuleInformation->Pid, &TargetProcess) != STATUS_SUCCESS) {
 		ExFreePool(functionName);
 		ExFreePool(moduleName);
 		return status;
@@ -47,12 +48,155 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 
 	// Getting the PEB.
 	KeStackAttachProcess(TargetProcess, &state);
-	PREALPEB targetPeb = (PREALPEB)dimGlobals.PsGetProcessPeb(TargetProcess);
+	moduleImageBase = GetModuleBase(TargetProcess, moduleName);
+
+	if (!moduleImageBase) {
+		KdPrint((DRIVER_PREFIX "Failed to get image base.\n"));
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+
+	functionAddress = GetFunctionAddress(moduleImageBase, functionName);
+
+	if (!functionAddress) {
+		KdPrint((DRIVER_PREFIX "Failed to get function's address.\n"));
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+	KeUnstackDetachProcess(&state);
+
+	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
+
+	if (!NT_SUCCESS(status))
+		KdPrint((DRIVER_PREFIX "Failed to patch function, (0x%08X).\n", status));
+
+CleanUp:
+	ExFreePool(moduleName);
+	ExFreePool(functionName);
+	ObDereferenceObject(TargetProcess);
+	return status;
+}
+
+/*
+* Description:
+* KeWriteProcessMemory is responsible for writing data to any target process.
+*
+* Parameters:
+* @sourceDataAddress [PVOID]	 -- The address of data to write.
+* @TargetProcess	 [PEPROCESS] -- Target process to write.
+* @targetAddress	 [PVOID]	 -- Target address to write.
+* @dataSize			 [SIZE_T]	 -- Size of data to write.
+* @mode			     [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
+*
+* Returns:
+* @status			 [NTSTATUS]	 -- Whether successfuly written or not.
+*/
+NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+	HANDLE hTargetProcess;
+	ULONG oldProtection;
+	SIZE_T patchLen;
+	SIZE_T bytesWritten;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (mode != KernelMode && mode != UserMode) {
+		KdPrint((DRIVER_PREFIX "Invalid mode.\n"));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	// Making sure that the given kernel mode address is valid.
+	if (mode == KernelMode && !MmIsAddressValid(sourceDataAddress)) {
+		status = STATUS_UNSUCCESSFUL;
+		KdPrint((DRIVER_PREFIX "Source address isn't valid.\n"));
+		return status;
+	}
+
+	// Adding write permissions.
+	status = ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "Failed to get process to handle.\n"));
+		return status;
+	}
+
+	patchLen = dataSize;
+	PVOID addressToProtect = targetAddress;
+	status = dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, PAGE_READWRITE, &oldProtection);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "Failed to change protection, (0x%08X).\n", status));
+		ZwClose(hTargetProcess);
+		return status;
+	}
+	ZwClose(hTargetProcess);
+
+	// Writing the data.
+	status = dimGlobals.MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
+
+	if (!NT_SUCCESS(status))
+		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
+
+	// Restoring permissions and cleaning up.
+	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess) == STATUS_SUCCESS) {
+		patchLen = dataSize;
+		dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
+		ZwClose(hTargetProcess);
+	}
+
+	return status;
+}
+
+/*
+* Description:
+* KeReadProcessMemory is responsible for read data from any target process.
+*
+* Parameters:
+* @Process		 [PEPROCESS] -- Process to read data from.
+* @sourceAddress [PVOID]	 -- Address to read data from.
+* @targetAddress [PVOID]     -- Address to read data to.
+* @dataSize		 [SIZE_T]	 -- Size of data to read.
+* @mode			 [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
+*
+* Returns:
+* @status		 [NTSTATUS]	 -- Whether successfuly read or not.
+*/
+NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+	SIZE_T bytesRead;
+
+	if (mode != KernelMode && mode != UserMode) {
+		KdPrint((DRIVER_PREFIX "Invalid mode.\n"));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	// Making sure that the given kernel mode address is valid.
+	if (mode == KernelMode && !MmIsAddressValid(targetAddress)) {
+		KdPrint((DRIVER_PREFIX "Target address isn't valid.\n"));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	return dimGlobals.MmCopyVirtualMemory(Process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
+}
+
+/*
+* Description:
+* GetModuleBase is responsible for getting the base address of given module inside a given process.
+*
+* Parameters:
+* @Process    [PEPROCESS] -- The process to search on.
+* @moduleName [WCHAR*]	  -- Module's name to search.
+*
+* Returns:
+* @moduleBase [PVOID]	  -- Base address of the module if found, else null.
+*/
+PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
+	PVOID moduleBase = NULL;
+	LARGE_INTEGER time = { 0 };
+	time.QuadPart = -100ll * 10 * 1000;
+
+	PREALPEB targetPeb = (PREALPEB)dimGlobals.PsGetProcessPeb(Process);
 
 	if (!targetPeb) {
 		KdPrint((DRIVER_PREFIX "Failed to get PEB.\n"));
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		return moduleBase;
 	}
 
 	for (int i = 0; !targetPeb->LoaderData && i < 10; i++)
@@ -62,8 +206,7 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 
 	if (!targetPeb->LoaderData) {
 		KdPrint((DRIVER_PREFIX "Failed to get LDR.\n"));
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		return moduleBase;
 	}
 
 	// Getting the module's image base.
@@ -74,95 +217,62 @@ NTSTATUS PatchModule(PatchedModule* ModuleToPatch) {
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 		if (_wcsnicmp(pEntry->FullDllName.Buffer, moduleName, pEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-			moduleImageBase = pEntry->DllBase;
+			moduleBase = pEntry->DllBase;
 			break;
 		}
 	}
 
-	if (!moduleImageBase) {
-		KdPrint((DRIVER_PREFIX "Failed to get image base.\n"));
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
-	}
+	return moduleBase;
+}
 
-	// Validating module.
-	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)moduleImageBase;
+/*
+* Description:
+* GetFunctionAddress is responsible for getting the function address inside given module from its EAT.
+*
+* Parameters:
+* @moduleBase      [PVOID] -- Module's image base address.
+* @functionName    [CHAR*] -- Function name to search.
+*
+* Returns:
+* @functionAddress [PVOID] -- Function address if found, else null.
+*/
+PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
+	PVOID functionAddress = NULL;
+	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)moduleBase;
 
 	// Checking that the image is valid PE file.
 	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		KdPrint((DRIVER_PREFIX "DOS signature isn't valid.\n"));
+		return functionAddress;
 	}
 
-	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)moduleImageBase + dosHeader->e_lfanew);
+	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)moduleBase + dosHeader->e_lfanew);
 
 	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		KdPrint((DRIVER_PREFIX "NT signature isn't valid.\n"));
+		return functionAddress;
 	}
 
 	IMAGE_OPTIONAL_HEADER optionalHeader = ntHeaders->OptionalHeader;
 
 	if (optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0) {
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		KdPrint((DRIVER_PREFIX "There are no exports.\n"));
+		return functionAddress;
 	}
 
 	// Iterating the export directory.
-	PIMAGE_EXPORT_DIRECTORY exportDirectory = (PIMAGE_EXPORT_DIRECTORY)((PUCHAR)moduleImageBase + optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+	PIMAGE_EXPORT_DIRECTORY exportDirectory = (PIMAGE_EXPORT_DIRECTORY)((PUCHAR)moduleBase + optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 
-	DWORD* addresses = (DWORD*)((PUCHAR)moduleImageBase + exportDirectory->AddressOfFunctions);
-	WORD* ordinals = (WORD*)((PUCHAR)moduleImageBase + exportDirectory->AddressOfNameOrdinals);
-	DWORD* names = (DWORD*)((PUCHAR)moduleImageBase + exportDirectory->AddressOfNames);
+	DWORD* addresses = (DWORD*)((PUCHAR)moduleBase + exportDirectory->AddressOfFunctions);
+	WORD* ordinals = (WORD*)((PUCHAR)moduleBase + exportDirectory->AddressOfNameOrdinals);
+	DWORD* names = (DWORD*)((PUCHAR)moduleBase + exportDirectory->AddressOfNames);
 
 	for (DWORD j = 0; j < exportDirectory->NumberOfNames; j++) {
-		if (_stricmp((char*)((PUCHAR)moduleImageBase + names[j]), functionName) == 0) {
-			functionAddress = (PUCHAR)moduleImageBase + addresses[ordinals[j]];
+		if (_stricmp((char*)((PUCHAR)moduleBase + names[j]), functionName) == 0) {
+			functionAddress = (PUCHAR)moduleBase + addresses[ordinals[j]];
 			break;
 		}
 	}
 
-	if (!functionAddress) {
-		KdPrint((DRIVER_PREFIX "Failed to get function's address.\n"));
-		KeUnstackDetachProcess(&state);
-		goto CleanUp;
-	}
-	KeUnstackDetachProcess(&state);
-
-	// Adding write permissions.
-	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess) != STATUS_SUCCESS) {
-		KdPrint((DRIVER_PREFIX "Failed to get process to handle.\n"));
-		goto CleanUp;
-	}
-
-	SIZE_T patchLen = (SIZE_T)ModuleToPatch->PatchLength;
-	PVOID functionAddressToProtect = functionAddress;
-	status = dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &functionAddressToProtect, &patchLen, PAGE_EXECUTE_READWRITE, &oldProtection);
-
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to change protection, (0x%08X).\n", status));
-		ZwClose(hTargetProcess);
-		goto CleanUp;
-	}
-	ZwClose(hTargetProcess);
-
-	// Patching the function.
-	patchLen = (SIZE_T)ModuleToPatch->PatchLength;
-	
-	status = dimGlobals.MmCopyVirtualMemory(PsGetCurrentProcess(), ModuleToPatch->Patch, TargetProcess, functionAddress, patchLen, KernelMode, &written);
-
-	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
-
-	// Restoring permissions and cleaning up.
-	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess) == STATUS_SUCCESS) {
-		dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &functionAddressToProtect, &patchLen, oldProtection, &oldProtection);
-		ZwClose(hTargetProcess);
-	}
-
-CleanUp:
-	ExFreePool(moduleName);
-	ExFreePool(functionName);
-	ObDereferenceObject(TargetProcess);
-	return status;
+	return functionAddress;
 }

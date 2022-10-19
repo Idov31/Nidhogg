@@ -9,10 +9,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	rGlobals.Init();
 	dimGlobals.Init();
 
-	if (!dimGlobals.ZwProtectVirtualMemory || !dimGlobals.MmCopyVirtualMemory) {
+	if (!dimGlobals.MmCopyVirtualMemory)
+		Features.ReadData = false;
+
+	if (!dimGlobals.ZwProtectVirtualMemory || !Features.ReadData)
+		Features.WriteData = false;
+
+	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
 		Features.FunctionPatching = false;
-		return status;
-	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -79,14 +83,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 		Features.RegistryFeatures = false;
 	}
 
-	status = PsSetCreateProcessNotifyRoutineEx(OnProcessNotify, FALSE);
-
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to register create process callback: (0x%08X)\n", status));
-		status = STATUS_SUCCESS;
-		Features.PPIDSpoofing = false;
-	}
-
 	// Setting up functions.
 	DriverObject->DriverUnload = NidhoggUnload;
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = NidhoggCreateClose;
@@ -109,13 +105,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	KdPrint((DRIVER_PREFIX "Unloading...\n"));
 
-	NTSTATUS status = PsSetCreateProcessNotifyRoutineEx(OnProcessNotify, TRUE);
-
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to unregister create process callback: (0x%08X)\n", status));
-	}
-
-	status = CmUnRegisterCallback(rGlobals.RegCookie);
+	NTSTATUS status = CmUnRegisterCallback(rGlobals.RegCookie);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "failed to unregister registry callbacks: (0x%08X)\n", status));
@@ -193,62 +183,40 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		
-		if (size % sizeof(Process) != 0) {
+		if (size % sizeof(ULONG) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (Process*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (data == nullptr) {
+		if (data <= 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-
-		if ((data->type != PROCESS_TYPE_PROTECTED && data->type != PROCESS_TYPE_SPOOFED) ||
-			(data->type == PROCESS_TYPE_PROTECTED && data->ProcessPid <= 0) ||
-			(data->type == PROCESS_TYPE_SPOOFED && data->ProcessPid <= 0 && data->SpoofedPid <= 0)) {
-			status = STATUS_INVALID_PARAMETER;
+		
+		if (!Features.ProcessProtection) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
+		AutoLock locker(pGlobals.Lock);
 
-		if (data->type == PROCESS_TYPE_PROTECTED) {
-			if (!Features.ProcessProtection) {
-				KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			AutoLock locker(pGlobals.ProtectedProcesses.Lock);
-		}
-		else {
-			if (!Features.PPIDSpoofing) {
-				KdPrint((DRIVER_PREFIX "Due to previous error, PPID spoofing feature is unavaliable.\n"));
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			AutoLock locker(pGlobals.SpoofedProcesses.Lock);
-		}
-
-		if (FindProcess(data) != PROCESS_NOT_FOUND)
-			break;
-
-		if ((data->type == PROCESS_TYPE_PROTECTED && pGlobals.ProtectedProcesses.PidsCount == MAX_PIDS) ||
-			(data->type == PROCESS_TYPE_SPOOFED) && pGlobals.SpoofedProcesses.PidsCount == MAX_PIDS) {
+		if (pGlobals.ProtectedProcesses.PidsCount == MAX_PIDS) {
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
 		}
 
-		if (!AddProcess(data)) {
+		if (FindProcess(*data))
+			break;
+
+		if (!AddProcess(*data)) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		if (data->type == PROCESS_TYPE_PROTECTED)
-			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", data->ProcessPid));
-		else
-			KdPrint((DRIVER_PREFIX "Spoofing child processes of %d.\n", data->ProcessPid));
-
-		len += sizeof(Process);
+		KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -257,58 +225,44 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(Process) != 0) {
+		if (size % sizeof(ULONG) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (Process*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (data == nullptr) {
+		if (data <= 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if ((data->type != PROCESS_TYPE_PROTECTED && data->type != PROCESS_TYPE_SPOOFED) ||
-			(data->type == PROCESS_TYPE_PROTECTED && data->ProcessPid <= 0) ||
-			(data->type == PROCESS_TYPE_SPOOFED && data->ProcessPid <= 0 && data->SpoofedPid <= 0)) {
-			status = STATUS_INVALID_PARAMETER;
+		if (!Features.ProcessProtection) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		if (data->type == PROCESS_TYPE_PROTECTED) {
-			if (!Features.ProcessProtection) {
-				KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			AutoLock locker(pGlobals.ProtectedProcesses.Lock);
+		if (!Features.ProcessProtection) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
 		}
-		else {
-			if (!Features.PPIDSpoofing) {
-				KdPrint((DRIVER_PREFIX "Due to previous error, PPID spoofing feature is unavaliable.\n"));
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			AutoLock locker(pGlobals.SpoofedProcesses.Lock);
-		}
+		AutoLock locker(pGlobals.Lock);
 
-		if ((data->type == PROCESS_TYPE_PROTECTED && pGlobals.ProtectedProcesses.PidsCount == 0) ||
-			(data->type == PROCESS_TYPE_SPOOFED) && pGlobals.SpoofedProcesses.PidsCount == 0) {
+		if (pGlobals.ProtectedProcesses.PidsCount == 0) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (!RemoveProcess(data)) {
+		if (!RemoveProcess(*data)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (data->type == PROCESS_TYPE_PROTECTED)
-			KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->ProcessPid));
-		else
-			KdPrint((DRIVER_PREFIX "Unspoofing child processes of %d.\n", data->ProcessPid));
-		len += sizeof(Process);
+		
+		KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", *data));
+		len += sizeof(ULONG);
 
 		break;
 	}
@@ -320,27 +274,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		AutoLock locker(pGlobals.ProtectedProcesses.Lock);
+		AutoLock locker(pGlobals.Lock);
 		memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
 		pGlobals.ProtectedProcesses.PidsCount = 0;
-		break;
-	}
-
-	case IOCTL_NIDHOGG_CLEAR_PROCESS_SPOOFING:
-	{
-		if (!Features.PPIDSpoofing) {
-			KdPrint((DRIVER_PREFIX "Due to previous error, PPID spoofing feature is unavaliable.\n"));
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-		AutoLock locker(pGlobals.SpoofedProcesses.Lock);
-
-		for (int i = 0; i < pGlobals.SpoofedProcesses.PidsCount; i++) {
-			ExFreePoolWithTag(pGlobals.SpoofedProcesses.Processes[i], DRIVER_TAG);
-			pGlobals.SpoofedProcesses.Processes[i] = nullptr;
-		}
-
-		pGlobals.SpoofedProcesses.PidsCount = 0;
 		break;
 	}
 
@@ -410,7 +346,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ProcessesList*)Irp->AssociatedIrp.SystemBuffer;
 
-		AutoLock locker(pGlobals.ProtectedProcesses.Lock);
+		AutoLock locker(pGlobals.Lock);
 		data->PidsCount = pGlobals.ProtectedProcesses.PidsCount;
 
 		for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++) {
@@ -918,6 +854,86 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
+	case IOCTL_NIDHOGG_WRITE_DATA:
+	{
+		PEPROCESS TargetProcess;
+
+		if (!Features.WriteData) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, write data feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PkgReadWriteData) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &TargetProcess);
+
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
+			break;
+		}
+
+		status = KeWriteProcessMemory(data->LocalAddress, TargetProcess, data->RemoteAddress, data->Size, data->Mode);
+
+		ObDereferenceObject(TargetProcess);
+		len += sizeof(PkgReadWriteData);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_READ_DATA:
+	{
+		PEPROCESS Process;
+
+		if (!Features.ReadData) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, read data feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PkgReadWriteData) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &Process);
+
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
+			break;
+		}
+
+		status = KeReadProcessMemory(Process, data->RemoteAddress, data->LocalAddress, data->Size, data->Mode);
+
+		ObDereferenceObject(Process);
+		len += sizeof(PkgReadWriteData);
+		break;
+	}
+
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;
@@ -941,8 +957,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 */
 void ClearAll() {
 	// Clearing the process array.
-	AutoLock processProtectingLocker(pGlobals.ProtectedProcesses.Lock);
-	AutoLock processSpoofingLocker(pGlobals.SpoofedProcesses.Lock);
+	AutoLock processProtectingLocker(pGlobals.Lock);
 
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -956,13 +971,6 @@ void ClearAll() {
 	memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
 	pGlobals.ProtectedProcesses.PidsCount = 0;
 >>>>>>> 39effc7 (PPID Spoofing initial)
-
-	for (int i = 0; i < pGlobals.SpoofedProcesses.PidsCount; i++) {
-		ExFreePoolWithTag(pGlobals.SpoofedProcesses.Processes[i], DRIVER_TAG);
-		pGlobals.SpoofedProcesses.Processes[i] = nullptr;
-	}
-
-	pGlobals.SpoofedProcesses.PidsCount = 0;
 
 	// Clearing the files array.
 	AutoLock filesLocker(fGlobals.Lock);

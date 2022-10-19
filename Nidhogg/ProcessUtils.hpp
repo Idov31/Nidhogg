@@ -8,14 +8,9 @@
 #define PROCESS_VM_READ 0x10
 #define PROCESS_VM_OPERATION 8
 
-#define PROCESS_TYPE_PROTECTED 0
-#define PROCESS_TYPE_SPOOFED 1
-
-#define PROCESS_NOT_FOUND -1
-
-int FindProcess(Process* process);
-bool AddProcess(Process* process);
-bool RemoveProcess(Process* process);
+bool FindProcess(ULONG pid);
+bool AddProcess(ULONG pid);
+bool RemoveProcess(ULONG pid);
 ULONG GetActiveProcessLinksOffset();
 void RemoveProcessLinks(PLIST_ENTRY current);
 UINT64 GetTokenOffset();
@@ -31,21 +26,23 @@ UINT64 GetTokenOffset();
 * Returns:
 * @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
 */
-OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
-	Process process;
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info) {
+	UNREFERENCED_PARAMETER(RegistrationContext);
+
 	if (Info->KernelHandle)
+		return OB_PREOP_SUCCESS;
+
+	if (pGlobals.ProtectedProcesses.PidsCount == 0)
 		return OB_PREOP_SUCCESS;
 
 	auto Process = (PEPROCESS)Info->Object;
 	auto pid = HandleToULong(PsGetProcessId(Process));
 
-	process.ProcessPid = pid;
-	process.type = PROCESS_TYPE_PROTECTED;
 
 	AutoLock locker(pGlobals.Lock);
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
-	if (FindProcess(&process) != PROCESS_NOT_FOUND) {
+	if (FindProcess(pid)) {
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_READ;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
@@ -54,26 +51,6 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID /* RegistrationContext */, POB_P
 	}
 
 	return OB_PREOP_SUCCESS;
-}
-
-void OnProcessNotify(PEPROCESS LoadedProcess, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo) {
-	UNREFERENCED_PARAMETER(LoadedProcess);
-
-	int index;
-	Process process;
-
-	if (CreateInfo) {
-		process.ProcessPid = (ULONG)ProcessId;
-		process.SpoofedPid = (ULONG)CreateInfo->ParentProcessId;
-		process.type = PROCESS_TYPE_SPOOFED;
-
-		index = FindProcess(&process);
-
-		if (index != PROCESS_NOT_FOUND) {
-			CreateInfo->ParentProcessId = (HANDLE)pGlobals.SpoofedProcesses.Processes[index]->SpoofedPid;
-			KdPrint((DRIVER_PREFIX "Spoofed PID for %d.\n", (ULONG)ProcessId));
-		}
-	}
 }
 
 /*
@@ -173,18 +150,11 @@ NTSTATUS ElevateProcess(ULONG targetPid) {
 * Returns:
 * @status [bool]  -- Whether found or not.
 */
-int FindProcess(Process* process) {
-	if (process->type == PROCESS_TYPE_PROTECTED) {
-		for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++)
-			if (pGlobals.ProtectedProcesses.Processes[i] == process->ProcessPid)
-				return i;
-	}
-	else if (process->type == PROCESS_TYPE_SPOOFED) {
-		for (int i = 0; i < pGlobals.SpoofedProcesses.PidsCount; i++)
-			if (pGlobals.SpoofedProcesses.Processes[i]->ProcessPid == process->SpoofedPid)
-				return i;
-	}
-	return PROCESS_NOT_FOUND;
+bool FindProcess(ULONG pid) {
+	for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++)
+		if (pGlobals.ProtectedProcesses.Processes[i] == pid)
+			return true;
+	return false;
 }
 
 /*
@@ -197,24 +167,13 @@ int FindProcess(Process* process) {
 * Returns:
 * @status [bool]  -- Whether successfully added or not.
 */
-bool AddProcess(Process* process) {
-	if (process->type == PROCESS_TYPE_PROTECTED) {
-		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.ProtectedProcesses.Processes[i] == 0) {
-				pGlobals.ProtectedProcesses.Processes[i] = process->ProcessPid;
-				pGlobals.ProtectedProcesses.PidsCount++;
-				return true;
-			}
-	}
-	else if (process->type == PROCESS_TYPE_SPOOFED) {
-		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.SpoofedProcesses.Processes[i] == nullptr || pGlobals.SpoofedProcesses.Processes[i]->ProcessPid == 0) {
-				pGlobals.SpoofedProcesses.Processes[i]->ProcessPid = process->ProcessPid;
-				pGlobals.SpoofedProcesses.Processes[i]->SpoofedPid = process->SpoofedPid;
-				pGlobals.ProtectedProcesses.PidsCount++;
-				return true;
-			}
-	}
+bool AddProcess(ULONG pid) {
+	for (int i = 0; i < MAX_PIDS; i++)
+		if (pGlobals.ProtectedProcesses.Processes[i] == 0) {
+			pGlobals.ProtectedProcesses.Processes[i] = pid;
+			pGlobals.ProtectedProcesses.PidsCount++;
+			return true;
+		}
 	return false;
 }
 
@@ -228,24 +187,13 @@ bool AddProcess(Process* process) {
 * Returns:
 * @status [bool]  -- Whether successfully removed or not.
 */
-bool RemoveProcess(Process* process) {
-	if (process->type == PROCESS_TYPE_PROTECTED) {
-		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.ProtectedProcesses.Processes[i] == 0) {
-				pGlobals.ProtectedProcesses.Processes[i] = 0;
-				pGlobals.ProtectedProcesses.PidsCount--;
-				return true;
-			}
-	}
-	else if (process->type == PROCESS_TYPE_SPOOFED) {
-		for (int i = 0; i < MAX_PIDS; i++)
-			if (pGlobals.SpoofedProcesses.Processes[i] == nullptr) {
-				pGlobals.SpoofedProcesses.Processes[i]->ProcessPid = 0;
-				pGlobals.SpoofedProcesses.Processes[i]->SpoofedPid = 0;
-				pGlobals.ProtectedProcesses.PidsCount--;
-				return true;
-			}
-	}
+bool RemoveProcess(ULONG pid) {
+	for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++)
+		if (pGlobals.ProtectedProcesses.Processes[i] == pid) {
+			pGlobals.ProtectedProcesses.Processes[i] = 0;
+			pGlobals.ProtectedProcesses.PidsCount--;
+			return true;
+		}
 	return false;
 }
 
@@ -308,11 +256,11 @@ void RemoveProcessLinks(PLIST_ENTRY current) {
 	*
 	* To:
 	*
-	*   | ----------------------------------
-	*   v										|
+	*   | ------------------------------
+	*   v							   |
 	* Prev        Current            Next
-	*   |									   ^
-	*   ---------------------------------- |
+	*   |							   ^
+	*   -------------------------------|
 	*/
 
 	previous = (current->Blink);

