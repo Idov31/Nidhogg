@@ -8,8 +8,6 @@
 #define PROCESS_VM_READ 0x10
 #define PROCESS_VM_OPERATION 8
 
-#define PROCESS_NOT_FOUND -1
-
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);

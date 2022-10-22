@@ -2,13 +2,13 @@
 
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
-Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy to use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your own C2 framework via single header file with simple usage, you can see an [example here](./Example).
+Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework via a single header file with simple usage, you can see an [example here](./Example).
 
 Nidhogg can work on any version of Windows 10 and Windows 11.
 
-This repository contains a kernel driver with C++ header to communicate with it.
+This repository contains a kernel driver with a C++ header to communicate with it.
 
-**NOTE: Some functionality might trigger PatchGuard, use it on your own risk!**
+**NOTE: Some functionality might trigger PatchGuard, use it at your own risk!**
 
 ## Current Features
 
@@ -18,11 +18,15 @@ This repository contains a kernel driver with C++ header to communicate with it.
 - Anti process dumping
 - Bypass pe-sieve
 - Anti file deletion
-- Anti file overwritting
+- Anti file overwriting
 - Registry keys and values anti deletion
 - Registry keys and values hiding
-- Registry keys and values anti overwritting
+- Registry keys and values anti overwriting
 - Querying currently protected processes, files and registry keys & values
+- Arbitrary R/W
+- Function patching
+- Built-in AMSI bypass
+- Built-in ETW patch
 
 ## Basic Usage
 
@@ -74,4 +78,6 @@ sc start nidhogg
 
 ## Contributions
 
-I'll happily accept contribution, make a pull request and I will review it!
+Thanks a lot to those people that contributed to this project:
+
+- [BlackOfWorld](https://github.com/BlackOfWorld)

@@ -9,10 +9,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	rGlobals.Init();
 	dimGlobals.Init();
 
-	if (!dimGlobals.ZwProtectVirtualMemory || !dimGlobals.MmCopyVirtualMemory || !dimGlobals.PsGetProcessPeb) {
+	if (!dimGlobals.MmCopyVirtualMemory)
+		Features.ReadData = false;
+
+	if (!dimGlobals.ZwProtectVirtualMemory || !Features.ReadData)
+		Features.WriteData = false;
+
+	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
 		Features.FunctionPatching = false;
-		return status;
-	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -847,6 +851,86 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		len += sizeof(PatchedModule);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_WRITE_DATA:
+	{
+		PEPROCESS TargetProcess;
+
+		if (!Features.WriteData) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, write data feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PkgReadWriteData) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &TargetProcess);
+
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
+			break;
+		}
+
+		status = KeWriteProcessMemory(data->LocalAddress, TargetProcess, data->RemoteAddress, data->Size, data->Mode);
+
+		ObDereferenceObject(TargetProcess);
+		len += sizeof(PkgReadWriteData);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_READ_DATA:
+	{
+		PEPROCESS Process;
+
+		if (!Features.ReadData) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, read data feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PkgReadWriteData) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
+			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &Process);
+
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
+			break;
+		}
+
+		status = KeReadProcessMemory(Process, data->RemoteAddress, data->LocalAddress, data->Size, data->Mode);
+
+		ObDereferenceObject(Process);
+		len += sizeof(PkgReadWriteData);
 		break;
 	}
 
