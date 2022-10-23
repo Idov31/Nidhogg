@@ -156,6 +156,9 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -171,6 +174,9 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
     </Link>
     <Inf>
       <SpecifyArchitecture>false</SpecifyArchitecture>
@@ -189,10 +195,13 @@
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileUtils.hpp" />
+    <ClInclude Include="ModuleUtils.hpp" />
     <ClInclude Include="Nidhogg.h" />
+    <ClInclude Include="NidhoggUtils.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessUtils.hpp" />
     <ClInclude Include="RegistryUtils.hpp" />
+    <ClInclude Include="WindowsTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp" />
