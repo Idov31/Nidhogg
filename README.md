@@ -68,6 +68,16 @@ sc create nidhogg type= kernel binPath= C:\Path\To\Driver\Nidhogg.sys
 sc start nidhogg
 ```
 
+### Debugging
+
+To debug the driver in your testing environment run this command with elevated cmd and reboot your computer:
+
+```cmd
+bcdedit /debug on
+```
+
+After the reboot, you can see the debugging messages in tools such as [DebugView](https://learn.microsoft.com/en-us/sysinternals/downloads/debugview).
+
 ## Resources
 
 - [Windows Kernel Programming Book](https://github.com/zodiacon/windowskernelprogrammingbook)
