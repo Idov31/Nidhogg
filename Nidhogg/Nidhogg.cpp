@@ -1,8 +1,9 @@
 #include "pch.h"
 #include "NidhoggUtils.h"
 
-extern "C"
-NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
+NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
+	UNREFERENCED_PARAMETER(RegistryPath);
+
 	auto status = STATUS_SUCCESS;
 	pGlobals.Init();
 	fGlobals.Init();
@@ -90,6 +91,22 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 
 	KdPrint((DRIVER_PREFIX "Initialization finished.\n"));
 	return status;
+}
+
+extern "C"
+NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
+	if (!DriverObject) {
+		UNICODE_STRING driverName = RTL_CONSTANT_STRING(L"\\Driver\\Nidhogg");
+		UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"IoCreateDriver");
+		tIoCreateDriver IoCreateDriver = (tIoCreateDriver)MmGetSystemRoutineAddress(&routineName);
+
+		if (!IoCreateDriver)
+			return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
+
+		return IoCreateDriver(&driverName, &NidhoggEntry);
+	}
+
+	return NidhoggEntry(DriverObject, RegistryPath);
 }
 
 /*
