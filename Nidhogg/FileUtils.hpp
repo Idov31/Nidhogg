@@ -26,14 +26,14 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 		return OB_PREOP_SUCCESS;
 	}
 
-	if (!Info->Object || !MmIsAddressValid(Info->Object)) {
+	if (!Info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)Info->Object)) {
 		return OB_PREOP_SUCCESS;
 	}
 
 	PFILE_OBJECT FileObject = (PFILE_OBJECT)Info->Object;
 
-	if (!FileObject->FileName.Buffer || !MmIsAddressValid(FileObject->FileName.Buffer) ||
-		!FileObject->DeviceObject || !MmIsAddressValid(FileObject->DeviceObject)) {
+	if (!FileObject->FileName.Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)FileObject->FileName.Buffer) ||
+		!FileObject->DeviceObject || !VALID_KERNELMODE_MEMORY((DWORD64)FileObject->DeviceObject)) {
 		return OB_PREOP_SUCCESS;
 	}
 
@@ -43,7 +43,7 @@ OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB
 		return OB_PREOP_SUCCESS;
 	}
 
-	if (!ObjectNameInfo->Name.Buffer || !MmIsAddressValid(ObjectNameInfo->Name.Buffer))
+	if (!ObjectNameInfo->Name.Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)ObjectNameInfo->Name.Buffer))
 		return OB_PREOP_SUCCESS;
 
 	filePath = ObjectNameInfo->Name;
