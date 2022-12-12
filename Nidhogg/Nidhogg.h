@@ -67,6 +67,11 @@ typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(
 typedef PPEB(NTAPI* tPsGetProcessPeb)(
 	PEPROCESS Process);
 
+typedef NTSTATUS(NTAPI* tIoCreateDriver)(
+	PUNICODE_STRING DriverName,
+	PDRIVER_INITIALIZE InitializationFunction
+	);
+
 // Globals.
 PVOID RegistrationHandle = NULL;
 
