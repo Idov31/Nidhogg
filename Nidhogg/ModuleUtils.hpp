@@ -104,9 +104,14 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 	}
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && !MmIsAddressValid(sourceDataAddress)) {
+	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
 		status = STATUS_UNSUCCESSFUL;
-		KdPrint((DRIVER_PREFIX "Source address isn't valid.\n"));
+		KdPrint((DRIVER_PREFIX "Invalid kernel source address or target address.\n"));
+		return status;
+	}
+	else if (mode == UserMode && (!VALID_USERMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
+		status = STATUS_UNSUCCESSFUL;
+		KdPrint((DRIVER_PREFIX "Invalid user mode source address or target address.\n"));
 		return status;
 	}
 
@@ -168,8 +173,12 @@ NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targe
 	}
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && !MmIsAddressValid(targetAddress)) {
-		KdPrint((DRIVER_PREFIX "Target address isn't valid.\n"));
+	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY((DWORD64)targetAddress)) {
+		KdPrint((DRIVER_PREFIX "Invalid kernel target address.\n"));
+		return STATUS_UNSUCCESSFUL;
+	}
+	else if (mode == UserMode && !VALID_USERMODE_MEMORY((DWORD64)targetAddress)) {
+		KdPrint((DRIVER_PREFIX "Invalid user mode target address.\n"));
 		return STATUS_UNSUCCESSFUL;
 	}
 
