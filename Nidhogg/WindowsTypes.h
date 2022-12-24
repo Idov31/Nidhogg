@@ -186,6 +186,7 @@ typedef struct _REAL_PEB {
 } REALPEB, * PREALPEB;
 
 // Undocumented.
+#pragma warning (disable: 4201)
 struct _OBJECT_TYPE_INITIALIZER_TEMP
 {
 	USHORT Length;                                                          //0x0
@@ -231,6 +232,7 @@ struct _OBJECT_TYPE_INITIALIZER_TEMP
 	USHORT WaitObjectPointerOffset;                                         //0x76
 };
 
+#pragma warning (disable: 4201)
 struct _EX_PUSH_LOCK_TEMP
 {
 	union
