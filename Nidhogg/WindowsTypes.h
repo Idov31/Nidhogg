@@ -186,6 +186,7 @@ typedef struct _REAL_PEB {
 } REALPEB, * PREALPEB;
 
 // Undocumented.
+#pragma warning (disable: 4201)
 struct _OBJECT_TYPE_INITIALIZER_TEMP
 {
 	USHORT Length;                                                          //0x0
@@ -231,6 +232,7 @@ struct _OBJECT_TYPE_INITIALIZER_TEMP
 	USHORT WaitObjectPointerOffset;                                         //0x76
 };
 
+#pragma warning (disable: 4201)
 struct _EX_PUSH_LOCK_TEMP
 {
 	union
@@ -263,3 +265,38 @@ typedef struct _OBJECT_TYPE_TEMP
 	ULONG Key;                                                              //0xc0
 	struct _LIST_ENTRY CallbackList;                                        //0xc8
 } OBJECT_TYPE_TEMP, * POBJECT_TYPE_TEMP;
+
+typedef struct _PS_PROTECTION
+{
+	UCHAR Type : 3;
+	UCHAR Audit : 1;
+	UCHAR Signer : 4;
+} PS_PROTECTION, * PPS_PROTECTION;
+
+typedef struct _PROCESS_SIGNATURE 
+{
+	UCHAR SignatureLevel;
+	UCHAR SectionSignatureLevel;
+	PS_PROTECTION Protection;
+} PROCESS_SIGNATURE, * PPROCESS_SIGNATURE;
+
+enum SignatureType
+{
+	PsProtectedTypeNone = 0,
+	PsProtectedTypeProtectedLight = 1,
+	PsProtectedTypeProtected = 2
+};
+
+enum SignatureSigner
+{
+	PsProtectedSignerNone = 0,      // 0
+	PsProtectedSignerAuthenticode,  // 1
+	PsProtectedSignerCodeGen,       // 2
+	PsProtectedSignerAntimalware,   // 3
+	PsProtectedSignerLsa,           // 4
+	PsProtectedSignerWindows,       // 5
+	PsProtectedSignerWinTcb,        // 6
+	PsProtectedSignerWinSystem,     // 7
+	PsProtectedSignerApp,           // 8
+	PsProtectedSignerMax            // 9
+};
