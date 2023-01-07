@@ -68,7 +68,7 @@ NTSTATUS PatchModule(PatchedModule* ModuleInformation) {
 	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
 
 	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "Failed to patch function, (0x%08X).\n", status))
+		KdPrint((DRIVER_PREFIX "Failed to patch function, (0x%08X).\n", status));
 
 CleanUp:
 	ExFreePool(moduleName);
@@ -138,7 +138,7 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 	status = dimGlobals.MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
 
 	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status))
+		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
 
 	// Restoring permissions and cleaning up.
 	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, UserMode, &hTargetProcess) == STATUS_SUCCESS) {
