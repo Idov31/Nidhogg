@@ -27,6 +27,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
+- Process signature (PP/PPL) modification
 
 ## Basic Usage
 
@@ -85,6 +86,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Process Hiding](https://github.com/landhb/HideProcess)
 - [Process Elevation](https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/how-kernel-exploits-abuse-tokens-for-privilege-escalation)
 - [Registry Keys Hiding](https://github.com/JKornev/hidden)
+- [Process Signatures](https://github.com/itm4n/PPLcontrol)
 
 ## Contributions
 
