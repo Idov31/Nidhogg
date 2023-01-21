@@ -421,7 +421,6 @@ ULONG GetSignatureLevelOffset() {
 */
 NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature) {
 	PEPROCESS process;
-	SIZE_T bytesWritten;
 	NTSTATUS status = STATUS_SUCCESS;
 
 	status = PsLookupProcessByProcessId(ULongToHandle(ProcessSignature->Pid), &process);

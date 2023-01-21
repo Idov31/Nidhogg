@@ -421,7 +421,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	tempKeyInformation = (LPWSTR)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
+	tempKeyInformation = (LPWSTR)ExAllocatePool2(POOL_FLAG_PAGED, preInfo->Length, DRIVER_TAG);
 
 	if (tempKeyInformation) {
 		item.Type = REG_TYPE_HIDDEN_KEY;
@@ -537,7 +537,7 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 		return STATUS_SUCCESS;
 	}
 
-	tempValueInformation = (PVOID)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
+	tempValueInformation = (PVOID)ExAllocatePool2(POOL_FLAG_PAGED, preInfo->Length, DRIVER_TAG);
 
 	if (tempValueInformation) {
 		item.Type = REG_TYPE_HIDDEN_VALUE;
@@ -768,7 +768,7 @@ bool AddRegItem(RegItem& item) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
 			if (rGlobals.ProtectedItems.Keys.KeysPath[i] == nullptr) {
 				auto len = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
-				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				auto buffer = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, len, DRIVER_TAG);
 
 				// Not enough resources.
 				if (!buffer) {
@@ -786,7 +786,7 @@ bool AddRegItem(RegItem& item) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
 			if (rGlobals.HiddenItems.Keys.KeysPath[i] == nullptr) {
 				auto len = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
-				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				auto buffer = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, len, DRIVER_TAG);
 
 				// Not enough resources.
 				if (!buffer) {
@@ -804,7 +804,7 @@ bool AddRegItem(RegItem& item) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
 			if (rGlobals.ProtectedItems.Values.ValuesPath[i] == nullptr) {
 				auto keyLen = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
-				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				auto keyPath = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, keyLen, DRIVER_TAG);
 
 				// Not enough resources.
 				if (!keyPath) {
@@ -812,7 +812,7 @@ bool AddRegItem(RegItem& item) {
 				}
 
 				auto valueNameLen = (wcslen(item.ValueName) + 1) * sizeof(WCHAR);
-				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				auto valueName = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
@@ -833,7 +833,7 @@ bool AddRegItem(RegItem& item) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
 			if (rGlobals.HiddenItems.Values.ValuesPath[i] == nullptr) {
 				auto keyLen = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
-				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				auto keyPath = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, keyLen, DRIVER_TAG);
 
 				// Not enough resources.
 				if (!keyPath) {
@@ -841,7 +841,7 @@ bool AddRegItem(RegItem& item) {
 				}
 
 				auto valueNameLen = (wcslen(item.ValueName) + 1) * sizeof(WCHAR);
-				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				auto valueName = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
