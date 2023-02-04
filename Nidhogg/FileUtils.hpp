@@ -5,62 +5,82 @@
 bool FindFile(WCHAR* path);
 bool AddFile(WCHAR* path);
 bool RemoveFile(WCHAR* path);
+NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS InstallNtfsHook(int irpMjFunction);
+NTSTATUS UninstallNtfsHook(int irpMjFunction);
 
-/*
-* Description:
-* OnPreFileOperation is responsible for handling file access operations and remove certain permissions from protected files.
-*
-* Parameters:
-* @RegistrationContext [PVOID]						   -- Unused.
-* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Contains important information such as file name, file object, object type, etc.
-*
-* Returns:
-* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
-*/
-OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
-	POBJECT_NAME_INFORMATION ObjectNameInfo;
-	UNICODE_STRING filePath;
-	NTSTATUS status = STATUS_SUCCESS;
+NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	bool protectedFile = false;
+	auto stack = IoGetCurrentIrpStackLocation(Irp);
+	KIRQL currentIrql = KeGetCurrentIrql();
 
-	if (Info->ObjectType != *IoFileObjectType) {
-		return OB_PREOP_SUCCESS;
-	}
+	if (!stack || !stack->FileObject)
+		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 
-	if (!Info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)Info->Object)) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	PFILE_OBJECT FileObject = (PFILE_OBJECT)Info->Object;
-
-	if (!FileObject->FileName.Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)FileObject->FileName.Buffer) ||
-		!FileObject->DeviceObject || !VALID_KERNELMODE_MEMORY((DWORD64)FileObject->DeviceObject)) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	status = IoQueryFileDosDeviceName(FileObject, &ObjectNameInfo);
-
-	if (!NT_SUCCESS(status)) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	if (!ObjectNameInfo->Name.Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)ObjectNameInfo->Name.Buffer))
-		return OB_PREOP_SUCCESS;
-
-	filePath = ObjectNameInfo->Name;
 	AutoLock locker(fGlobals.Lock);
 
-	// Removing write and delete permissions.
-	if (FindFile(filePath.Buffer)) {
-		FileObject->DeleteAccess = FALSE;
-		FileObject->DeletePending = FALSE;
-		FileObject->SharedDelete = FALSE;
-		FileObject->WriteAccess = FALSE;
-		FileObject->SharedWrite = FALSE;
+	KeLowerIrql(PASSIVE_LEVEL);
+
+	protectedFile = FindFile(stack->FileObject->FileName.Buffer);
+	KeRaiseIrql(currentIrql, &currentIrql);
+
+	return protectedFile ? STATUS_ACCESS_DENIED : ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+}
+
+NTSTATUS InstallNtfsHook(int irpMjFunction) {
+	UNICODE_STRING ntfsName;
+	PDRIVER_OBJECT ntfsDriverObject;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// InterlockedExchange64 maybe a problem and will need to use InterlockedExchange.
+	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoFileObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	switch (irpMjFunction) {
+	case IRP_MJ_CREATE: {
+		fGlobals.Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
+		fGlobals.Callbacks[0].Activated = true;
+		break;
+	}
+	default:
+		status = STATUS_NOT_SUPPORTED;
 	}
 
-	ExFreePool(ObjectNameInfo);
-	return OB_PREOP_SUCCESS;
+	ObDereferenceObject(ntfsDriverObject);
+	return status;
 }
+
+NTSTATUS UninstallNtfsHook(int irpMjFunction) {
+	UNICODE_STRING ntfsName;
+	PDRIVER_OBJECT ntfsDriverObject;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
+
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoFileObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	switch (irpMjFunction) {
+	case IRP_MJ_CREATE: {
+		InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[irpMjFunction], (LONG64)fGlobals.Callbacks[0].Address);
+		fGlobals.Callbacks[0].Address = nullptr;
+		fGlobals.Callbacks[0].Activated = false;
+		break;
+	}
+	default:
+		status = STATUS_NOT_SUPPORTED;
+	}
+
+	ObDereferenceObject(ntfsDriverObject);
+	
+	return status;
+}
+
 
 /*
 * Description:
