@@ -113,7 +113,7 @@ bool AddFile(WCHAR* path) {
 	for (int i = 0; i < MAX_FILES; i++)
 		if (fGlobals.Files.FilesPath[i] == nullptr) {
 			auto len = (wcslen(path) + 1) * sizeof(WCHAR);
-			auto buffer = (WCHAR*)ExAllocatePool2(POOL_FLAG_PAGED, len, DRIVER_TAG);
+			auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 			// Not enough resources.
 			if (!buffer) {
