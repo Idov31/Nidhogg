@@ -1,7 +1,10 @@
 #pragma once
 #include "pch.h"
 
-// Prototypes
+// Definitions.
+#define DEFAULT_DRIVE_LETTER L"C:"
+
+// Prototypes.
 bool FindFile(WCHAR* path);
 bool AddFile(WCHAR* path);
 bool RemoveFile(WCHAR* path);
@@ -10,7 +13,7 @@ NTSTATUS InstallNtfsHook(int irpMjFunction);
 NTSTATUS UninstallNtfsHook(int irpMjFunction);
 
 NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	WCHAR fullPath[MAX_PATH + 1] = L"C:";
+	WCHAR fullPath[MAX_PATH + 1] = DEFAULT_DRIVE_LETTER;
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
 
 	if (!stack || !stack->FileObject)
