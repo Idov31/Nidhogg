@@ -474,6 +474,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				KdPrint((DRIVER_PREFIX "Failed to restore the hook.\n"));
 			}
 		}
+
+		auto prevIrql = KeGetCurrentIrql();
+		KeLowerIrql(PASSIVE_LEVEL);
+		KdPrint((DRIVER_PREFIX "Unprotected file %ws.\n", data));
+		KeRaiseIrql(prevIrql, &prevIrql);
 		break;
 	}
 
@@ -1018,6 +1023,9 @@ void ClearAll() {
 		fGlobals.Files.FilesPath[i] = nullptr;
 		fGlobals.Files.FilesCount--;
 	}
+
+	if (fGlobals.Callbacks[0].Activated)
+		UninstallNtfsHook(IRP_MJ_CREATE);
 
 	// Clearing the registry keys and values.
 	AutoLock registryLocker(rGlobals.Lock);
