@@ -10,21 +10,25 @@ NTSTATUS InstallNtfsHook(int irpMjFunction);
 NTSTATUS UninstallNtfsHook(int irpMjFunction);
 
 NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	bool protectedFile = false;
+	WCHAR fullPath[MAX_PATH + 1] = L"C:";
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	KIRQL currentIrql = KeGetCurrentIrql();
 
 	if (!stack || !stack->FileObject)
 		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 
+	if (stack->FileObject->FileName.Length == 0)
+		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+
+	wcscat(fullPath, stack->FileObject->FileName.Buffer);
+
 	AutoLock locker(fGlobals.Lock);
 
-	KeLowerIrql(PASSIVE_LEVEL);
+	if (FindFile(fullPath)) {
+		Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
+		return STATUS_SUCCESS;
+	}
 
-	protectedFile = FindFile(stack->FileObject->FileName.Buffer);
-	KeRaiseIrql(currentIrql, &currentIrql);
-
-	return protectedFile ? STATUS_ACCESS_DENIED : ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+	return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 }
 
 NTSTATUS InstallNtfsHook(int irpMjFunction) {
@@ -34,15 +38,18 @@ NTSTATUS InstallNtfsHook(int irpMjFunction) {
 
 	// InterlockedExchange64 maybe a problem and will need to use InterlockedExchange.
 	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
-	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoFileObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "Failed to get ntfs driver object, (0x%08X).\n", status));
 		return status;
+	}
 
 	switch (irpMjFunction) {
 	case IRP_MJ_CREATE: {
 		fGlobals.Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
 		fGlobals.Callbacks[0].Activated = true;
+		KdPrint((DRIVER_PREFIX "Switched addresses\n"));
 		break;
 	}
 	default:
@@ -60,7 +67,7 @@ NTSTATUS UninstallNtfsHook(int irpMjFunction) {
 
 	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
 
-	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoFileObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
 
 	if (!NT_SUCCESS(status))
 		return status;

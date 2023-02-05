@@ -186,7 +186,7 @@ typedef struct _REAL_PEB {
 } REALPEB, * PREALPEB;
 
 // Undocumented.
-// extern "C" POBJECT_TYPE* IoDriverObjectType;
+extern "C" POBJECT_TYPE* IoDriverObjectType;
 
 typedef struct _PS_PROTECTION
 {
