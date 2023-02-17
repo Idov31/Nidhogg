@@ -6,3 +6,4 @@
 #include "FileUtils.hpp"
 #include "RegistryUtils.hpp"
 #include "ModuleUtils.hpp"
+#include "NidhoggDeviceControl.hpp"

