@@ -9,6 +9,9 @@
 #define PROCESS_VM_OPERATION  0x8
 
 // Prototypes.
+bool FindThread(ULONG tid);
+bool AddThread(ULONG tid);
+bool RemoveThread(ULONG tid);
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
@@ -53,6 +56,48 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPE
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_DUP_HANDLE;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_TERMINATE;
+	}
+
+	return OB_PREOP_SUCCESS;
+}
+
+/*
+* Description:
+* OnPreOpenThread is responsible for handling thread access operations and remove certain permissions from protected threads.
+*
+* Parameters:
+* @RegistrationContext [PVOID]						   -- Unused.
+* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Contains important information such as thread name, handle to the thread, thread type, etc.
+*
+* Returns:
+* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
+*/
+OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info) {
+	UNREFERENCED_PARAMETER(RegistrationContext);
+
+	if (Info->KernelHandle)
+		return OB_PREOP_SUCCESS;
+
+	if (tGlobals.ProtectedThreads.TidsCount == 0)
+		return OB_PREOP_SUCCESS;
+
+	PETHREAD thread = (PETHREAD)Info->Object;
+	ULONG tid = HandleToULong(PsGetThreadId(thread));
+	ULONG ownerPid = HandleToULong(PsGetThreadProcessId(thread));
+	ULONG callerPid = HandleToULong(PsGetCurrentProcessId());
+
+	// To avoid a situation when a process dies and the thread needs to be closed but it isn't closed, if the killer is its owning process, let it be killed.
+	if (callerPid == ownerPid || callerPid == SYSTEM_PROCESS_PID)
+		return OB_PREOP_SUCCESS;
+
+
+	AutoLock locker(tGlobals.Lock);
+
+	// If the process was found on the list, remove permissions for terminating / setting context / suspending the thread.
+	if (FindThread(tid)) {
+		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_TERMINATE;
+		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_SUSPEND_RESUME;
+		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_SET_CONTEXT;
 	}
 
 	return OB_PREOP_SUCCESS;
@@ -203,6 +248,63 @@ bool RemoveProcess(ULONG pid) {
 		if (pGlobals.ProtectedProcesses.Processes[i] == pid) {
 			pGlobals.ProtectedProcesses.Processes[i] = 0;
 			pGlobals.ProtectedProcesses.PidsCount--;
+			return true;
+		}
+	return false;
+}
+
+/*
+* Description:
+* FindThread is responsible for searching if a thread exists in the list of protected threads.
+*
+* Parameters:
+* @tid	  [ULONG] -- TID to search.
+*
+* Returns:
+* @status [bool]  -- Whether found or not.
+*/
+bool FindThread(ULONG tid) {
+	for (int i = 0; i < tGlobals.ProtectedThreads.TidsCount; i++)
+		if (tGlobals.ProtectedThreads.Threads[i] == tid)
+			return true;
+	return false;
+}
+
+/*
+* Description:
+* AddThread is responsible for adding a thread to the list of protected threads.
+*
+* Parameters:
+* @tid	  [ULONG] -- TID to add.
+*
+* Returns:
+* @status [bool]  -- Whether successfully added or not.
+*/
+bool AddThread(ULONG tid) {
+	for (int i = 0; i < MAX_TIDS; i++)
+		if (tGlobals.ProtectedThreads.Threads[i] == 0) {
+			tGlobals.ProtectedThreads.Threads[i] = tid;
+			tGlobals.ProtectedThreads.TidsCount++;
+			return true;
+		}
+	return false;
+}
+
+/*
+* Description:
+* RemoveThread is responsible for remove a thread from the list of protected threads.
+*
+* Parameters:
+* @tid	  [ULONG] -- TID to remove.
+*
+* Returns:
+* @status [bool]  -- Whether successfully removed or not.
+*/
+bool RemoveThread(ULONG tid) {
+	for (int i = 0; i < tGlobals.ProtectedThreads.TidsCount; i++)
+		if (tGlobals.ProtectedThreads.Threads[i] == tid) {
+			tGlobals.ProtectedThreads.Threads[i] = 0;
+			tGlobals.ProtectedThreads.TidsCount--;
 			return true;
 		}
 	return false;
