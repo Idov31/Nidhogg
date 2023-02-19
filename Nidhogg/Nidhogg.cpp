@@ -228,6 +228,12 @@ void ClearAll() {
 	pGlobals.ProtectedProcesses.PidsCount = 0;
 >>>>>>> 39effc7 (PPID Spoofing initial)
 
+	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
+		pGlobals.HiddenProcesses.Processes[i].ListEntry = NULL;
+		pGlobals.HiddenProcesses.Processes[i].Pid = 0;
+	}
+	pGlobals.HiddenProcesses.PidsCount = 0;
+
 	// Clearing the thread array.
 	AutoLock threadProtectingLocker(tGlobals.Lock);
 

