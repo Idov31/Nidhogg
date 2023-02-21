@@ -218,6 +218,12 @@ void ClearAll() {
 	memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
 	pGlobals.ProtectedProcesses.PidsCount = 0;
 
+	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
+		pGlobals.HiddenProcesses.Processes[i].ListEntry = NULL;
+		pGlobals.HiddenProcesses.Processes[i].Pid = 0;
+	}
+	pGlobals.HiddenProcesses.PidsCount = 0;
+
 	// Clearing the thread array.
 	AutoLock threadProtectingLocker(tGlobals.Lock);
 
