@@ -8,19 +8,19 @@ Nidhogg can work on any version of x64 Windows 10 and Windows 11.
 
 This repository contains a kernel driver with a C++ header to communicate with it.
 
-**NOTE: Some functionality might trigger PatchGuard, use it at your own risk!**
-
 ## Current Features
 
-- Process hiding
+- Process hiding and unhiding
 - Process elevation
 - Process protection (anti-kill and dumping)
 - Bypass pe-sieve
+- Thread hiding
+- Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
 - File hiding
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Querying currently protected processes, files, registry keys and values
+- Querying currently protected processes, threads, files, registry keys and values
 - Arbitrary kernel R/W
 - Function patching
 - Built-in AMSI bypass
@@ -28,11 +28,20 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Process signature (PP/PPL) modification
 - Can be reflectively loaded
 
+## Reflective loading
+
+Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://github.com/TheCruZ/kdmapper) but because [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) will be automatically triggered if the driver registers callbacks, Nidhogg will not register any callback. Meaning, that if you are loading the driver reflectively these features will be disabled by default:
+
+- Process protection
+- Thread protection
+- Registry operations
+
 ## PatchGuard triggering features
 
 These are the features known to me that will trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
+- Thread hiding
 - File protecting
 
 ## Basic Usage
@@ -44,7 +53,7 @@ It has a very simple usage, just include the header and get started!
 
 int main() {
     // ...
-    DWORD result = NidhoggProcessProtect(pids);
+    DWORD result = Nidhogg::ProcessUtils::NidhoggProcessProtect(pids);
     // ...
 }
 ```
