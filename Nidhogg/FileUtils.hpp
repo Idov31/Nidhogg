@@ -1,66 +1,96 @@
 #pragma once
 #include "pch.h"
 
-// Prototypes
+// Definitions.
+#define DEFAULT_DRIVE_LETTER L"C:"
+
+// Prototypes.
 bool FindFile(WCHAR* path);
 bool AddFile(WCHAR* path);
 bool RemoveFile(WCHAR* path);
+NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS InstallNtfsHook(int irpMjFunction);
+NTSTATUS UninstallNtfsHook(int irpMjFunction);
 
-/*
-* Description:
-* OnPreFileOperation is responsible for handling file access operations and remove certain permissions from protected files.
-*
-* Parameters:
-* @RegistrationContext [PVOID]						   -- Unused.
-* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Contains important information such as file name, file object, object type, etc.
-*
-* Returns:
-* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
-*/
-OB_PREOP_CALLBACK_STATUS OnPreFileOperation(PVOID /* RegistrationContext */, POB_PRE_OPERATION_INFORMATION Info) {
-	POBJECT_NAME_INFORMATION ObjectNameInfo;
-	UNICODE_STRING filePath;
-	NTSTATUS status = STATUS_SUCCESS;
+NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	WCHAR fullPath[MAX_PATH + 1] = DEFAULT_DRIVE_LETTER;
+	auto stack = IoGetCurrentIrpStackLocation(Irp);
 
-	if (Info->ObjectType != *IoFileObjectType) {
-		return OB_PREOP_SUCCESS;
-	}
+	if (!stack || !stack->FileObject)
+		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 
-	if (!Info->Object || !MmIsAddressValid(Info->Object)) {
-		return OB_PREOP_SUCCESS;
-	}
+	if (stack->FileObject->FileName.Length == 0)
+		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 
-	PFILE_OBJECT FileObject = (PFILE_OBJECT)Info->Object;
+	wcscat(fullPath, stack->FileObject->FileName.Buffer);
 
-	if (!FileObject->FileName.Buffer || !MmIsAddressValid(FileObject->FileName.Buffer) ||
-		!FileObject->DeviceObject || !MmIsAddressValid(FileObject->DeviceObject)) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	status = IoQueryFileDosDeviceName(FileObject, &ObjectNameInfo);
-
-	if (!NT_SUCCESS(status)) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	if (!ObjectNameInfo->Name.Buffer || !MmIsAddressValid(ObjectNameInfo->Name.Buffer))
-		return OB_PREOP_SUCCESS;
-
-	filePath = ObjectNameInfo->Name;
 	AutoLock locker(fGlobals.Lock);
 
-	// Removing write and delete permissions.
-	if (FindFile(filePath.Buffer)) {
-		FileObject->DeleteAccess = FALSE;
-		FileObject->DeletePending = FALSE;
-		FileObject->SharedDelete = FALSE;
-		FileObject->WriteAccess = FALSE;
-		FileObject->SharedWrite = FALSE;
+	if (FindFile(fullPath)) {
+		Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
+		return STATUS_SUCCESS;
 	}
 
-	ExFreePool(ObjectNameInfo);
-	return OB_PREOP_SUCCESS;
+	return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
 }
+
+NTSTATUS InstallNtfsHook(int irpMjFunction) {
+	UNICODE_STRING ntfsName;
+	PDRIVER_OBJECT ntfsDriverObject;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// InterlockedExchange64 maybe a problem and will need to use InterlockedExchange.
+	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+
+	if (!NT_SUCCESS(status)) {
+		KdPrint((DRIVER_PREFIX "Failed to get ntfs driver object, (0x%08X).\n", status));
+		return status;
+	}
+
+	switch (irpMjFunction) {
+	case IRP_MJ_CREATE: {
+		fGlobals.Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
+		fGlobals.Callbacks[0].Activated = true;
+		KdPrint((DRIVER_PREFIX "Switched addresses\n"));
+		break;
+	}
+	default:
+		status = STATUS_NOT_SUPPORTED;
+	}
+
+	ObDereferenceObject(ntfsDriverObject);
+	return status;
+}
+
+NTSTATUS UninstallNtfsHook(int irpMjFunction) {
+	UNICODE_STRING ntfsName;
+	PDRIVER_OBJECT ntfsDriverObject;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
+
+	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	switch (irpMjFunction) {
+	case IRP_MJ_CREATE: {
+		InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[irpMjFunction], (LONG64)fGlobals.Callbacks[0].Address);
+		fGlobals.Callbacks[0].Address = nullptr;
+		fGlobals.Callbacks[0].Activated = false;
+		break;
+	}
+	default:
+		status = STATUS_NOT_SUPPORTED;
+	}
+
+	ObDereferenceObject(ntfsDriverObject);
+	
+	return status;
+}
+
 
 /*
 * Description:

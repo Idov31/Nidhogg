@@ -85,7 +85,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!info->Object || !MmIsAddressValid(info->Object))
+	if (!info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -94,7 +94,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 
@@ -129,7 +129,7 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!MmIsAddressValid(info->Object))
+	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -138,7 +138,7 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 
@@ -174,7 +174,7 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!info->Object || !MmIsAddressValid(info->Object))
+	if (!info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -183,7 +183,7 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 
@@ -218,7 +218,7 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!MmIsAddressValid(info->Object))
+	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -227,7 +227,7 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 
@@ -264,7 +264,7 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!MmIsAddressValid(info->Object))
+	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -273,7 +273,7 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 
@@ -315,7 +315,7 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// To avoid BSOD.
-	if (!MmIsAddressValid(info->Object))
+	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
 	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
@@ -324,7 +324,7 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 		return STATUS_SUCCESS;
 	}
 
-	if (!regPath->Buffer || !MmIsAddressValid(regPath->Buffer)) {
+	if (!regPath->Buffer || !VALID_KERNELMODE_MEMORY((DWORD64)regPath->Buffer)) {
 		return STATUS_SUCCESS;
 	}
 

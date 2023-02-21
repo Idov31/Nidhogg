@@ -4,29 +4,45 @@
 
 Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework via a single header file with simple usage, you can see an [example here](./Example).
 
-Nidhogg can work on any version of Windows 10 and Windows 11.
+Nidhogg can work on any version of x64 Windows 10 and Windows 11.
 
 This repository contains a kernel driver with a C++ header to communicate with it.
 
-**NOTE: Some functionality might trigger PatchGuard, use it at your own risk!**
-
 ## Current Features
 
-- Process hiding
+- Process hiding and unhiding
 - Process elevation
-- Anti process kill
-- Anti process dumping
+- Process protection (anti-kill and dumping)
 - Bypass pe-sieve
-- Anti file deletion
-- Anti file overwriting
-- Registry keys and values anti deletion
+- Thread hiding
+- Thread protection (anti-kill)
+- File protection (anti-deletion and overwriting)
+- File hiding
+- Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Registry keys and values anti overwriting
-- Querying currently protected processes, files and registry keys & values
-- Arbitrary R/W
+- Querying currently protected processes, threads, files, registry keys and values
+- Arbitrary kernel R/W
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
+- Process signature (PP/PPL) modification
+- Can be reflectively loaded
+
+## Reflective loading
+
+Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://github.com/TheCruZ/kdmapper) but because [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) will be automatically triggered if the driver registers callbacks, Nidhogg will not register any callback. Meaning, that if you are loading the driver reflectively these features will be disabled by default:
+
+- Process protection
+- Thread protection
+- Registry operations
+
+## PatchGuard triggering features
+
+These are the features known to me that will trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
+
+- Process hiding
+- Thread hiding
+- File protecting
 
 ## Basic Usage
 
@@ -37,7 +53,7 @@ It has a very simple usage, just include the header and get started!
 
 int main() {
     // ...
-    DWORD result = NidhoggProcessProtect(pids);
+    DWORD result = Nidhogg::ProcessUtils::NidhoggProcessProtect(pids);
     // ...
 }
 ```
@@ -48,7 +64,7 @@ int main() {
 
 To compile the project, you will need the following tools:
 
-- [Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
+- [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
 
 Clone the repository and build the driver.
@@ -85,6 +101,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Process Hiding](https://github.com/landhb/HideProcess)
 - [Process Elevation](https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/how-kernel-exploits-abuse-tokens-for-privilege-escalation)
 - [Registry Keys Hiding](https://github.com/JKornev/hidden)
+- [Process Signatures](https://github.com/itm4n/PPLcontrol)
 
 ## Contributions
 
