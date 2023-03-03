@@ -203,9 +203,9 @@
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileUtils.hpp" />
     <ClInclude Include="ModuleUtils.hpp" />
-    <ClInclude Include="Nidhogg.h" />
-    <ClInclude Include="NidhoggDeviceControl.hpp" />
     <ClInclude Include="NidhoggUtils.h" />
+    <ClInclude Include="NidhoggDeviceControl.hpp" />
+    <ClInclude Include="Nidhogg.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessUtils.hpp" />
     <ClInclude Include="RegistryUtils.hpp" />

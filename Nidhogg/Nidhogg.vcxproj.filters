@@ -25,7 +25,7 @@
     <ClInclude Include="FastMutex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Nidhogg.h">
+    <ClInclude Include="NidhoggUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pch.h">
@@ -46,7 +46,7 @@
     <ClInclude Include="ModuleUtils.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NidhoggUtils.h">
+    <ClInclude Include="Nidhogg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="NidhoggDeviceControl.hpp">

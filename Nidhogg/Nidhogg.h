@@ -1,4 +1,5 @@
 #pragma once
+<<<<<<< HEAD
 
 // Includes.
 #include "FastMutex.h"
@@ -429,3 +430,13 @@ struct RegistryGlobals {
 };
 RegistryGlobals rGlobals;
 // ----------------------------------------------------------------------------
+=======
+#include "pch.h"
+#include "WindowsTypes.h"
+#include "NidhoggUtils.h"
+#include "ProcessUtils.hpp"
+#include "FileUtils.hpp"
+#include "RegistryUtils.hpp"
+#include "ModuleUtils.hpp"
+#include "NidhoggDeviceControl.hpp"
+>>>>>>> e00fdd2 (Organized code)
