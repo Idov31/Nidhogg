@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "NidhoggUtils.h"
+#include "Nidhogg.h"
 
 extern "C"
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
