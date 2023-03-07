@@ -38,25 +38,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 */
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
-
 	NTSTATUS status = STATUS_SUCCESS;
-	tGlobals.Init();
-	pGlobals.Init();
-	fGlobals.Init();
-	rGlobals.Init();
-	dimGlobals.Init();
 
-	if (!dimGlobals.MmCopyVirtualMemory)
-		Features.ReadData = false;
-
-	if (!dimGlobals.ZwProtectVirtualMemory || !Features.ReadData)
-		Features.WriteData = false;
-
-	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
-		Features.FunctionPatching = false;
-
-	if (!dimGlobals.ObReferenceObjectByName)
-		Features.FileProtection = false;
+	InitializeFeatures();
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -269,4 +253,37 @@ void ClearAll() {
 		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
 	}
 	rGlobals.ProtectedItems.Values.ValuesCount = 0;
+}
+
+/*
+* Description:
+* InitializeFeatures is responsible for initializing the features and the globals.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void InitializeFeatures() {
+	tGlobals.Init();
+	pGlobals.Init();
+	fGlobals.Init();
+	rGlobals.Init();
+	dimGlobals.Init();
+
+	if (!dimGlobals.MmCopyVirtualMemory)
+		Features.ReadData = false;
+
+	if (!dimGlobals.ZwProtectVirtualMemory || !Features.ReadData)
+		Features.WriteData = false;
+
+	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
+		Features.FunctionPatching = false;
+
+	if (!dimGlobals.ObReferenceObjectByName)
+		Features.FileProtection = false;
+
+	if (!dimGlobals.KeInitializeApc || !dimGlobals.KeInsertQueueApc || !dimGlobals.KeTestAlertThread)
+		Features.Injection = false;
 }

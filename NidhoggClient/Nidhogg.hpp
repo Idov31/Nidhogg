@@ -87,6 +87,7 @@
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 >>>>>>> a20f2bb (Updated client)
 
@@ -223,6 +224,15 @@ struct PkgReadWriteData {
 	SIZE_T Size;
 	PVOID LocalAddress;
 	PVOID RemoteAddress;
+};
+
+struct ShellcodeInformation {
+	ULONG Pid;
+	ULONG ShellcodeSize;
+	PVOID Shellcode;
+	PVOID Parameter1;
+	PVOID Parameter2;
+	PVOID Parameter3;
 };
 // *********************************************************************************************************
 
@@ -935,6 +945,28 @@ namespace Nidhogg {
 	}
 
 	namespace ModuleUtils {
+		int NidhoggInjectShellcode(HANDLE hNidhogg, DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3) {
+			DWORD returned;
+			ShellcodeInformation shellcodeInformation{};
+
+			if (pid <= 0 || pid == 4 || !shellcode)
+				return NIDHOGG_GENERAL_ERROR;
+
+			shellcodeInformation.Pid = pid;
+			shellcodeInformation.ShellcodeSize = shellcodeSize;
+			shellcodeInformation.Shellcode = shellcode;
+			shellcodeInformation.Parameter1 = parameter1;
+			shellcodeInformation.Parameter2 = parameter2;
+			shellcodeInformation.Parameter3 = parameter3;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_INJECT_SHELLCODE,
+				&shellcodeInformation, sizeof(shellcodeInformation),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
 		int NidhoggPatchModule(HANDLE hNidhogg, DWORD pid, wchar_t* moduleName, char* functionName, std::vector<byte> patch) {
 			DWORD returned;
 			PatchedModule patchedModule{};

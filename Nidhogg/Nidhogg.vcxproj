@@ -183,7 +183,7 @@
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
       <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
-      <EntryPointSymbol>CustomDriverEntry</EntryPointSymbol>
+      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
     <Inf>
       <SpecifyArchitecture>false</SpecifyArchitecture>
@@ -209,7 +209,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessUtils.hpp" />
     <ClInclude Include="RegistryUtils.hpp" />
-    <ClInclude Include="WindowsTypes.h" />
+    <ClInclude Include="WindowsTypes.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp" />

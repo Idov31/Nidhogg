@@ -40,7 +40,7 @@
     <ClInclude Include="RegistryUtils.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="WindowsTypes.h">
+    <ClInclude Include="WindowsTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ModuleUtils.hpp">
