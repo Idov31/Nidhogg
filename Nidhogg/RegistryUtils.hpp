@@ -453,7 +453,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next key data, 0x%x", GetExceptionCode()));
+					KdPrint((DRIVER_PREFIX "Failed to copy the next key data, 0x%x\n", GetExceptionCode()));
 				}
 
 				copyKeyInformationData = false;
@@ -567,7 +567,7 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 					RtlCopyMemory(preInfo->KeyValueInformation, tempValueInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next value data, 0x%x", GetExceptionCode()));
+					KdPrint((DRIVER_PREFIX "Failed to copy the next value data, 0x%x\n", GetExceptionCode()));
 				}
 
 				copyKeyInformationData = false;
