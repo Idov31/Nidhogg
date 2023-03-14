@@ -27,6 +27,8 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Built-in ETW patch
 - Process signature (PP/PPL) modification
 - Can be reflectively loaded
+- Shellcode Injection (APC/CreateThread)
+- DLL Injection (APC/CreateThread)
 
 ## Reflective loading
 
@@ -60,7 +62,19 @@ int main() {
 
 ## Setup
 
-### Building
+### Building the client
+
+To compile the client, you will need to install [CMake](https://community.chocolatey.org/packages/cmake.install/3.13.1) and [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16) installed and then just run:
+
+```sh
+cd <NIDHOGG PROJECT DIRECTORY>\Example
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
+
+### Building the driver
 
 To compile the project, you will need the following tools:
 

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include <fstream>
 #include "../NidhoggClient/Nidhogg.hpp"
 
 enum class Options {
