@@ -827,7 +827,18 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 		case Options::InjectDll:
 		{
-			std::cerr << "[ - ] TBD!" << std::endl;
+			int pid = _wtoi(argv[2]);
+
+			if (pid == 0) {
+				std::cerr << "[ - ] Invalid PID." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			std::wstring temp = std::wstring(argv[3]);
+			std::string dllPath = std::string(temp.begin(), temp.end());
+
+			success = Nidhogg::ModuleUtils::NidhoggInjectDll(hNidhogg, pid, dllPath.c_str());
 			break;
 		}
 	}

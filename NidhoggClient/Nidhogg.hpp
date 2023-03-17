@@ -88,11 +88,11 @@
 #define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 >>>>>>> a20f2bb (Updated client)
 
 // ** General Definitions ***************************************************************************************
-// ADD THESE DEFINITIONS FOR HKLM, HKU & HKCU: https://docs.microsoft.com/en-us/windows-hardware/drivers/kernel/registry-key-object-routines
 #define DRIVER_NAME LR"(\\.\Nidhogg)"
 #define NIDHOGG_SUCCESS 0
 #define NIDHOGG_GENERAL_ERROR 1
@@ -233,6 +233,11 @@ struct ShellcodeInformation {
 	PVOID Parameter1;
 	PVOID Parameter2;
 	PVOID Parameter3;
+};
+
+struct DllInformation {
+	ULONG Pid;
+	CHAR DllPath[MAX_PATH];
 };
 // *********************************************************************************************************
 
@@ -621,7 +626,7 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(valueName) > REG_VALUE_LEN) {
 				return NIDHOGG_GENERAL_ERROR;
 			}
 
@@ -643,7 +648,7 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(valueName) > REG_VALUE_LEN) {
 				return NIDHOGG_GENERAL_ERROR;
 			}
 
@@ -945,6 +950,27 @@ namespace Nidhogg {
 	}
 
 	namespace ModuleUtils {
+		int NidhoggInjectDll(HANDLE hNidhogg, DWORD pid, const char* dllPath) {
+			DWORD returned;
+			DllInformation dllInformation{};
+
+			if (pid <= 0 || pid == 4 || !dllPath)
+				return NIDHOGG_GENERAL_ERROR;
+
+			if (strlen(dllPath) > MAX_PATH)
+				return NIDHOGG_GENERAL_ERROR;
+
+			dllInformation.Pid = pid;
+			strcpy_s(dllInformation.DllPath, strlen(dllPath) + 1, dllPath);
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_INJECT_DLL,
+				&dllInformation, sizeof(dllInformation),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
 		int NidhoggInjectShellcode(HANDLE hNidhogg, DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3) {
 			DWORD returned;
 			ShellcodeInformation shellcodeInformation{};

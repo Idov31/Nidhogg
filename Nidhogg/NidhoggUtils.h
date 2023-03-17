@@ -27,7 +27,8 @@ struct EnabledFeatures {
 	bool ProcessProtection		  = true;
 	bool ThreadProtection		  = true;
 	bool FileProtection			  = true;
-	bool Injection				  = true;
+	bool ApcInjection			  = true;
+	bool CreateThreadInjection	  = true;
 };
 EnabledFeatures Features;
 
@@ -63,6 +64,11 @@ struct DynamicImportedModulesGlobal {
 	}
 };
 DynamicImportedModulesGlobal dimGlobals;
+
+struct DllInformation {
+	ULONG Pid;
+	CHAR DllPath[MAX_PATH];
+};
 
 struct ShellcodeInformation {
 	ULONG Pid;

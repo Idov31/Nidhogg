@@ -285,5 +285,5 @@ void InitializeFeatures() {
 		Features.FileProtection = false;
 
 	if (!dimGlobals.KeInitializeApc || !dimGlobals.KeInsertQueueApc || !dimGlobals.KeTestAlertThread)
-		Features.Injection = false;
+		Features.ApcInjection = false;
 }
