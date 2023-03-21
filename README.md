@@ -28,7 +28,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Process signature (PP/PPL) modification
 - Can be reflectively loaded
 - Shellcode Injection (APC)
-- DLL Injection (APC)
+- DLL Injection (APC & NtCreateThreadEx)
 
 ## Reflective loading
 
@@ -112,10 +112,9 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 
 - [Windows Kernel Programming Book](https://github.com/zodiacon/windowskernelprogrammingbook)
 - [Kernel Structure Documentation](https://www.vergiliusproject.com)
-- [Process Hiding](https://github.com/landhb/HideProcess)
-- [Process Elevation](https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/how-kernel-exploits-abuse-tokens-for-privilege-escalation)
 - [Registry Keys Hiding](https://github.com/JKornev/hidden)
 - [Process Signatures](https://github.com/itm4n/PPLcontrol)
+- [NtCreateThreadEx Hotfix](https://github.com/DarthTon/Blackbone)
 
 ## Contributions
 
