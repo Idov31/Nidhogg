@@ -27,7 +27,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Built-in ETW patch
 - Process signature (PP/PPL) modification
 - Can be reflectively loaded
-- Shellcode Injection (APC)
+- Shellcode Injection (APC & NtCreateThreadEx)
 - DLL Injection (APC & NtCreateThreadEx)
 
 ## Reflective loading

