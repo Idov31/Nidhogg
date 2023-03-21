@@ -266,24 +266,55 @@ void ClearAll() {
 * There is no return value.
 */
 void InitializeFeatures() {
+	UNICODE_STRING routineName;
+
+	// Initialize globals.
 	tGlobals.Init();
 	pGlobals.Init();
 	fGlobals.Init();
 	rGlobals.Init();
-	dimGlobals.Init();
 
-	if (!dimGlobals.MmCopyVirtualMemory)
+	// Initialize functions.
+	RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
+	MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
+
+	if (!MmCopyVirtualMemory)
 		Features.ReadData = false;
 
-	if (!dimGlobals.ZwProtectVirtualMemory || !Features.ReadData)
+	RtlInitUnicodeString(&routineName, L"ZwProtectVirtualMemory");
+	ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
+
+	if (!ZwProtectVirtualMemory || !Features.ReadData)
 		Features.WriteData = false;
 
-	if (!Features.WriteData || !dimGlobals.PsGetProcessPeb)
+	RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
+	PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
+
+	if (!Features.WriteData || !PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
-	if (!dimGlobals.ObReferenceObjectByName)
+	RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
+	ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
+
+	if (!ObReferenceObjectByName)
 		Features.FileProtection = false;
 
-	if (!dimGlobals.KeInitializeApc || !dimGlobals.KeInsertQueueApc || !dimGlobals.KeTestAlertThread)
+	RtlInitUnicodeString(&routineName, L"KeInitializeApc");
+	KeInitializeApc = (tKeInitializeApc)MmGetSystemRoutineAddress(&routineName);
+	RtlInitUnicodeString(&routineName, L"KeInsertQueueApc");
+	KeInsertQueueApc = (tKeInsertQueueApc)MmGetSystemRoutineAddress(&routineName);
+	RtlInitUnicodeString(&routineName, L"KeTestAlertThread");
+	KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
+	RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
+	ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
+
+	if (!KeInitializeApc || !KeInsertQueueApc || !KeTestAlertThread || !ZwQuerySystemInformation)
 		Features.ApcInjection = false;
+
+	if (NT_SUCCESS(GetSSDTAddress())) {
+		NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
+
+		if (NtCreateThreadEx)
+			Features.CreateThreadInjection = true;
+	}
 }

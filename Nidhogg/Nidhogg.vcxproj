@@ -202,7 +202,7 @@
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileUtils.hpp" />
-    <ClInclude Include="ModuleUtils.hpp" />
+    <ClInclude Include="MemoryUtils.hpp" />
     <ClInclude Include="NidhoggUtils.h" />
     <ClInclude Include="NidhoggDeviceControl.hpp" />
     <ClInclude Include="Nidhogg.h" />

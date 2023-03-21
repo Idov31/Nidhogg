@@ -41,7 +41,7 @@ NTSTATUS InstallNtfsHook(int irpMjFunction) {
 
 	// InterlockedExchange64 maybe a problem and will need to use InterlockedExchange.
 	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
-	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+	status = ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to get ntfs driver object, (0x%08X).\n", status));
@@ -70,7 +70,7 @@ NTSTATUS UninstallNtfsHook(int irpMjFunction) {
 
 	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
 
-	status = dimGlobals.ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
+	status = ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
 
 	if (!NT_SUCCESS(status))
 		return status;

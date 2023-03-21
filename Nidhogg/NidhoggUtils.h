@@ -28,49 +28,35 @@ struct EnabledFeatures {
 	bool ThreadProtection		  = true;
 	bool FileProtection			  = true;
 	bool ApcInjection			  = true;
-	bool CreateThreadInjection	  = true;
+	bool CreateThreadInjection	  = false;
 };
 EnabledFeatures Features;
 
-// --- ModuleUtils structs ----------------------------------------------------
-struct DynamicImportedModulesGlobal {
-	tObReferenceObjectByName  ObReferenceObjectByName;
-	tZwProtectVirtualMemory   ZwProtectVirtualMemory;
-	tMmCopyVirtualMemory	  MmCopyVirtualMemory;
-	tPsGetProcessPeb		  PsGetProcessPeb;
-	tKeInitializeApc		  KeInitializeApc;
-	tKeInsertQueueApc		  KeInsertQueueApc;
-	tKeTestAlertThread		  KeTestAlertThread;
-	tZwQuerySystemInformation ZwQuerySystemInformation;
+// --- MemoryUtils structs ----------------------------------------------------
+tObReferenceObjectByName  ObReferenceObjectByName;
+tZwProtectVirtualMemory   ZwProtectVirtualMemory;
+tMmCopyVirtualMemory	  MmCopyVirtualMemory;
+tPsGetProcessPeb		  PsGetProcessPeb;
+tKeInitializeApc		  KeInitializeApc;
+tKeInsertQueueApc		  KeInsertQueueApc;
+tKeTestAlertThread		  KeTestAlertThread;
+tZwQuerySystemInformation ZwQuerySystemInformation;
+tNtCreateThreadEx		  NtCreateThreadEx;
+PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
 
-	void Init() {
-		UNICODE_STRING routineName;
-		RtlInitUnicodeString(&routineName, L"ZwProtectVirtualMemory");
-		ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
-		MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
-		PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
-		ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"KeInitializeApc");
-		KeInitializeApc = (tKeInitializeApc)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"KeInsertQueueApc");
-		KeInsertQueueApc = (tKeInsertQueueApc)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"KeTestAlertThread");
-		KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
-		RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
-		ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
-	}
+enum InjectionType {
+	APCInjection,
+	NtCreateThreadExInjection
 };
-DynamicImportedModulesGlobal dimGlobals;
 
 struct DllInformation {
+	InjectionType Type;
 	ULONG Pid;
 	CHAR DllPath[MAX_PATH];
 };
 
 struct ShellcodeInformation {
+	InjectionType Type;
 	ULONG Pid;
 	ULONG ShellcodeSize;
 	PVOID Shellcode;
