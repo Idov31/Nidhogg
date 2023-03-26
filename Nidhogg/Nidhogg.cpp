@@ -19,7 +19,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	if (!IoCreateDriver)
 		return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
 
-	return IoCreateDriver(&driverName, &NidhoggEntry);
+	NTSTATUS status = IoCreateDriver(&driverName, &NidhoggEntry);
+
+	if (!NT_SUCCESS(status))
+		KdPrint((DRIVER_PREFIX "Failed to create driver: (0x%08X)\n", status));
+	return status;
 #endif
 
 	return NidhoggEntry(DriverObject, RegistryPath);
@@ -50,7 +54,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	PDEVICE_OBJECT DeviceObject = nullptr;
 
 	// Creating device and symbolic link.
-	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
+	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status));
@@ -69,21 +73,21 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	if (!Features.DriverReflectivelyLoaded) {
 		OB_OPERATION_REGISTRATION operations[] = {
 		{
-			PsProcessType,		// object type
+			PsProcessType,
 			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
-			OnPreOpenProcess, nullptr	// pre, post
+			OnPreOpenProcess, nullptr
 		},
 		{
-			PsThreadType,		// object type
+			PsThreadType,
 			OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE,
-			OnPreOpenThread, nullptr	// pre, post
+			OnPreOpenThread, nullptr
 		}
 		};
 		OB_CALLBACK_REGISTRATION registrationCallbacks = {
 			OB_FLT_REGISTRATION_VERSION,
-			REGISTERED_OB_CALLBACKS,				// operation count
-			RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),		// altitude
-			nullptr,		// context
+			REGISTERED_OB_CALLBACKS,
+			RTL_CONSTANT_STRING(OB_CALLBACKS_ALTITUDE),
+			nullptr,
 			operations
 		};
 
@@ -103,6 +107,10 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			status = STATUS_SUCCESS;
 			Features.RegistryFeatures = false;
 		}
+	}
+	else {
+		DeviceObject->Flags |= DO_BUFFERED_IO;
+		DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 	}
 
 	// Setting up functions.
