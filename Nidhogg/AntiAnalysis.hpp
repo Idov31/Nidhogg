@@ -1,17 +1,18 @@
 #pragma once
 #include "pch.h"
 
-NTSTATUS RemoveCallback(KernelCallback* Callback);
+NTSTATUS RestoreObCallback(KernelCallback* Callback);
+NTSTATUS RemoveObCallback(KernelCallback* Callback);
 NTSTATUS ListObCallbacks(CallbacksList* Callbacks);
 NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
 NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
-
+NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
 
 /*
 * Description:
-* RemoveCallback is responsible to remove a certain callback from the callback list.
+* RestoreObCallback is responsible to restoring a certain callback from the callback list.
 *
 * Parameters:
 * @Callback [KernelCallback*] -- Callback to remove.
@@ -19,7 +20,62 @@ NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 * Returns:
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
-NTSTATUS RemoveCallback(KernelCallback* Callback) {
+NTSTATUS RestoreObCallback(KernelCallback* Callback) {
+	DisabledKernelCallback callback;
+	NTSTATUS status = STATUS_NOT_FOUND;
+	PFULL_OBJECT_TYPE objectType = NULL;
+
+	switch (Callback->Type) {
+	case ObProcessType:
+		objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
+		break;
+	case ObThreadType:
+		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
+		break;
+	default:
+		status = STATUS_INVALID_PARAMETER;
+		break;
+	}
+	AutoLock locker(aaGlobals.Lock);
+	status = RemoveDisabledCallback(Callback, &callback);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
+
+	do {
+		if (currentObjectCallback->Enabled && (ULONG64)currentObjectCallback->Entry == callback.Entry) {
+			if (currentObjectCallback->PreOperation == ObPreOpenDummyFunction) {
+				currentObjectCallback->PreOperation = (POB_PRE_OPERATION_CALLBACK)callback.CallbackAddress;
+				status = STATUS_SUCCESS;
+				break;
+			}
+			else if (currentObjectCallback->PostOperation == ObPostOpenDummyFunction) {
+				currentObjectCallback->PostOperation = (POB_POST_OPERATION_CALLBACK)callback.CallbackAddress;
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+		currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
+	} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
+
+	ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	return status;
+}
+
+/*
+* Description:
+* RemoveObCallback is responsible to remove a certain callback from the callback list.
+*
+* Parameters:
+* @Callback [KernelCallback*] -- Callback to remove.
+*
+* Returns:
+* @status	[NTSTATUS]		  -- Whether successfuly removed or not.
+*/
+NTSTATUS RemoveObCallback(KernelCallback* Callback) {
 	NTSTATUS status = STATUS_NOT_FOUND;
 	PFULL_OBJECT_TYPE objectType = NULL;
 	ULONG64 operationAddress = 0;
@@ -211,6 +267,34 @@ NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback) {
 			aaGlobals.DisabledCallbacks[i].Entry = Callback.Entry;
 			aaGlobals.DisabledCallbacks[i].Type = Callback.Type;
 			aaGlobals.DisabledCallbacksCount++;
+			status = STATUS_SUCCESS;
+			break;
+		}
+	}
+
+	return status;
+}
+
+/*
+* Description:
+* RemoveDisabledCallback is responsible for removing a disabled callback to the list of disabled callbacks.
+*
+* Parameters:
+* @Callback			  [KernelCallback*]	  -- Callback to search.
+* @DisabledCallback	  [DisabledCallback*] -- Output callback.
+*
+* Returns:
+* @status			  [NTSTATUS]		  -- STATUS_SUCCESS if succeeded else the error.
+*/
+NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback) {
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+	for (int i = 0; i < aaGlobals.DisabledCallbacksCount; i++) {
+		if (aaGlobals.DisabledCallbacks[i].CallbackAddress == Callback->CallbackAddress) {
+			DisabledCallback->CallbackAddress = aaGlobals.DisabledCallbacks[i].CallbackAddress;
+			DisabledCallback->Entry = aaGlobals.DisabledCallbacks[i].Entry;
+			DisabledCallback->Type = aaGlobals.DisabledCallbacks[i].Type;
+			aaGlobals.DisabledCallbacksCount--;
 			status = STATUS_SUCCESS;
 			break;
 		}
