@@ -196,7 +196,7 @@ typedef struct _IMAGE_SECTION_HEADER
 
 typedef struct _PEB_LDR_DATA
 {
-	ULONG Length;                                                           //0x0
+	ULONG Length;       
 	UCHAR Initialized;                                                      //0x4
 	PVOID SsHandle;                                                         //0x8
 	LIST_ENTRY InLoadOrderModuleList;                               //0x10
@@ -599,6 +599,61 @@ enum SYSTEM_INFORMATION_CLASS {
 	SystemOriginalImageFeatureInformation = 238,
 	MaxSystemInfoClass = 239
 };
+
+#pragma warning (disable: 4201)
+struct _EX_PUSH_LOCK
+{
+	union
+	{
+		struct
+		{
+			ULONGLONG Locked : 1; 
+			ULONGLONG Waiting : 1;
+			ULONGLONG Waking : 1; 
+			ULONGLONG MultipleShared : 1;
+			ULONGLONG Shared : 60;
+		};
+		ULONGLONG Value;
+		VOID* Ptr;      
+	};
+};
+
+typedef struct _FULL_OBJECT_TYPE {
+	LIST_ENTRY TypeList;
+	UNICODE_STRING Name;
+	VOID* DefaultObject;
+	UCHAR Index;
+	ULONG TotalNumberOfObjects;
+	ULONG TotalNumberOfHandles;
+	ULONG HighWaterNumberOfObjects;
+	ULONG HighWaterNumberOfHandles;
+	UCHAR TypeInfo[0x78];
+	_EX_PUSH_LOCK TypeLock;
+	ULONG Key;
+	LIST_ENTRY CallbackList;
+} FULL_OBJECT_TYPE, * PFULL_OBJECT_TYPE;
+
+typedef struct _OB_CALLBACK OB_CALLBACK;
+
+typedef struct _OB_CALLBACK_ENTRY {
+	LIST_ENTRY CallbackList;
+	OB_OPERATION Operations;
+	BOOLEAN Enabled;           
+	OB_CALLBACK* Entry;     
+	POBJECT_TYPE ObjectType;
+	POB_PRE_OPERATION_CALLBACK PreOperation;
+	POB_POST_OPERATION_CALLBACK PostOperation;
+	KSPIN_LOCK Lock;
+} OB_CALLBACK_ENTRY, * POB_CALLBACK_ENTRY;
+
+typedef struct _OB_CALLBACK {
+	USHORT Version;
+	USHORT OperationRegistrationCount;
+	PVOID RegistrationContext;
+	UNICODE_STRING AltitudeString;
+	OB_CALLBACK_ENTRY EntryItems[1];
+	WCHAR AltitudeBuffer[1];
+} OB_CALLBACK;
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {

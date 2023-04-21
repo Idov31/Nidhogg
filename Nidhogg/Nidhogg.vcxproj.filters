@@ -52,6 +52,9 @@
     <ClInclude Include="NidhoggDeviceControl.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AntiAnalysis.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">

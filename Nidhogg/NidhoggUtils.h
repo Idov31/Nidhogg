@@ -10,6 +10,7 @@
 #define MAX_PIDS 256
 #define MAX_TIDS 256
 #define MAX_PATH 260
+#define MAX_DRIVER_PATH 256
 #define MAX_FILES 256
 #define MAX_REG_ITEMS 256
 #define REG_VALUE_LEN 260
@@ -31,6 +32,27 @@ struct EnabledFeatures {
 	bool CreateThreadInjection	  = false;
 };
 EnabledFeatures Features;
+
+// --- MemoryUtils structs ----------------------------------------------------
+enum CallbackType {
+	ObProcessType,
+	ObThreadType
+};
+
+struct ObCallback {
+	PVOID PreOperation;
+	PVOID PostOperation;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct CallbacksList {
+	CallbackType Type;
+	ULONG NumberOfCallbacks;
+	ObCallback* Callbacks;
+};
+
+
+// ----------------------------------------------------------------------------
 
 // --- MemoryUtils structs ----------------------------------------------------
 tObReferenceObjectByName  ObReferenceObjectByName;

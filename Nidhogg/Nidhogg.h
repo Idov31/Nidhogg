@@ -438,6 +438,7 @@ RegistryGlobals rGlobals;
 #include "FileUtils.hpp"
 #include "RegistryUtils.hpp"
 #include "MemoryUtils.hpp"
+#include "AntiAnalysis.hpp"
 #include "NidhoggDeviceControl.hpp"
 <<<<<<< HEAD
 >>>>>>> e00fdd2 (Organized code)
