@@ -43,7 +43,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
 	NTSTATUS status = STATUS_SUCCESS;
-
 	InitializeFeatures();
 
 	// Setting up the device object.
@@ -154,25 +153,6 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
-}
-
-/*
-* Description:
-* CompleteIrp is responsible for handling the status return via the IRP.
-*
-* Parameters:
-* @Irp	   [PIRP]	   -- The IRP that contains the request's status.
-* @status  [NTSTATUS]  -- The status to assign to the IRP.
-* @info    [ULONG_PTR] -- Additional information to assign to the IRP.
-*
-* Returns:
-* @status [NTSTATUS]   -- The given status parameter.
-*/
-NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG_PTR info) {
-	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = info;
-	IoCompleteRequest(Irp, 0);
-	return status;
 }
 
 /*

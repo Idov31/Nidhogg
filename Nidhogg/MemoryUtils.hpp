@@ -854,7 +854,6 @@ NTSTATUS GetSSDTAddress() {
 CleanUp:
 	if (info)
 		ExFreePoolWithTag(info, DRIVER_TAG);
-
 	return status;
 }
 
