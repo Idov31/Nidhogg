@@ -1,8 +1,75 @@
 #pragma once
 #include "pch.h"
 
+NTSTATUS RemoveCallback(KernelCallback* Callback);
 NTSTATUS ListObCallbacks(CallbacksList* Callbacks);
 NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
+OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
+VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
+NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
+
+
+/*
+* Description:
+* RemoveCallback is responsible to remove a certain callback from the callback list.
+*
+* Parameters:
+* @Callback [KernelCallback*] -- Callback to remove.
+*
+* Returns:
+* @status	[NTSTATUS]		  -- Whether successfuly removed or not.
+*/
+NTSTATUS RemoveCallback(KernelCallback* Callback) {
+	NTSTATUS status = STATUS_NOT_FOUND;
+	PFULL_OBJECT_TYPE objectType = NULL;
+	ULONG64 operationAddress = 0;
+
+	switch (Callback->Type) {
+	case ObProcessType:
+		objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
+		break;
+	case ObThreadType:
+		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
+		break;
+	default:
+		status = STATUS_INVALID_PARAMETER;
+		break;
+	}
+
+	if (status == STATUS_INVALID_PARAMETER)
+		return status;
+
+	ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
+
+	do {
+		if (currentObjectCallback->Enabled) {
+			if ((ULONG64)currentObjectCallback->PreOperation == Callback->CallbackAddress) {
+				operationAddress = (ULONG64)currentObjectCallback->PreOperation;
+				currentObjectCallback->PreOperation = ObPreOpenDummyFunction;
+			}
+			else if ((ULONG64)currentObjectCallback->PostOperation == Callback->CallbackAddress) {
+				operationAddress = (ULONG64)currentObjectCallback->PostOperation;
+				currentObjectCallback->PostOperation = ObPostOpenDummyFunction;
+			}
+
+			if (operationAddress) {
+				DisabledKernelCallback callback;
+				callback.CallbackAddress = operationAddress;
+				callback.Entry = (ULONG64)currentObjectCallback->Entry;
+				callback.Type = Callback->Type;
+				AutoLock locker(aaGlobals.Lock);
+
+				status = AddDisabledCallback(callback);
+				break;
+			}
+		}
+		currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
+	} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
+
+	ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	return status;
+}
 
 /*
 * Description:
@@ -78,7 +145,7 @@ NTSTATUS ListObCallbacks(CallbacksList* Callbacks) {
 *
 * Parameters:
 * @callack	  [PVOID]    -- Callback's address.
-* @driverName [PCHAR*]    -- Pointer to the driver name if found, else null.
+* @driverName [PCHAR]    -- Pointer to the driver name if found, else null.
 *
 * Returns:
 * @status	  [NTSTATUS] -- Whether successfuly matched or not.
@@ -123,4 +190,62 @@ CleanUp:
 	if (info)
 		ExFreePoolWithTag(info, DRIVER_TAG);
 	return status;
+}
+
+/*
+* Description:
+* AddDisabledCallback is responsible for adding a disabled callback to the list of disabled callbacks.
+*
+* Parameters:
+* @Callback	  [DisabledKernelCallback] -- Callback to add.
+*
+* Returns:
+* @status	  [NTSTATUS]			   -- STATUS_SUCCESS if succeeded else the error.
+*/
+NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback) {
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+	for (int i = 0; i < MAX_KERNEL_CALLBACKS; i++) {
+		if (!aaGlobals.DisabledCallbacks[i].CallbackAddress) {
+			aaGlobals.DisabledCallbacks[i].CallbackAddress = Callback.CallbackAddress;
+			aaGlobals.DisabledCallbacks[i].Entry = Callback.Entry;
+			aaGlobals.DisabledCallbacks[i].Type = Callback.Type;
+			aaGlobals.DisabledCallbacksCount++;
+			status = STATUS_SUCCESS;
+			break;
+		}
+	}
+
+	return status;
+}
+
+
+/*
+* Description:
+* ObPreOpenDummyFunction is a dummy function for pre ob callbacks.
+*
+* Parameters:
+* @RegistrationContext [PVOID]						   -- Unused.
+* @Info				   [POB_PRE_OPERATION_INFORMATION] -- Unused.
+*
+* Returns:
+* @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
+*/
+OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info) {
+	return OB_PREOP_SUCCESS;
+}
+
+/*
+* Description:
+* ObPostOpenDummyFunction is a dummy function for post ob callbacks.
+*
+* Parameters:
+* @RegistrationContext [PVOID]						    -- Unused.
+* @Info				   [POB_POST_OPERATION_INFORMATION] -- Unused.
+*
+* Returns:
+* There is no return value.
+*/
+VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info) {
+	return;
 }

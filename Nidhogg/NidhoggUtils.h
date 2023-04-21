@@ -10,6 +10,7 @@
 #define MAX_PIDS 256
 #define MAX_TIDS 256
 #define MAX_PATH 260
+#define MAX_KERNEL_CALLBACKS 256
 #define MAX_DRIVER_PATH 256
 #define MAX_FILES 256
 #define MAX_REG_ITEMS 256
@@ -33,10 +34,21 @@ struct EnabledFeatures {
 };
 EnabledFeatures Features;
 
-// --- MemoryUtils structs ----------------------------------------------------
+// --- AntiAnalysis structs ----------------------------------------------------
 enum CallbackType {
 	ObProcessType,
 	ObThreadType
+};
+
+struct KernelCallback {
+	CallbackType Type;
+	ULONG64 CallbackAddress;
+};
+
+struct DisabledKernelCallback {
+	CallbackType Type;
+	ULONG64 CallbackAddress;
+	ULONG64 Entry;
 };
 
 struct ObCallback {
@@ -51,7 +63,17 @@ struct CallbacksList {
 	ObCallback* Callbacks;
 };
 
+struct AntiAnalysisGlobals {
+	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
+	ULONG DisabledCallbacksCount;
+	FastMutex Lock;
 
+	void Init() {
+		DisabledCallbacksCount = 0;
+		Lock.Init();
+	}
+};
+AntiAnalysisGlobals aaGlobals;
 // ----------------------------------------------------------------------------
 
 // --- MemoryUtils structs ----------------------------------------------------

@@ -241,6 +241,11 @@ void ClearAll() {
 		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
 	}
 	rGlobals.ProtectedItems.Values.ValuesCount = 0;
+
+	// Clearing the anti analysis tampered callbacks.
+	AutoLock antianalysisLocker(aaGlobals.Lock);
+	memset(aaGlobals.DisabledCallbacks, 0, sizeof(aaGlobals.DisabledCallbacks));
+	aaGlobals.DisabledCallbacksCount = 0;
 }
 
 /*
@@ -261,6 +266,7 @@ void InitializeFeatures() {
 	pGlobals.Init();
 	fGlobals.Init();
 	rGlobals.Init();
+	aaGlobals.Init();
 
 	// Initialize functions.
 	RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
