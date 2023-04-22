@@ -25,7 +25,7 @@
     <ClInclude Include="FastMutex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Nidhogg.h">
+    <ClInclude Include="NidhoggUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pch.h">
@@ -35,6 +35,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FileUtils.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RegistryUtils.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowsTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryUtils.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Nidhogg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NidhoggDeviceControl.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AntiAnalysis.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

