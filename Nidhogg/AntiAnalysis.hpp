@@ -1,9 +1,20 @@
 #pragma once
 #include "pch.h"
 
-NTSTATUS RestoreObCallback(KernelCallback* Callback);
-NTSTATUS RemoveObCallback(KernelCallback* Callback);
-NTSTATUS ListObCallbacks(CallbacksList* Callbacks);
+constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
+constexpr UCHAR PspSetCreateProcessNotifyRoutineSignature[] = { 0xE8, 0xCC };
+constexpr UCHAR PspCreateProcessNotifyRoutineCountExSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr SIZE_T PspSetCreateProcessNotifyRoutineSignatureDistance = 0x20;
+constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
+constexpr SIZE_T PsNotifyRoutinesRoutineOffset = 5;
+constexpr SIZE_T RoutinesListOffset = 7;
+constexpr SIZE_T PsNotifyRoutinesRoutineCountOffsetEx = 0xB;
+constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xF;
+
+NTSTATUS RestoreCallback(KernelCallback* Callback);
+NTSTATUS RemoveCallback(KernelCallback* Callback);
+NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
+NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks);
 NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
@@ -20,7 +31,7 @@ NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback
 * Returns:
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
-NTSTATUS RestoreObCallback(KernelCallback* Callback) {
+NTSTATUS RestoreCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback;
 	NTSTATUS status = STATUS_NOT_FOUND;
 	PFULL_OBJECT_TYPE objectType = NULL;
@@ -32,15 +43,20 @@ NTSTATUS RestoreObCallback(KernelCallback* Callback) {
 	case ObThreadType:
 		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
 		break;
+	case PsCreateProcessType:
+		return PsSetCreateProcessNotifyRoutine((PCREATE_PROCESS_NOTIFY_ROUTINE)Callback->CallbackAddress, FALSE);
+	case PsCreateProcessTypeEx:
+		return PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)Callback->CallbackAddress, FALSE);
 	default:
 		status = STATUS_INVALID_PARAMETER;
 		break;
 	}
-	AutoLock locker(aaGlobals.Lock);
-	status = RemoveDisabledCallback(Callback, &callback);
 
 	if (!NT_SUCCESS(status))
 		return status;
+
+	AutoLock locker(aaGlobals.Lock);
+	status = RemoveDisabledCallback(Callback, &callback);
 
 	ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
 	POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
@@ -75,7 +91,7 @@ NTSTATUS RestoreObCallback(KernelCallback* Callback) {
 * Returns:
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
-NTSTATUS RemoveObCallback(KernelCallback* Callback) {
+NTSTATUS RemoveCallback(KernelCallback* Callback) {
 	NTSTATUS status = STATUS_NOT_FOUND;
 	PFULL_OBJECT_TYPE objectType = NULL;
 	ULONG64 operationAddress = 0;
@@ -87,6 +103,10 @@ NTSTATUS RemoveObCallback(KernelCallback* Callback) {
 	case ObThreadType:
 		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
 		break;
+	case PsCreateProcessType:
+		return PsSetCreateProcessNotifyRoutine((PCREATE_PROCESS_NOTIFY_ROUTINE)Callback->CallbackAddress, TRUE);
+	case PsCreateProcessTypeEx:
+		return PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)Callback->CallbackAddress, TRUE);
 	default:
 		status = STATUS_INVALID_PARAMETER;
 		break;
@@ -129,15 +149,129 @@ NTSTATUS RemoveObCallback(KernelCallback* Callback) {
 
 /*
 * Description:
-* ListObCallbacks is responsible to list all registered ObCallbacks of certain type.
+* ListPsNotifyRoutines is responsible to list all registered PsNotify routines.
 *
 * Parameters:
-* @Callbacks [ObCallbacksList*] -- All callbacks as list.
+* @Callbacks [CallbacksList*]	-- All callbacks as list.
 *
 * Returns:
 * @status	 [NTSTATUS]			-- Whether successfuly listed or not.
 */
-NTSTATUS ListObCallbacks(CallbacksList* Callbacks) {
+NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PVOID searchedRoutineAddress = NULL;
+	UCHAR* targetFunctionSignature = NULL;
+	UCHAR* listSignature = NULL;
+	UCHAR* listCountSignature = NULL;
+	ULONG foundIndex = 0;
+	SIZE_T targetFunctionDistance = 0;
+	SIZE_T listDistance = 0;
+	SIZE_T targetFunctionSigLen = 0;
+	SIZE_T listSigLen = 0;
+	SIZE_T listCountSigLen = 0;
+	SIZE_T countOffset = 0;
+	ULONG64 currentRoutine = 0;
+	
+	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
+
+	switch (Callbacks->Type) {
+	case PsCreateProcessTypeEx:
+	case PsCreateProcessType: {
+		targetFunctionSigLen = sizeof(PspSetCreateProcessNotifyRoutineSignature);
+		targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
+
+		if (!targetFunctionSignature) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		
+		RtlCopyMemory(targetFunctionSignature, PspSetCreateProcessNotifyRoutineSignature, targetFunctionSigLen);
+		searchedRoutineAddress = (PVOID)PsSetCreateProcessNotifyRoutineEx;
+		targetFunctionDistance = PspSetCreateProcessNotifyRoutineSignatureDistance;
+
+		listSigLen = sizeof(PspCreateProcessNotifyRoutineSignature);
+		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
+
+		if (!listSignature) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+
+		RtlCopyMemory(listSignature, PspCreateProcessNotifyRoutineSignature, listSigLen);
+		listDistance = PspCreateProcessNotifyRoutineDistance;
+
+		listCountSigLen = sizeof(PspCreateProcessNotifyRoutineCountExSignature);
+		listCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listCountSigLen, DRIVER_TAG);
+
+		if (!listCountSignature) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+
+		RtlCopyMemory(listCountSignature, PspCreateProcessNotifyRoutineCountExSignature, listCountSigLen);
+		countOffset = PsNotifyRoutinesRoutineCountOffsetEx;
+		break;
+	}
+	default:
+		status = STATUS_INVALID_PARAMETER;
+		break;
+	}
+
+	if (!NT_SUCCESS(status))
+		goto Cleanup;
+
+	// Find offset of PspCreateProcessNotifyRoutine
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, targetFunctionSigLen - 1);
+
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
+
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + PsNotifyRoutinesRoutineOffset;
+
+	PLONG routinesListOffset = (PLONG)FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, listSigLen);
+
+	if (!routinesListOffset)
+		return STATUS_NOT_FOUND;
+	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset) + foundIndex + RoutinesListOffset;
+
+	PLONG routinesLengthOffset = (PLONG)FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, listCountSigLen - 1);
+
+	if (!routinesLengthOffset)
+		return STATUS_NOT_FOUND;
+
+	if (Callbacks->Type == PsCreateProcessType)
+		countOffset = PsNotifyRoutinesRoutineCountOffset;
+	Callbacks->NumberOfRoutines = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+
+	for (SIZE_T i = 0; i < Callbacks->NumberOfRoutines; i++) {
+		currentRoutine = *(PULONG64)(routinesList + (i * 8));
+		Callbacks->Routines[i].CallbackAddress = *(PULONG64)(currentRoutine &= ~(1ULL << 3) + 0x1);
+
+		if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Routines[i].CallbackAddress, driverName)))
+			strcpy_s(Callbacks->Routines[i].DriverName, driverName);
+	}
+
+Cleanup:
+	if (listCountSignature)
+		ExFreePoolWithTag(listCountSignature, DRIVER_TAG);
+	if (listSignature)
+		ExFreePoolWithTag(listSignature, DRIVER_TAG);
+	if (targetFunctionSignature)
+		ExFreePoolWithTag(targetFunctionSignature, DRIVER_TAG);
+	return status;
+}
+
+/*
+* Description:
+* ListObCallbacks is responsible to list all registered ObCallbacks of certain type.
+*
+* Parameters:
+* @Callbacks [CallbacksList*]	-- All callbacks as list.
+*
+* Returns:
+* @status	 [NTSTATUS]			-- Whether successfuly listed or not.
+*/
+NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PFULL_OBJECT_TYPE objectType = NULL;
 	CHAR driverName[MAX_DRIVER_PATH] = {0};

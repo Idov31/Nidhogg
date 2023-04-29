@@ -633,6 +633,7 @@ typedef struct _FULL_OBJECT_TYPE {
 	LIST_ENTRY CallbackList;
 } FULL_OBJECT_TYPE, * PFULL_OBJECT_TYPE;
 
+
 typedef struct _OB_CALLBACK OB_CALLBACK;
 
 typedef struct _OB_CALLBACK_ENTRY {

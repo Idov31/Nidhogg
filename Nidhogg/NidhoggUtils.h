@@ -37,7 +37,9 @@ EnabledFeatures Features;
 // --- AntiAnalysis structs ----------------------------------------------------
 enum CallbackType {
 	ObProcessType,
-	ObThreadType
+	ObThreadType,
+	PsCreateProcessTypeEx,
+	PsCreateProcessType
 };
 
 struct KernelCallback {
@@ -57,10 +59,21 @@ struct ObCallback {
 	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
-struct CallbacksList {
+struct PsRoutine {
+	ULONG64 CallbackAddress;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct ObCallbacksList {
 	CallbackType Type;
 	ULONG NumberOfCallbacks;
 	ObCallback* Callbacks;
+};
+
+struct PsRoutinesList {
+	CallbackType Type;
+	ULONG NumberOfRoutines;
+	PsRoutine* Routines;
 };
 
 struct AntiAnalysisGlobals {
