@@ -1165,7 +1165,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		switch (data->Type) {
 		case PsCreateProcessTypeEx:
 		case PsCreateProcessType: {
-			status = ListPsNotifyRoutines(data);
+			status = ListPsNotifyRoutines(data, NULL, NULL);
 			break;
 		}
 		default:
@@ -1204,6 +1204,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_PARAMETER;
 		}
 
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to remove callback (0x%08X)\n", status));
+
 		len += sizeof(KernelCallback);
 		break;
 	}
@@ -1235,6 +1238,9 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		default:
 			status = STATUS_INVALID_PARAMETER;
 		}
+
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to restore callback (0x%08X)\n", status));
 
 		len += sizeof(KernelCallback);
 		break;

