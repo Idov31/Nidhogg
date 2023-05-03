@@ -1163,8 +1163,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (PsRoutinesList*)Irp->AssociatedIrp.SystemBuffer;
 
 		switch (data->Type) {
+		case PsImageLoadType:
 		case PsCreateProcessTypeEx:
-		case PsCreateProcessType: {
+		case PsCreateProcessType: 
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread: {
 			status = ListPsNotifyRoutines(data, NULL, NULL);
 			break;
 		}
@@ -1193,8 +1196,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (data->Type) {
+		case PsImageLoadType:
 		case PsCreateProcessType:
 		case PsCreateProcessTypeEx:
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
 		case ObThreadType: {
 			status = RemoveCallback(data);
@@ -1228,8 +1234,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (data->Type) {
+		case PsImageLoadType:
 		case PsCreateProcessType:
 		case PsCreateProcessTypeEx:
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
 		case ObThreadType: {
 			status = RestoreCallback(data);

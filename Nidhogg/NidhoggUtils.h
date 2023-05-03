@@ -39,7 +39,10 @@ enum CallbackType {
 	ObProcessType,
 	ObThreadType,
 	PsCreateProcessTypeEx,
-	PsCreateProcessType
+	PsCreateProcessType,
+	PsCreateThreadType,
+	PsCreateThreadTypeNonSystemThread,
+	PsImageLoadType
 };
 
 struct KernelCallback {
