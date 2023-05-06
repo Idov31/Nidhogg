@@ -30,8 +30,11 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Shellcode Injection (APC & NtCreateThreadEx)
 - DLL Injection (APC & NtCreateThreadEx)
 - Querying kernel callbacks (ObCallbacks, process and thread creation callbacks, image loading callbacks and registry callbacks)
+    - - ObCallbacks
+    - - Process and thread creation routines
+    - - Image loading routines
+    - - Registry callbacks
 - Removing and restoring kernel callbacks (ObCallbacks, process and thread creation callbacks, image loading callbacks and registry callbacks)
-- Disable ETWTI
 
 ## Reflective loading
 
