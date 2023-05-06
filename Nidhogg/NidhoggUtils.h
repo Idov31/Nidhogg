@@ -42,7 +42,8 @@ enum CallbackType {
 	PsCreateProcessType,
 	PsCreateThreadType,
 	PsCreateThreadTypeNonSystemThread,
-	PsImageLoadType
+	PsImageLoadType,
+	CmRegistryType
 };
 
 struct KernelCallback {
@@ -67,6 +68,12 @@ struct PsRoutine {
 	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
+struct CmCallback {
+	ULONG64 CallbackAddress;
+	ULONG64 Context;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
 struct ObCallbacksList {
 	CallbackType Type;
 	ULONG NumberOfCallbacks;
@@ -77,6 +84,11 @@ struct PsRoutinesList {
 	CallbackType Type;
 	ULONG NumberOfRoutines;
 	PsRoutine* Routines;
+};
+
+struct CmCallbacksList {
+	ULONG NumberOfCallbacks;
+	CmCallback* Callbacks;
 };
 
 struct AntiAnalysisGlobals {

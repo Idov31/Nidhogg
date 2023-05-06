@@ -246,6 +246,15 @@ typedef struct _REAL_PEB {
 // Undocumented.
 extern "C" POBJECT_TYPE* IoDriverObjectType;
 
+typedef struct _CM_CALLBACK {
+	LIST_ENTRY List;
+	ULONG64 Unknown1[2];
+	ULONG64 Context;
+	ULONG64 Function;
+	UNICODE_STRING Altitude;
+	ULONG64 Unknown2[2];
+} CM_CALLBACK, * PCM_CALLBACK;
+
 typedef VOID(*PKNORMAL_ROUTINE) (
 	PVOID NormalContext,
 	PVOID SystemArgument1,

