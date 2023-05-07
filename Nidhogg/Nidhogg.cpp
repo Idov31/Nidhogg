@@ -45,6 +45,9 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	NTSTATUS status = STATUS_SUCCESS;
 	InitializeFeatures();
 
+	if (WindowsBuildNumber < WIN_1507)
+		return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
+
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
@@ -258,6 +261,16 @@ void InitializeFeatures() {
 	rGlobals.Init();
 	aaGlobals.Init();
 
+	// Get windows version.
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (NT_SUCCESS(result))
+		WindowsBuildNumber = osVersion.dwBuildNumber;
+
+	if (WindowsBuildNumber < WIN_1507)
+		return;
+
 	// Initialize functions.
 	RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
 	MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
@@ -291,6 +304,9 @@ void InitializeFeatures() {
 	KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
 	RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
 	ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
+
+	if (!KeInsertQueueApc)
+		Features.EtwTiTamper = false;
 
 	if (!KeInitializeApc || !KeInsertQueueApc || !KeTestAlertThread || !ZwQuerySystemInformation)
 		Features.ApcInjection = false;

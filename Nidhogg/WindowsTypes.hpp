@@ -1,5 +1,8 @@
 #pragma once
 
+// Globals
+ULONG WindowsBuildNumber = 0;
+
 // Documented.
 #define WIN_1507 10240
 #define WIN_1511 10586
@@ -196,7 +199,7 @@ typedef struct _IMAGE_SECTION_HEADER
 
 typedef struct _PEB_LDR_DATA
 {
-	ULONG Length;       
+	ULONG Length;
 	UCHAR Initialized;                                                      //0x4
 	PVOID SsHandle;                                                         //0x8
 	LIST_ENTRY InLoadOrderModuleList;                               //0x10
@@ -244,7 +247,28 @@ typedef struct _REAL_PEB {
 } REALPEB, * PREALPEB;
 
 // Undocumented.
-extern "C" POBJECT_TYPE* IoDriverObjectType;
+extern "C" POBJECT_TYPE * IoDriverObjectType;
+
+typedef struct _TRACE_ENABLE_INFO
+{
+	ULONG IsEnabled;                                                        //0x0
+	UCHAR Level;                                                            //0x4
+	UCHAR Reserved1;                                                        //0x5
+	USHORT LoggerId;                                                        //0x6
+	ULONG EnableProperty;                                                   //0x8
+	ULONG Reserved2;                                                        //0xc
+	ULONGLONG MatchAnyKeyword;                                              //0x10
+	ULONGLONG MatchAllKeyword;                                              //0x18
+} TRACE_ENABLE_INFO, * PTRACE_ENABLE_INFO;
+
+typedef struct _CM_CALLBACK {
+	LIST_ENTRY List;
+	ULONG64 Unknown1[2];
+	ULONG64 Context;
+	ULONG64 Function;
+	UNICODE_STRING Altitude;
+	ULONG64 Unknown2[2];
+} CM_CALLBACK, * PCM_CALLBACK;
 
 typedef VOID(*PKNORMAL_ROUTINE) (
 	PVOID NormalContext,
@@ -258,8 +282,8 @@ typedef VOID(*PKKERNEL_ROUTINE) (
 	PVOID* SystemArgument1,
 	PVOID* SystemArgument2);
 
-typedef VOID (*PKRUNDOWN_ROUTINE) (
-	 PKAPC Apc);
+typedef VOID(*PKRUNDOWN_ROUTINE) (
+	PKAPC Apc);
 
 typedef struct _PS_PROTECTION
 {
@@ -268,7 +292,7 @@ typedef struct _PS_PROTECTION
 	UCHAR Signer : 4;
 } PS_PROTECTION, * PPS_PROTECTION;
 
-typedef struct _PROCESS_SIGNATURE 
+typedef struct _PROCESS_SIGNATURE
 {
 	UCHAR SignatureLevel;
 	UCHAR SectionSignatureLevel;
@@ -607,14 +631,14 @@ struct _EX_PUSH_LOCK
 	{
 		struct
 		{
-			ULONGLONG Locked : 1; 
+			ULONGLONG Locked : 1;
 			ULONGLONG Waiting : 1;
-			ULONGLONG Waking : 1; 
+			ULONGLONG Waking : 1;
 			ULONGLONG MultipleShared : 1;
 			ULONGLONG Shared : 60;
 		};
 		ULONGLONG Value;
-		VOID* Ptr;      
+		VOID* Ptr;
 	};
 };
 
@@ -633,13 +657,14 @@ typedef struct _FULL_OBJECT_TYPE {
 	LIST_ENTRY CallbackList;
 } FULL_OBJECT_TYPE, * PFULL_OBJECT_TYPE;
 
+
 typedef struct _OB_CALLBACK OB_CALLBACK;
 
 typedef struct _OB_CALLBACK_ENTRY {
 	LIST_ENTRY CallbackList;
 	OB_OPERATION Operations;
-	BOOLEAN Enabled;           
-	OB_CALLBACK* Entry;     
+	BOOLEAN Enabled;
+	OB_CALLBACK* Entry;
 	POBJECT_TYPE ObjectType;
 	POB_PRE_OPERATION_CALLBACK PreOperation;
 	POB_POST_OPERATION_CALLBACK PostOperation;
@@ -776,28 +801,24 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 */
 ULONG GetTokenOffset() {
 	ULONG tokenOffset = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1903:
-		case WIN_1909:
-			tokenOffset = 0x360;
-			break;
-		case WIN_1507:
-		case WIN_1511:
-		case WIN_1607:
-		case WIN_1703:
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			tokenOffset = 0x358;
-			break;
-		default:
-			tokenOffset = 0x4b8;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1903:
+	case WIN_1909:
+		tokenOffset = 0x360;
+		break;
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		tokenOffset = 0x358;
+		break;
+	default:
+		tokenOffset = 0x4b8;
+		break;
 	}
 
 	return tokenOffset;
@@ -815,34 +836,30 @@ ULONG GetTokenOffset() {
 */
 ULONG GetSignatureLevelOffset() {
 	ULONG signatureLevelOffset = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1903:
-		case WIN_1909:
-			signatureLevelOffset = 0x6f8;
-			break;
-		case WIN_1703:
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			signatureLevelOffset = 0x6c8;
-			break;
-		case WIN_1607:
-			signatureLevelOffset = 0x6c0;
-			break;
-		case WIN_1511:
-			signatureLevelOffset = 0x6b0;
-			break;
-		case WIN_1507:
-			signatureLevelOffset = 0x6a8;
-			break;
-		default:
-			signatureLevelOffset = 0x878;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1903:
+	case WIN_1909:
+		signatureLevelOffset = 0x6f8;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		signatureLevelOffset = 0x6c8;
+		break;
+	case WIN_1607:
+		signatureLevelOffset = 0x6c0;
+		break;
+	case WIN_1511:
+		signatureLevelOffset = 0x6b0;
+		break;
+	case WIN_1507:
+		signatureLevelOffset = 0x6a8;
+		break;
+	default:
+		signatureLevelOffset = 0x878;
+		break;
 	}
 
 	return signatureLevelOffset;
@@ -859,28 +876,24 @@ ULONG GetSignatureLevelOffset() {
 */
 ULONG GetActiveProcessLinksOffset() {
 	ULONG activeProcessLinks = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		case WIN_1511:
-		case WIN_1607:
-		case WIN_1903:
-		case WIN_1909:
-			activeProcessLinks = 0x2f0;
-			break;
-		case WIN_1703:
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			activeProcessLinks = 0x2e8;
-			break;
-		default:
-			activeProcessLinks = 0x448;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1903:
+	case WIN_1909:
+		activeProcessLinks = 0x2f0;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		activeProcessLinks = 0x2e8;
+		break;
+	default:
+		activeProcessLinks = 0x448;
+		break;
 	}
 
 	return activeProcessLinks;
@@ -899,28 +912,24 @@ ULONG GetActiveProcessLinksOffset() {
 */
 ULONG GetProcessLockOffset() {
 	ULONG processLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		case WIN_1511:
-		case WIN_1607:
-		case WIN_1703:
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			processLockOffset = 0x2d8;
-			break;
-		case WIN_1903:
-		case WIN_1909:
-			processLockOffset = 0x2e0;
-			break;
-		default:
-			processLockOffset = 0x438;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		processLockOffset = 0x2d8;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		processLockOffset = 0x2e0;
+		break;
+	default:
+		processLockOffset = 0x438;
+		break;
 	}
 
 	return processLockOffset;
@@ -938,40 +947,36 @@ ULONG GetProcessLockOffset() {
 */
 ULONG GetThreadListEntryOffset() {
 	ULONG threadListEntry = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		case WIN_1511:
-			threadListEntry = 0x690;
-			break;
-		case WIN_1607:
-			threadListEntry = 0x698;
-			break;
-		case WIN_1703:
-			threadListEntry = 0x6a0;
-			break;
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			threadListEntry = 0x6a8;
-			break;
-		case WIN_1903:
-		case WIN_1909:
-			threadListEntry = 0x6b8;
-			break;
-		case WIN_2004:
-		case WIN_20H2:
-		case WIN_21H1:
-		case WIN_21H2:
-			threadListEntry = 0x4e8;
-			break;
-		default:
-			threadListEntry = 0x538;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+		threadListEntry = 0x690;
+		break;
+	case WIN_1607:
+		threadListEntry = 0x698;
+		break;
+	case WIN_1703:
+		threadListEntry = 0x6a0;
+		break;
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		threadListEntry = 0x6a8;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		threadListEntry = 0x6b8;
+		break;
+	case WIN_2004:
+	case WIN_20H2:
+	case WIN_21H1:
+	case WIN_21H2:
+		threadListEntry = 0x4e8;
+		break;
+	default:
+		threadListEntry = 0x538;
+		break;
 	}
 
 	return threadListEntry;
@@ -989,41 +994,102 @@ ULONG GetThreadListEntryOffset() {
 */
 ULONG GetThreadLockOffset() {
 	ULONG threadLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result)) {
-		switch (osVersion.dwBuildNumber) {
-		case WIN_1507:
-		case WIN_1511:
-			threadLockOffset = 0x6a8;
-			break;
-		case WIN_1607:
-			threadLockOffset = 0x6b0;
-			break;
-		case WIN_1703:
-			threadLockOffset = 0x6b8;
-			break;
-		case WIN_1709:
-		case WIN_1803:
-		case WIN_1809:
-			threadLockOffset = 0x6c0;
-			break;
-		case WIN_1903:
-		case WIN_1909:
-			threadLockOffset = 0x6d0;
-			break;
-		case WIN_2004:
-		case WIN_20H2:
-		case WIN_21H1:
-		case WIN_21H2:
-			threadLockOffset = 0x500;
-			break;
-		default:
-			threadLockOffset = 0x550;
-			break;
-		}
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+		threadLockOffset = 0x6a8;
+		break;
+	case WIN_1607:
+		threadLockOffset = 0x6b0;
+		break;
+	case WIN_1703:
+		threadLockOffset = 0x6b8;
+		break;
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		threadLockOffset = 0x6c0;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		threadLockOffset = 0x6d0;
+		break;
+	case WIN_2004:
+	case WIN_20H2:
+	case WIN_21H1:
+	case WIN_21H2:
+		threadLockOffset = 0x500;
+		break;
+	default:
+		threadLockOffset = 0x550;
+		break;
 	}
 
 	return threadLockOffset;
+}
+
+/*
+* Description:
+* GetEtwProviderEnableInfoOffset is responsible for getting the ProviderEnableInfo offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @providerEnableInfo [ULONG] -- Offset of ProviderEnableInfo.
+*/
+ULONG GetEtwProviderEnableInfoOffset() {
+	ULONG providerEnableInfo = (ULONG)STATUS_UNSUCCESSFUL;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		providerEnableInfo = 0x50;
+		break;
+	default:
+		providerEnableInfo = 0x60;
+		break;
+	}
+
+	return providerEnableInfo;
+}
+
+/*
+* Description:
+* GetEtwGuidLockOffset is responsible for getting the GuidLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @etwGuidLockOffset [ULONG] -- Offset of guid lock.
+*/
+ULONG GetEtwGuidLockOffset() {
+	ULONG etwGuidLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		etwGuidLockOffset = 0x180;
+		break;
+	default:
+		etwGuidLockOffset = 0x198;
+		break;
+	}
+
+	return etwGuidLockOffset;
 }

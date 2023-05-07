@@ -29,6 +29,7 @@ struct EnabledFeatures {
 	bool ProcessProtection		  = true;
 	bool ThreadProtection		  = true;
 	bool FileProtection			  = true;
+	bool EtwTiTamper			  = true;
 	bool ApcInjection			  = true;
 	bool CreateThreadInjection	  = false;
 };
@@ -37,7 +38,13 @@ EnabledFeatures Features;
 // --- AntiAnalysis structs ----------------------------------------------------
 enum CallbackType {
 	ObProcessType,
-	ObThreadType
+	ObThreadType,
+	PsCreateProcessTypeEx,
+	PsCreateProcessType,
+	PsCreateThreadType,
+	PsCreateThreadTypeNonSystemThread,
+	PsImageLoadType,
+	CmRegistryType
 };
 
 struct KernelCallback {
@@ -57,18 +64,42 @@ struct ObCallback {
 	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
-struct CallbacksList {
+struct PsRoutine {
+	ULONG64 CallbackAddress;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct CmCallback {
+	ULONG64 CallbackAddress;
+	ULONG64 Context;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct ObCallbacksList {
 	CallbackType Type;
 	ULONG NumberOfCallbacks;
 	ObCallback* Callbacks;
 };
 
+struct PsRoutinesList {
+	CallbackType Type;
+	ULONG NumberOfRoutines;
+	PsRoutine* Routines;
+};
+
+struct CmCallbacksList {
+	ULONG NumberOfCallbacks;
+	CmCallback* Callbacks;
+};
+
 struct AntiAnalysisGlobals {
 	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
 	ULONG DisabledCallbacksCount;
+	ULONG PrevEtwTiValue;
 	FastMutex Lock;
 
 	void Init() {
+		PrevEtwTiValue = 0;
 		DisabledCallbacksCount = 0;
 		Lock.Init();
 	}
