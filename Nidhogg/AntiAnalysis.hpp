@@ -100,7 +100,7 @@ NTSTATUS EnableDisableEtwTI(bool enable) {
 	}
 
 	if (enable) {
-		status = KeWriteProcessMemory(&aaGlobals.PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode);
+		MmCopyVirtualMemory(PsGetCurrentProcess(), &aaGlobals.PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
 		aaGlobals.PrevEtwTiValue = 0;
 	}
 	else {
