@@ -39,6 +39,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
   - Image loading routines
   - Registry callbacks
 - Removing and restoring kernel callbacks
+- ETWTI tampering
 
 ## Reflective loading
 

