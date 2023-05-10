@@ -748,7 +748,6 @@ PVOID GetSSDTFunctionAddress(CHAR* functionName) {
 		KeUnstackDetachProcess(&state);
 		goto CleanUp;
 	}
-	KeUnstackDetachProcess(&state);
 
 	// Searching for the syscall.
 	while (((PUCHAR)ntdllFunctionAddress)[index] != RETURN_OPCODE) {
@@ -757,6 +756,7 @@ PVOID GetSSDTFunctionAddress(CHAR* functionName) {
 		}
 		index++;
 	}
+	KeUnstackDetachProcess(&state);
 
 	if (syscall != 0)
 		functionAddress = (PUCHAR)ssdt->ServiceTableBase + (((PLONG)ssdt->ServiceTableBase)[syscall] >> 4);
