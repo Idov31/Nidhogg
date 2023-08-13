@@ -252,8 +252,6 @@ void ClearAll() {
 * There is no return value.
 */
 void InitializeFeatures() {
-	UNICODE_STRING routineName;
-
 	// Initialize globals.
 	tGlobals.Init();
 	pGlobals.Init();
@@ -272,43 +270,22 @@ void InitializeFeatures() {
 		return;
 
 	// Initialize functions.
-	RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
-	MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-
-	if (!MmCopyVirtualMemory)
+	if (!(PULONG)MmCopyVirtualMemory)
 		Features.ReadData = false;
 
-	RtlInitUnicodeString(&routineName, L"ZwProtectVirtualMemory");
-	ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-
-	if (!ZwProtectVirtualMemory || !Features.ReadData)
+	if (!(PULONG)ZwProtectVirtualMemory || !Features.ReadData)
 		Features.WriteData = false;
 
-	RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
-	PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
-
-	if (!Features.WriteData || !PsGetProcessPeb)
+	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
-	RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
-	ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
-
-	if (!ObReferenceObjectByName)
+	if (!(PULONG)ObReferenceObjectByName)
 		Features.FileProtection = false;
 
-	RtlInitUnicodeString(&routineName, L"KeInitializeApc");
-	KeInitializeApc = (tKeInitializeApc)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"KeInsertQueueApc");
-	KeInsertQueueApc = (tKeInsertQueueApc)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"KeTestAlertThread");
-	KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
-	ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
-
-	if (!KeInsertQueueApc)
+	if (!(PULONG)KeInsertQueueApc)
 		Features.EtwTiTamper = false;
 
-	if (!KeInitializeApc || !KeInsertQueueApc || !KeTestAlertThread || !ZwQuerySystemInformation)
+	if (!(PULONG)KeInitializeApc || !(PULONG)KeInsertQueueApc || !(PULONG)KeTestAlertThread || !(PULONG)ZwQuerySystemInformation)
 		Features.ApcInjection = false;
 
 	if (NT_SUCCESS(GetSSDTAddress())) {

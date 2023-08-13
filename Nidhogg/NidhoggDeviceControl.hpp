@@ -1291,12 +1291,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (*data != true && *data != false) {
+		if (*data != 1 && *data != 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = EnableDisableEtwTI(*data);
+		status = EnableDisableEtwTI((bool)*data);
 
 		if (!NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status));

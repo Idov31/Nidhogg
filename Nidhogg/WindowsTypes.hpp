@@ -1,7 +1,7 @@
 #pragma once
 
 // Globals
-ULONG WindowsBuildNumber = 0;
+inline ULONG WindowsBuildNumber = 0;
 
 // Documented.
 #define WIN_1507 10240
@@ -709,35 +709,6 @@ typedef struct _SYSTEM_SERVICE_DESCRIPTOR_TABLE
 } SYSTEM_SERVICE_DESCRIPTOR_TABLE, * PSYSTEM_SERVICE_DESCRIPTOR_TABLE;
 
 // Prototypes
-typedef NTSTATUS(NTAPI* tZwProtectVirtualMemory)(
-	HANDLE ProcessHandle,
-	PVOID* BaseAddress,
-	SIZE_T* NumberOfBytesToProtect,
-	ULONG NewAccessProtection,
-	PULONG OldAccessProtection);
-
-typedef NTSTATUS(NTAPI* tMmCopyVirtualMemory)(
-	PEPROCESS SourceProcess,
-	PVOID SourceAddress,
-	PEPROCESS TargetProcess,
-	PVOID TargetAddress,
-	SIZE_T BufferSize,
-	KPROCESSOR_MODE PreviousMode,
-	PSIZE_T ReturnSize);
-
-typedef PPEB(NTAPI* tPsGetProcessPeb)(
-	PEPROCESS Process);
-
-typedef NTSTATUS(NTAPI* tObReferenceObjectByName)(
-	PUNICODE_STRING ObjectName,
-	ULONG Attributes,
-	PACCESS_STATE AccessState,
-	ACCESS_MASK DesiredAccess,
-	POBJECT_TYPE ObjectType,
-	KPROCESSOR_MODE AccessMode,
-	PVOID ParseContext,
-	PVOID* Object);
-
 typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,
 	PIRP Irp);
@@ -745,31 +716,6 @@ typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 typedef NTSTATUS(NTAPI* tIoCreateDriver)(
 	PUNICODE_STRING DriverName,
 	PDRIVER_INITIALIZE InitializationFunction);
-
-typedef VOID(NTAPI* tKeInitializeApc)(
-	PKAPC Apc,
-	PKTHREAD Thread,
-	KAPC_ENVIRONMENT Environment,
-	PKKERNEL_ROUTINE KernelRoutine,
-	PKRUNDOWN_ROUTINE RundownRoutine,
-	PKNORMAL_ROUTINE NormalRoutine,
-	KPROCESSOR_MODE ApcMode,
-	PVOID NormalContext);
-
-typedef BOOLEAN(NTAPI* tKeInsertQueueApc)(
-	PKAPC Apc,
-	PVOID SystemArgument1,
-	PVOID SystemArgument2,
-	KPRIORITY Increment);
-
-typedef BOOLEAN(NTAPI* tKeTestAlertThread)(
-	KPROCESSOR_MODE AlertMode);
-
-typedef NTSTATUS(NTAPI* tZwQuerySystemInformation)(
-	SYSTEM_INFORMATION_CLASS SystemInformationClass,
-	PVOID SystemInformation,
-	ULONG SystemInformationLength,
-	PULONG ReturnLength);
 
 typedef DWORD(NTAPI* PTHREAD_START_ROUTINE)(
 	PVOID lpThreadParameter);
@@ -787,6 +733,59 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 	SIZE_T SizeOfStackReserve,
 	PVOID lpBytesBuffer);
 
+extern "C" {
+	PPEB NTAPI PsGetProcessPeb(PEPROCESS Process);
+	NTSTATUS NTAPI ZwQuerySystemInformation(
+		SYSTEM_INFORMATION_CLASS SystemInformationClass,
+		PVOID SystemInformation,
+		ULONG SystemInformationLength,
+		PULONG ReturnLength);
+	NTSTATUS NTAPI ZwProtectVirtualMemory(
+		HANDLE ProcessHandle,
+		PVOID* BaseAddress,
+		SIZE_T* NumberOfBytesToProtect,
+		ULONG NewAccessProtection,
+		PULONG OldAccessProtection);
+	NTSTATUS NTAPI MmCopyVirtualMemory(
+		PEPROCESS SourceProcess,
+		PVOID SourceAddress,
+		PEPROCESS TargetProcess,
+		PVOID TargetAddress,
+		SIZE_T BufferSize,
+		KPROCESSOR_MODE PreviousMode,
+		PSIZE_T ReturnSize);
+
+	NTSTATUS NTAPI ObReferenceObjectByName(
+		PUNICODE_STRING ObjectName,
+		ULONG Attributes,
+		PACCESS_STATE AccessState,
+		ACCESS_MASK DesiredAccess,
+		POBJECT_TYPE ObjectType,
+		KPROCESSOR_MODE AccessMode,
+		PVOID ParseContext,
+		PVOID* Object);
+
+	VOID NTAPI KeInitializeApc(
+		PKAPC Apc,
+		PKTHREAD Thread,
+		KAPC_ENVIRONMENT Environment,
+		PKKERNEL_ROUTINE KernelRoutine,
+		PKRUNDOWN_ROUTINE RundownRoutine,
+		PKNORMAL_ROUTINE NormalRoutine,
+		KPROCESSOR_MODE ApcMode,
+		PVOID NormalContext);
+
+	BOOLEAN NTAPI KeInsertQueueApc(
+		PKAPC Apc,
+		PVOID SystemArgument1,
+		PVOID SystemArgument2,
+		KPRIORITY Increment);
+
+	BOOLEAN NTAPI KeTestAlertThread(KPROCESSOR_MODE AlertMode);
+}
+
+inline PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
+
 // Offset finding functions.
 
 /*
@@ -799,7 +798,7 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 * Returns:
 * @tokenOffset [ULONG] -- Offset of the main thread's token.
 */
-ULONG GetTokenOffset() {
+inline ULONG GetTokenOffset() {
 	ULONG tokenOffset = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -834,7 +833,7 @@ ULONG GetTokenOffset() {
 * Returns:
 * @signatureLevelOffset [UINT64] -- Offset of the process' signature level.
 */
-ULONG GetSignatureLevelOffset() {
+inline ULONG GetSignatureLevelOffset() {
 	ULONG signatureLevelOffset = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -874,7 +873,7 @@ ULONG GetSignatureLevelOffset() {
 * Returns:
 * @activeProcessLinks [ULONG] -- Offset of active process links.
 */
-ULONG GetActiveProcessLinksOffset() {
+inline ULONG GetActiveProcessLinksOffset() {
 	ULONG activeProcessLinks = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -910,7 +909,7 @@ ULONG GetActiveProcessLinksOffset() {
 * Returns:
 * @processLockOffset [ULONG] -- Offset of ProcessLock.
 */
-ULONG GetProcessLockOffset() {
+inline ULONG GetProcessLockOffset() {
 	ULONG processLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -945,7 +944,7 @@ ULONG GetProcessLockOffset() {
 * Returns:
 * @threadListEntry [ULONG] -- Offset of thread list entry.
 */
-ULONG GetThreadListEntryOffset() {
+inline ULONG GetThreadListEntryOffset() {
 	ULONG threadListEntry = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -992,7 +991,7 @@ ULONG GetThreadListEntryOffset() {
 * Returns:
 * @threadLockOffset [ULONG] -- Offset of ProcessLock.
 */
-ULONG GetThreadLockOffset() {
+inline ULONG GetThreadLockOffset() {
 	ULONG threadLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -1039,7 +1038,7 @@ ULONG GetThreadLockOffset() {
 * Returns:
 * @providerEnableInfo [ULONG] -- Offset of ProviderEnableInfo.
 */
-ULONG GetEtwProviderEnableInfoOffset() {
+inline ULONG GetEtwProviderEnableInfoOffset() {
 	ULONG providerEnableInfo = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
@@ -1072,7 +1071,7 @@ ULONG GetEtwProviderEnableInfoOffset() {
 * Returns:
 * @etwGuidLockOffset [ULONG] -- Offset of guid lock.
 */
-ULONG GetEtwGuidLockOffset() {
+inline ULONG GetEtwGuidLockOffset() {
 	ULONG etwGuidLockOffset = (ULONG)STATUS_UNSUCCESSFUL;
 
 	switch (WindowsBuildNumber) {
