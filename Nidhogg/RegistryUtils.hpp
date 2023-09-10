@@ -7,28 +7,31 @@ extern "C" {
 }
 
 // Definitions.
-constexpr SIZE_T REG_TYPE_PROTECTED_KEY = 0;
-constexpr SIZE_T REG_TYPE_PROTECTED_VALUE = 1;
-constexpr SIZE_T REG_TYPE_HIDDEN_KEY = 2;
-constexpr SIZE_T REG_TYPE_HIDDEN_VALUE = 3;
 constexpr SIZE_T MAX_REG_ITEMS = 256;
 constexpr SIZE_T REG_VALUE_LEN = 260;
 constexpr SIZE_T REG_KEY_LEN = 255;
 
+enum RegItemType {
+	RegProtectedKey = 0,
+	RegProtectedValue = 1,
+	RegHiddenKey = 2,
+	RegHiddenValue = 3
+};
+
 struct RegItem {
-	int RegItemsIndex;
-	ULONG Type;
+	ULONG RegItemsIndex;
+	RegItemType Type;
 	WCHAR KeyPath[REG_KEY_LEN];
 	WCHAR ValueName[REG_VALUE_LEN];
 };
 
 struct RegKeys {
-	int KeysCount;
+	ULONG KeysCount;
 	WCHAR* KeysPath[MAX_REG_ITEMS];
 };
 
 struct RegValues {
-	int ValuesCount;
+	ULONG ValuesCount;
 	WCHAR* ValuesPath[MAX_REG_ITEMS];
 	WCHAR* ValuesName[REG_VALUE_LEN];
 };
@@ -38,35 +41,53 @@ struct RegItems {
 	RegValues Values;
 };
 
-struct RegistryGlobals {
+class RegistryUtils {
+private:
 	RegItems ProtectedItems;
 	RegItems HiddenItems;
-	LARGE_INTEGER RegCookie;
 	FastMutex Lock;
 
-	void Init() {
-		ProtectedItems.Keys.KeysCount = 0;
-		ProtectedItems.Values.ValuesCount = 0;
-		HiddenItems.Keys.KeysCount = 0;
-		HiddenItems.Values.ValuesCount = 0;
-		Lock.Init();
-	}
-};
-inline RegistryGlobals rGlobals;
+	bool ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType type);
+	bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
+	bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 
-// Prototypes.
-bool FindRegItem(RegItem& item);
-bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type);
-bool AddRegItem(RegItem& item);
-bool RemoveRegItem(RegItem& item);
-bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
-bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
-NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
-NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
-NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
-NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
-NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info);
-NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info);
-NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
-NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
+public:
+	LARGE_INTEGER RegCookie;
+
+	void* operator new(size_t size) {
+		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+	}
+
+	void operator delete(void* p) {
+		ExFreePoolWithTag(p, DRIVER_TAG);
+	}
+
+	RegistryUtils();
+	~RegistryUtils();
+
+	bool FindRegItem(RegItem* item);
+	bool AddRegItem(RegItem* item);
+	bool RemoveRegItem(RegItem* item);
+	void ClearRegItem(RegItemType regType);
+	void ClearRegItems();
+	NTSTATUS QueryRegItem(RegItem* item);
+
+	NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info);
+	NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info);
+	NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info);
+	NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info);
+	NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info);
+	NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info);
+	NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
+	NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
+
+	FastMutex GetRegistryLock() { return this->Lock; }
+	ULONG GetProtectedKeysCount() { return this->ProtectedItems.Keys.KeysCount; }
+	ULONG GetProtectedValuesCount() { return this->ProtectedItems.Values.ValuesCount; }
+	ULONG GetHiddenKeysCount() { return this->HiddenItems.Keys.KeysCount; }
+	ULONG GetHiddenValuesCount() { return this->HiddenItems.Values.ValuesCount; }
+};
+
+inline RegistryUtils* NidhoggRegistryUtils;
+
 NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2);

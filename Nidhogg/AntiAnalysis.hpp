@@ -95,27 +95,6 @@ struct CmCallbacksList {
 	CmCallback* Callbacks;
 };
 
-struct AntiAnalysisGlobals {
-	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
-	ULONG DisabledCallbacksCount;
-	ULONG PrevEtwTiValue;
-	FastMutex Lock;
-
-	void Init() {
-		PrevEtwTiValue = 0;
-		DisabledCallbacksCount = 0;
-		Lock.Init();
-	}
-};
-inline AntiAnalysisGlobals aaGlobals;
-
-NTSTATUS EnableDisableEtwTI(bool enable);
-NTSTATUS RestoreCallback(KernelCallback* Callback);
-NTSTATUS RemoveCallback(KernelCallback* Callback);
-NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
-NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
-NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
-NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
 VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
 void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
@@ -123,5 +102,36 @@ void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN
 void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create);
 void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo); 
 NTSTATUS RegistryCallbackDummyFunction(PVOID CallbackContext, PVOID Argument1, PVOID Argument2);
-NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
-NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
+
+class AntiAnalysis {
+private:
+	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
+	ULONG DisabledCallbacksCount;
+	ULONG PrevEtwTiValue;
+	FastMutex Lock;
+
+	NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
+	NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
+	NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
+
+public:
+	void* operator new(size_t size) {
+		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+	}
+
+	void operator delete(void* p) {
+		ExFreePoolWithTag(p, DRIVER_TAG);
+	}
+
+	AntiAnalysis();
+	~AntiAnalysis();
+
+	NTSTATUS EnableDisableEtwTI(bool enable);
+	NTSTATUS RestoreCallback(KernelCallback* Callback);
+	NTSTATUS RemoveCallback(KernelCallback* Callback);
+	NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
+	NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
+	NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
+};
+
+inline AntiAnalysis* NidhoggAntiAnalysis;

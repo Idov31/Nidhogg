@@ -20,62 +20,6 @@ constexpr SIZE_T GUI_THREAD_FLAG_OFFSET = 0x78;
 constexpr SIZE_T THREAD_KERNEL_STACK_OFFSET = 0x58;
 constexpr SIZE_T THREAD_CONTEXT_STACK_POINTER_OFFSET = 0x2C8;
 
-enum InjectionType {
-	APCInjection,
-	NtCreateThreadExInjection
-};
-
-struct DllInformation {
-	InjectionType Type;
-	ULONG Pid;
-	CHAR DllPath[MAX_PATH];
-};
-
-struct ShellcodeInformation {
-	InjectionType Type;
-	ULONG Pid;
-	ULONG ShellcodeSize;
-	PVOID Shellcode;
-	PVOID Parameter1;
-	PVOID Parameter2;
-	PVOID Parameter3;
-};
-
-struct PatchedModule {
-	ULONG Pid;
-	PVOID Patch;
-	ULONG PatchLength;
-	CHAR* FunctionName;
-	WCHAR* ModuleName;
-};
-
-struct PkgReadWriteData {
-	MODE Mode;
-	ULONG Pid;
-	SIZE_T Size;
-	PVOID LocalAddress;
-	PVOID RemoteAddress;
-};
-
-
-// Prototypes.
-PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
-PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
-NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
-NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
-NTSTATUS PatchModule(PatchedModule* ModuleInformation);
-NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation);
-NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);
-NTSTATUS InjectDllThread(DllInformation* DllInfo);
-NTSTATUS InjectDllAPC(DllInformation* DllInfo);
-NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
-PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
-NTSTATUS GetSSDTAddress();
-PVOID GetSSDTFunctionAddress(CHAR* functionName);
-VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
-VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
-
-inline tNtCreateThreadEx NtCreateThreadEx;
 inline UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 	0x56, 0x48, 0x89, 0xE6, 0x48, 0x83, 0xE4, 0xF0, 0x48, 0x83, 0xEC, 0x20,
 	0xE8, 0x0F, 0x00, 0x00, 0x00, 0x48, 0x89, 0xF4, 0x5E, 0xC3, 0x66, 0x2E,
@@ -138,3 +82,81 @@ inline UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 	0xE8, 0x05, 0xC3, 0x0F, 0x1F, 0x44, 0x00, 0x00
 };
 
+enum InjectionType {
+	APCInjection,
+	NtCreateThreadExInjection
+};
+
+struct DllInformation {
+	InjectionType Type;
+	ULONG Pid;
+	CHAR DllPath[MAX_PATH];
+};
+
+struct ShellcodeInformation {
+	InjectionType Type;
+	ULONG Pid;
+	ULONG ShellcodeSize;
+	PVOID Shellcode;
+	PVOID Parameter1;
+	PVOID Parameter2;
+	PVOID Parameter3;
+};
+
+struct PatchedModule {
+	ULONG Pid;
+	PVOID Patch;
+	ULONG PatchLength;
+	CHAR* FunctionName;
+	WCHAR* ModuleName;
+};
+
+struct PkgReadWriteData {
+	MODE Mode;
+	ULONG Pid;
+	SIZE_T Size;
+	PVOID LocalAddress;
+	PVOID RemoteAddress;
+};
+
+// Prototypes.
+VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
+VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
+
+
+class MemoryUtils {
+private:
+	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
+	tNtCreateThreadEx NtCreateThreadEx;
+
+	PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
+	PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
+	NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
+	NTSTATUS GetSSDTAddress();
+	PVOID GetSSDTFunctionAddress(CHAR* functionName);
+
+public:
+	void* operator new(size_t size) {
+		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+	}
+
+	void operator delete(void* p) {
+		ExFreePoolWithTag(p, DRIVER_TAG);
+	}
+
+	MemoryUtils();
+	~MemoryUtils() { }
+
+	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+	NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+	NTSTATUS PatchModule(PatchedModule* ModuleInformation);
+	NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation);
+	NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);
+	NTSTATUS InjectDllThread(DllInformation* DllInfo);
+	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
+	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
+
+	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
+};
+
+inline MemoryUtils* NidhoggMemoryUtils;

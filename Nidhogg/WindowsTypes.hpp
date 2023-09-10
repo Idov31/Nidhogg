@@ -784,8 +784,6 @@ extern "C" {
 	BOOLEAN NTAPI KeTestAlertThread(KPROCESSOR_MODE AlertMode);
 }
 
-inline PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
-
 // Offset finding functions.
 
 /*

