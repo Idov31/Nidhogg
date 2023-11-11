@@ -371,7 +371,7 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	}
 	KeUnstackDetachProcess(&state);
 
-	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
+	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, UserMode);
 
 	if (!NT_SUCCESS(status))
 		KdPrint((DRIVER_PREFIX "Failed to patch function, (0x%08X).\n", status));
