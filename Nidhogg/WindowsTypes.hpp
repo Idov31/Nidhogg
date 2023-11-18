@@ -213,19 +213,54 @@ typedef struct _PEB_LDR_DATA
 typedef struct _LDR_DATA_TABLE_ENTRY {
 	LIST_ENTRY InLoadOrderLinks;
 	LIST_ENTRY InMemoryOrderLinks;
-	PVOID Reserved2[2];
+	LIST_ENTRY InInitializationOrderLinks;
 	PVOID DllBase;
 	PVOID EntryPoint;
-	PVOID Reserved3;
+	ULONG SizeOfImage;
 	UNICODE_STRING FullDllName;
-	BYTE Reserved4[8];
-	PVOID Reserved5[3];
-	union {
-		ULONG CheckSum;
-		PVOID Reserved6;
-	};
+	UNICODE_STRING BaseDllName;
+	ULONG Flags;
+	USHORT LoadCount;
+	USHORT TlsIndex;
+	LIST_ENTRY HashLinks;
 	ULONG TimeDateStamp;
 } LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
+
+typedef struct _KLDR_DATA_TABLE_ENTRY {
+	LIST_ENTRY InLoadOrderLinks;
+	VOID* ExceptionTable;
+	ULONG ExceptionTableSize;
+	VOID* GpValue;
+	PVOID* NonPagedDebugInfo;
+	VOID* DllBase;
+	VOID* EntryPoint;
+	ULONG SizeOfImage;
+	UNICODE_STRING FullDllName;
+	UNICODE_STRING BaseDllName;
+	ULONG Flags;
+	USHORT LoadCount;
+	union
+	{
+		USHORT SignatureLevel : 4;
+		USHORT SignatureType : 3;
+		USHORT Frozen : 2;
+		USHORT HotPatch : 1;
+		USHORT Unused : 6;
+		USHORT EntireField;
+	} u1;
+	VOID* SectionPointer;
+	ULONG CheckSum;
+	ULONG CoverageSectionSize;
+	VOID* CoverageSection;
+	VOID* LoadedImports;
+	union
+	{
+		VOID* Spare;
+		PVOID* NtDataTableEntry;
+	};
+	ULONG SizeOfImageNotRounded;
+	ULONG TimeDateStamp;
+} KLDR_DATA_TABLE_ENTRY, * PKLDR_DATA_TABLE_ENTRY;
 
 typedef struct _RTL_USER_PROCESS_PARAMETERS {
 	BYTE           Reserved1[16];
@@ -248,6 +283,8 @@ typedef struct _REAL_PEB {
 
 // Undocumented.
 extern "C" POBJECT_TYPE * IoDriverObjectType;
+
+extern "C" PKLDR_DATA_TABLE_ENTRY PsLoadedModuleList;
 
 typedef struct _TRACE_ENABLE_INFO
 {
@@ -708,6 +745,345 @@ typedef struct _SYSTEM_SERVICE_DESCRIPTOR_TABLE
 	PUCHAR ParamTableBase;
 } SYSTEM_SERVICE_DESCRIPTOR_TABLE, * PSYSTEM_SERVICE_DESCRIPTOR_TABLE;
 
+typedef struct _MMVAD_FLAGS
+{
+	ULONG Lock : 1;                                                           
+	ULONG LockContended : 1;                                                  
+	ULONG DeleteInProgress : 1;                                               
+	ULONG NoChange : 1;                                                       
+	ULONG VadType : 3;                                                        
+	ULONG Protection : 5;                                                     
+	ULONG PreferredNode : 7;                                                  
+	ULONG PageSize : 2;                                                       
+	ULONG PrivateMemory : 1;                                                  
+} MMVAD_FLAGS;
+
+typedef enum _MI_VAD_TYPE
+{
+	VadNone = 0,
+	VadDevicePhysicalMemory = 1,
+	VadImageMap = 2,
+	VadAwe = 3,
+	VadWriteWatch = 4,
+	VadLargePages = 5,
+	VadRotatePhysical = 6,
+	VadLargePageSection = 7
+} MI_VAD_TYPE;
+
+typedef struct _MM_PRIVATE_VAD_FLAGS
+{
+	ULONG Lock : 1;                                                           
+	ULONG LockContended : 1;                                                  
+	ULONG DeleteInProgress : 1;                                               
+	ULONG NoChange : 1;                                                       
+	ULONG VadType : 3;                                                        
+	ULONG Protection : 5;                                                     
+	ULONG PreferredNode : 7;                                                  
+	ULONG PageSize : 2;                                                       
+	ULONG PrivateMemoryAlwaysSet : 1;                                         
+	ULONG WriteWatch : 1;                                                     
+	ULONG FixedLargePageSize : 1;                                             
+	ULONG ZeroFillPagesOptional : 1;                                          
+	ULONG Graphics : 1;                                                       
+	ULONG Enclave : 1;                                                        
+	ULONG ShadowStack : 1;                                                    
+	ULONG PhysicalMemoryPfnsReferenced : 1;                                   
+} MM_PRIVATE_VAD_FLAGS;
+
+typedef struct _MM_GRAPHICS_VAD_FLAGS
+{
+	ULONG Lock : 1;                                                           
+	ULONG LockContended : 1;                                                  
+	ULONG DeleteInProgress : 1;                                               
+	ULONG NoChange : 1;                                                       
+	ULONG VadType : 3;                                                        
+	ULONG Protection : 5;                                                     
+	ULONG PreferredNode : 7;                                                  
+	ULONG PageSize : 2;                                                       
+	ULONG PrivateMemoryAlwaysSet : 1;                                         
+	ULONG WriteWatch : 1;                                                     
+	ULONG FixedLargePageSize : 1;                                             
+	ULONG ZeroFillPagesOptional : 1;                                          
+	ULONG GraphicsAlwaysSet : 1;                                              
+	ULONG GraphicsUseCoherentBus : 1;                                         
+	ULONG GraphicsNoCache : 1;                                                
+	ULONG GraphicsPageProtection : 3;                                         
+} MM_GRAPHICS_VAD_FLAGS;
+
+typedef struct _MM_SHARED_VAD_FLAGS
+{
+	ULONG Lock : 1;
+	ULONG LockContended : 1;
+	ULONG DeleteInProgress : 1;
+	ULONG NoChange : 1;
+	ULONG VadType : 3;
+	ULONG Protection : 5;
+	ULONG PreferredNode : 7;
+	ULONG PageSize : 2;
+	ULONG PrivateMemoryAlwaysClear : 1;
+	ULONG PrivateFixup : 1;
+	ULONG HotPatchState : 2;
+} MM_SHARED_VAD_FLAGS;
+
+typedef struct _MMVAD_FLAGS1
+{
+	ULONG CommitCharge : 31;
+	ULONG MemCommit : 1;
+} MMVAD_FLAGS1;
+
+typedef struct _MMVAD_FLAGS2
+{
+	ULONG FileOffset : 24;
+	ULONG Large : 1;
+	ULONG TrimBehind : 1;
+	ULONG Inherit : 1;
+	ULONG NoValidationNeeded : 1;
+	ULONG PrivateDemandZero : 1;
+	ULONG Spare : 3;
+} MMVAD_FLAGS2;
+
+
+typedef struct _EX_FAST_REF
+{
+	union
+	{
+		VOID* Object;
+		ULONGLONG RefCnt : 4;
+		ULONGLONG Value;
+	};
+} EX_FAST_REF;
+
+typedef struct _MMEXTEND_INFO
+{
+	ULONGLONG CommittedSize;
+	ULONG ReferenceCount;
+} MMEXTEND_INFO;
+
+typedef struct _MI_VAD_SEQUENTIAL_INFO
+{
+	ULONGLONG Length : 12;
+	ULONGLONG Vpn : 52;
+} MI_VAD_SEQUENTIAL_INFO;
+
+typedef struct _IMAGE_SECURITY_CONTEXT
+{
+	union
+	{
+		VOID* PageHashes;
+		ULONGLONG Value;
+		struct
+		{
+			ULONGLONG SecurityBeingCreated : 2;
+			ULONGLONG SecurityMandatory : 1;
+			ULONGLONG PageHashPointer : 61;
+		};
+	};
+} IMAGE_SECURITY_CONTEXT;
+
+typedef struct _MI_IMAGE_SECURITY_REFERENCE
+{
+	VOID* DynamicRelocations;      
+	IMAGE_SECURITY_CONTEXT SecurityContext;
+	ULONGLONG StrongImageReference;
+} MI_IMAGE_SECURITY_REFERENCE;
+
+typedef struct _MMSUBSECTION_FLAGS
+{
+	USHORT SubsectionAccessed : 1;
+	USHORT Protection : 5;
+	USHORT StartingSector4132 : 10;
+	USHORT SubsectionStatic : 1;
+	USHORT GlobalMemory : 1;
+	USHORT Spare : 1;
+	USHORT OnDereferenceList : 1;
+	USHORT SectorEndOffset : 12;
+} MMSUBSECTION_FLAGS;
+
+typedef struct _MMPTE
+{
+	union
+	{
+		ULONGLONG Long;
+		volatile ULONGLONG VolatileLong;
+		ULONGLONG Hard;
+		ULONGLONG Proto;
+		ULONGLONG Soft;
+		ULONGLONG TimeStamp;
+		ULONGLONG Trans;
+		ULONGLONG Subsect;
+		ULONGLONG List;
+	} u;
+} MMPTE;
+
+typedef struct _MI_SUBSECTION_ENTRY1
+{
+	ULONG CrossPartitionReferences : 30;
+	ULONG SubsectionMappedLarge : 2;
+} MI_SUBSECTION_ENTRY1;
+
+typedef struct _CONTROL_AREA
+{
+	PVOID* Segment;
+	union
+	{
+		LIST_ENTRY ListHead;
+		VOID* AweContext;
+	};
+	ULONGLONG NumberOfSectionReferences;
+	ULONGLONG NumberOfPfnReferences;
+	ULONGLONG NumberOfMappedViews;
+	ULONGLONG NumberOfUserReferences;
+	union
+	{
+		ULONG LongFlags;
+		ULONG Flags;
+	} u;
+	union
+	{
+		ULONG LongFlags;
+		ULONG Flags;
+	} u1;
+	EX_FAST_REF FilePointer;
+	volatile LONG ControlAreaLock;
+	ULONG ModifiedWriteCount;
+	struct _MI_CONTROL_AREA_WAIT_BLOCK* WaitList;
+	union
+	{
+		struct
+		{
+			union
+			{
+				ULONG NumberOfSystemCacheViews;
+				ULONG ImageRelocationStartBit;
+			};
+			union
+			{
+				volatile LONG WritableUserReferences;
+				struct
+				{
+					ULONG ImageRelocationSizeIn64k : 16;
+					ULONG SystemImage : 1;
+					ULONG CantMove : 1;
+					ULONG StrongCode : 2;
+					ULONG BitMap : 2;
+					ULONG ImageActive : 1;
+					ULONG ImageBaseOkToReuse : 1;
+				};
+			};
+			union
+			{
+				ULONG FlushInProgressCount;
+				ULONG NumberOfSubsections;
+				MI_IMAGE_SECURITY_REFERENCE* SeImageStub;
+			};
+		} e2;
+	} u2;
+	EX_PUSH_LOCK FileObjectLock;
+	volatile ULONGLONG LockedPages;
+	union
+	{
+		ULONGLONG IoAttributionContext : 61;
+		ULONGLONG Spare : 3;
+		ULONGLONG ImageCrossPartitionCharge;
+		ULONGLONG CommittedPageCount : 36;
+	} u3;
+} CONTROL_AREA;
+
+typedef struct _RTL_AVL_TREE
+{
+	RTL_BALANCED_NODE* Root;                                        //0x0
+} RTL_AVL_TREE;
+
+typedef struct _SUBSECTION
+{
+	CONTROL_AREA* ControlArea;
+	MMPTE* SubsectionBase;
+	PVOID NextSubsection;
+	union
+	{
+		RTL_AVL_TREE GlobalPerSessionHead;
+		PVOID* CreationWaitList;
+		PVOID* SessionDriverProtos;
+	};
+	union
+	{
+		ULONG LongFlags;                                                    //0x20
+		MMSUBSECTION_FLAGS SubsectionFlags;                         //0x20
+	} u;                                                                    //0x20
+	ULONG StartingSector;                                                   //0x24
+	ULONG NumberOfFullSectors;                                              //0x28
+	ULONG PtesInSubsection;                                                 //0x2c
+	union
+	{
+		MI_SUBSECTION_ENTRY1 e1;                                    //0x30
+		ULONG EntireField;                                                  //0x30
+	} u1;                                                                   //0x30
+	ULONG UnusedPtes : 30;                                                    //0x34
+	ULONG ExtentQueryNeeded : 1;                                              //0x34
+	ULONG DirtyPages : 1;                                                     //0x34
+} SUBSECTION, *PSUBSECTION;
+
+typedef struct _MMVAD_SHORT
+{
+	union
+	{
+		struct
+		{
+			PVOID NextVad;
+			PVOID ExtraCreateInfo;
+		};
+		RTL_BALANCED_NODE VadNode;
+	};
+	ULONG StartingVpn;
+	ULONG EndingVpn;
+	UCHAR StartingVpnHigh;
+	UCHAR EndingVpnHigh;                                                    
+	UCHAR CommitChargeHigh;                                                 
+	UCHAR SpareNT64VadUChar;                                                
+	LONG ReferenceCount;                                                    
+	EX_PUSH_LOCK PushLock;                                          
+	union
+	{
+		ULONG LongFlags;                                                    
+		MMVAD_FLAGS VadFlags;                                       
+		MM_PRIVATE_VAD_FLAGS PrivateVadFlags;                       
+		MM_GRAPHICS_VAD_FLAGS GraphicsVadFlags;                     
+		MM_SHARED_VAD_FLAGS SharedVadFlags;                         
+		volatile ULONG VolatileVadLong;                                     
+	} u;                                             
+	union
+	{
+		ULONG LongFlags1;
+		MMVAD_FLAGS1 VadFlags1;
+	} u1;                      
+	union
+	{
+		ULONGLONG EventListULongPtr;
+		UCHAR StartingVpnHigher : 4;
+	} u5;
+} MMVAD_SHORT, *PMMVAD_SHORT;
+
+typedef struct _MMVAD
+{
+	MMVAD_SHORT Core;
+	union
+	{
+		ULONG LongFlags2;
+		MMVAD_FLAGS2 VadFlags2;
+	} u2;
+	SUBSECTION* Subsection;
+	MMPTE* FirstPrototypePte;
+	MMPTE* LastContiguousPte;
+	LIST_ENTRY ViewLinks;
+	PEPROCESS VadsProcess;
+	union
+	{
+		MI_VAD_SEQUENTIAL_INFO SequentialVa;
+		MMEXTEND_INFO* ExtendedInfo;
+	} u4;
+	FILE_OBJECT* FileObject;
+} MMVAD, *PMMVAD;
+
 // Prototypes
 typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,
@@ -1089,4 +1465,45 @@ inline ULONG GetEtwGuidLockOffset() {
 	}
 
 	return etwGuidLockOffset;
+}
+
+/*
+* Description:
+* GetVadRootOffset is responsible for getting the VadRoot offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @vadRootOffset [ULONG] -- Offset of VAD root.
+*/
+inline ULONG GetVadRootOffset() {
+	ULONG vadRootOffset = 0;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+		vadRootOffset = 0x608;
+		break;
+	case WIN_1511:
+		vadRootOffset = 0x610;
+		break;
+	case WIN_1607:
+		vadRootOffset = 0x620;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		vadRootOffset = 0x628;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		vadRootOffset = 0x658;
+		break;
+	default:
+		vadRootOffset = 0x7d8;
+		break;
+	}
+
+	return vadRootOffset;
 }

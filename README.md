@@ -21,7 +21,6 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
 - Querying currently protected processes, threads, files, registry keys and values
-- Arbitrary kernel R/W
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
@@ -40,6 +39,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
   - Registry callbacks
 - Removing and restoring kernel callbacks
 - ETWTI tampering
+- Module hiding
 
 ## Reflective loading
 

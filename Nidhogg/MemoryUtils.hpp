@@ -8,6 +8,7 @@ extern "C" {
 }
 
 // Definitions.
+constexpr SIZE_T NO_ACCESS = 0;
 constexpr SIZE_T THREAD_PREVIOUSMODE_OFFSET = 0x232;
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
 constexpr SIZE_T MOV_EAX_OPCODE = 0xB8;
@@ -111,6 +112,11 @@ struct PatchedModule {
 	WCHAR* ModuleName;
 };
 
+struct HiddenModuleInformation {
+	ULONG Pid;
+	WCHAR* ModuleName;
+};
+
 struct PkgReadWriteData {
 	MODE Mode;
 	ULONG Pid;
@@ -129,6 +135,8 @@ private:
 	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
 	tNtCreateThreadEx NtCreateThreadEx;
 
+	NTSTATUS VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress);
+	TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode);
 	PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
 	PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
 	NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
@@ -155,6 +163,7 @@ public:
 	NTSTATUS InjectDllThread(DllInformation* DllInfo);
 	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
 	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
+	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
 
 	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
 };

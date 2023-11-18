@@ -233,6 +233,9 @@ void InitializeFeatures() {
 	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
+	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList)
+		Features.ModuleHiding = false;
+
 	if (!(PULONG)ObReferenceObjectByName)
 		Features.FileProtection = false;
 

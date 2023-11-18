@@ -12,6 +12,7 @@ inline PVOID RegistrationHandle = NULL;
 struct EnabledFeatures {
 	bool DriverReflectivelyLoaded = false;
 	bool FunctionPatching		  = true;
+	bool ModuleHiding			  = true;
 	bool WriteData				  = true;
 	bool ReadData				  = true;
 	bool RegistryFeatures		  = true;

