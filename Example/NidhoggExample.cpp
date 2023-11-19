@@ -10,6 +10,36 @@ enum class Options {
 	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll
 };
 
+#define PRINT_ASCII_ART
+#ifdef PRINT_ASCII_ART
+constexpr const char* ASCII_ART = R"(                  
+                                 8                           
+                               38                            
+                              988                            
+                        90  79888  3                         
+                       880 8998880 88                        
+                       88899998888088                        
+                      7809999999888086                       
+                     50899999999888888     0                 
+                8     09999999999888888     8                
+               83      999999999998880      08               
+              08      0899  99999 8880      880              
+              88     02  9999999990  3488   488              
+              888  88331   0999992  286     880              
+             4888     84    99999  90     28887              
+              8880      0   22032  8       880               
+               888      5   22232  3     8888                
+               88888         233        08808                
+                  9888        2       8880 9                 
+                 988388888        088888888                  
+                  88      0883 8881     48                   
+                            5888                             
+                              8                                                    
+)";
+#else
+constexpr const char* ASCII_ART = "";
+#endif
+
 void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
@@ -89,6 +119,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 	std::vector<DWORD> pids;
 	Options option;
 	int success = NIDHOGG_INVALID_COMMAND;
+	std::cout << ASCII_ART << std::endl;
 
 	if (argc < 3)
 		return Error(NIDHOGG_INVALID_COMMAND);
@@ -128,6 +159,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 	if (hNidhogg == INVALID_HANDLE_VALUE)
 		return Error(NIDHOGG_ERROR_CONNECT_DRIVER);
+
+	std::cout << "[ + ] Connected to driver" << std::endl;
+	std::wcout << L"[ + ] Attempting to " << argv[2] << L" a " << argv[1] << std::endl;
 
 	switch (option) {
 		case Options::Add:

@@ -1,5 +1,7 @@
 # Nidhogg
 
+![logo](./images/logo.png)
+
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
 Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework via a single header file with simple usage, you can see an [example here](./Example).
@@ -126,6 +128,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Registry Keys Hiding](https://github.com/JKornev/hidden)
 - [Process Signatures](https://github.com/itm4n/PPLcontrol)
 - [NtCreateThreadEx Hotfix](https://github.com/DarthTon/Blackbone)
+- [Logo](https://hotpot.ai/art-generator)
 
 ## Contributions
 
