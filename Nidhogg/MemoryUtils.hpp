@@ -117,6 +117,11 @@ struct HiddenModuleInformation {
 	WCHAR* ModuleName;
 };
 
+struct HiddenDriverInformation {
+	WCHAR* DriverName;
+	bool Hide;
+};
+
 struct PkgReadWriteData {
 	MODE Mode;
 	ULONG Pid;
@@ -164,6 +169,7 @@ public:
 	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
 	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
 	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
+	NTSTATUS HideDriver(HiddenDriverInformation* DriverInformation);
 
 	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
 };

