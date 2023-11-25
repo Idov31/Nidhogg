@@ -12,6 +12,11 @@ extern "C" {
 constexpr SIZE_T MAX_FILES = 256;
 constexpr SIZE_T SUPPORTED_HOOKED_NTFS_CALLBACKS = 1;
 
+struct ProtectedFile {
+	WCHAR* FilePath;
+	bool Protect;
+};
+
 struct FileItem {
 	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];

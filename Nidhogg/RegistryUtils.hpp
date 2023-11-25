@@ -18,6 +18,9 @@ enum RegItemType {
 	RegHiddenValue = 3
 };
 
+#define VALID_REG_TYPE(RegType)(RegType == RegProtectedKey || RegType == RegHiddenKey || RegType == RegProtectedValue || RegType == RegHiddenValue)
+
+// Structs
 struct RegItem {
 	ULONG RegItemsIndex;
 	RegItemType Type;

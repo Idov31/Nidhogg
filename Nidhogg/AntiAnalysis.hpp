@@ -53,6 +53,7 @@ enum CallbackType {
 struct KernelCallback {
 	CallbackType Type;
 	ULONG64 CallbackAddress;
+	bool Remove;
 };
 
 struct DisabledKernelCallback {

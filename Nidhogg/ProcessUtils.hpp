@@ -15,25 +15,43 @@ constexpr SIZE_T PROCESS_CREATE_THREAD = 0x2;
 constexpr SIZE_T PROCESS_VM_READ = 0x10;
 constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 
+#define VALID_PROCESS(Pid)(Pid > 0 && Pid != SYSTEM_PROCESS_PID)
+
+// Structs.
 struct ProtectedProcessesList {
 	ULONG PidsCount;
 	ULONG Processes[MAX_PIDS];
 };
 
+struct ProtectedProcess {
+	ULONG Pid;
+	bool Protect;
+};
+
 struct HiddenProcess {
+	ULONG Pid;
+	bool Hide;
+};
+
+struct HiddenProcessListItem {
 	ULONG Pid;
 	PLIST_ENTRY ListEntry;
 };
 
 struct HiddenProcessList {
 	ULONG PidsCount;
-	HiddenProcess Processes[MAX_PIDS];
+	HiddenProcessListItem Processes[MAX_PIDS];
 };
 
 struct ProcessSignature {
 	ULONG Pid;
 	UCHAR SignerType;
 	UCHAR SignatureSigner;
+};
+
+struct ProtectedThread {
+	ULONG Tid;
+	bool Protect;
 };
 
 struct ThreadsList {
