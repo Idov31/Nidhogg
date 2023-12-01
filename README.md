@@ -6,7 +6,7 @@
 
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
-Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework via a single header file with simple usage, you can see an [example here](./Example).
+Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework.
 
 Nidhogg can work on any version of x64 Windows 10 and Windows 11.
 
@@ -63,32 +63,20 @@ These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wi
 
 ## Basic Usage
 
-It has a very simple usage, just include the header and get started!
+To see everything that you can do, run `NidhoggClient.exe`.
 
-```cpp
-#include "Nidhogg.hpp"
+```sh
+NidhoggClient.exe
 
-int main() {
-    HANDLE hNidhogg = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    // ...
-    DWORD result = Nidhogg::ProcessUtils::NidhoggProcessProtect(pids);
-    // ...
-}
+# Simple usage: Hiding a process
+NidhoggClient.exe process hide 3110
 ```
 
 ## Setup
 
 ### Building the client
 
-To compile the client, you will need to install [CMake](https://community.chocolatey.org/packages/cmake.install/3.13.1) and [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16) installed and then just run:
-
-```sh
-cd <NIDHOGG PROJECT DIRECTORY>\Example
-mkdir build
-cd build
-cmake ..
-cmake --build .
-```
+To compile the client, you will need to have [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16) installed and then just build the project like any other Visual Studio project.
 
 ### Building the driver
 
@@ -135,6 +123,6 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 
 ## Contributions
 
-Thanks a lot to those people that contributed to this project:
+Thanks a lot to those people who contributed to this project:
 
 - [BlackOfWorld](https://github.com/BlackOfWorld)
