@@ -29,11 +29,13 @@ struct RegItem {
 };
 
 struct RegKeys {
+	ULONG LastIndex;
 	ULONG KeysCount;
 	WCHAR* KeysPath[MAX_REG_ITEMS];
 };
 
 struct RegValues {
+	ULONG LastIndex;
 	ULONG ValuesCount;
 	WCHAR* ValuesPath[MAX_REG_ITEMS];
 	WCHAR* ValuesName[REG_VALUE_LEN];
@@ -62,7 +64,8 @@ public:
 	}
 
 	void operator delete(void* p) {
-		ExFreePoolWithTag(p, DRIVER_TAG);
+		if (p)
+			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
 	RegistryUtils();
@@ -84,7 +87,6 @@ public:
 	NTSTATUS RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 	NTSTATUS RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info);
 
-	FastMutex GetRegistryLock() { return this->Lock; }
 	ULONG GetProtectedKeysCount() { return this->ProtectedItems.Keys.KeysCount; }
 	ULONG GetProtectedValuesCount() { return this->ProtectedItems.Values.ValuesCount; }
 	ULONG GetHiddenKeysCount() { return this->HiddenItems.Keys.KeysCount; }

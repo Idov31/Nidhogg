@@ -285,6 +285,7 @@ typedef struct _REAL_PEB {
 extern "C" POBJECT_TYPE * IoDriverObjectType;
 
 extern "C" PKLDR_DATA_TABLE_ENTRY PsLoadedModuleList;
+extern "C" ERESOURCE PsLoadedModuleResource;
 
 typedef struct _TRACE_ENABLE_INFO
 {
@@ -1506,4 +1507,29 @@ inline ULONG GetVadRootOffset() {
 	}
 
 	return vadRootOffset;
+}
+
+inline ULONG GetPageCommitmentLockOffset() {
+	ULONG pageCommitmentLockOffset = 0;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		pageCommitmentLockOffset = 0x370;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		pageCommitmentLockOffset = 0x378;
+		break;
+	default:
+		pageCommitmentLockOffset = 0x4d0;
+		break;
+	}
+
+	return pageCommitmentLockOffset;
 }

