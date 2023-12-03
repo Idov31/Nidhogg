@@ -19,8 +19,8 @@ void NidhoggInterface::PrintError(NidhoggErrorCodes errorCode) {
 	case NIDHOGG_ERROR_DEVICECONTROL_DRIVER:
 		std::cout << "[ - ] Failed to do operation: " << GetLastError() << std::endl;
 		break;
-	case NIDHOGG_INVALID_COMMAND:
-		std::cerr << "[ - ] Unknown command!" << std::endl;
+	case NIDHOGG_INVALID_INPUT:
+		std::cerr << "[ - ] Invalid input!" << std::endl;
 		break;
 	case NIDHOGG_INVALID_OPTION:
 		std::cerr << "[ - ] Invalid option!" << std::endl;

@@ -101,6 +101,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 		return NIDHOGG_ERROR_CONNECT_DRIVER;
 
 	if (argc < 3) {
+		PrintUsage();
 		nidhoggInterface.PrintError(NIDHOGG_INVALID_INPUT);
 		nidhoggInterface.~NidhoggInterface();
 		return NIDHOGG_INVALID_INPUT;
