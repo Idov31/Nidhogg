@@ -828,9 +828,11 @@ bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType t
 	case RegHiddenValue:
 	{
 		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
-			if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
-				found = true;
-				break;
+			if (this->HiddenItems.Values.ValuesPath[i]) {
+				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
+					found = true;
+					break;
+				}
 			}
 		}
 		break;
