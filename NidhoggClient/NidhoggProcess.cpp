@@ -109,7 +109,7 @@ NidhoggErrorCodes NidhoggInterface::ProcessSetProtection(DWORD pid, UCHAR signer
 
 std::vector<DWORD> NidhoggInterface::QueryProcesses() {
 	DWORD returned;
-	ProcessesList result{};
+	OutputProtectedProcessesList result{};
 	std::vector<DWORD> pids;
 
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_QUERY_PROTECTED_PROCESSES, nullptr, 0, &result, sizeof(result), &returned,
@@ -120,7 +120,7 @@ std::vector<DWORD> NidhoggInterface::QueryProcesses() {
 	}
 
 	for (int i = 0; i < result.PidsCount; i++) {
-		pids.push_back(result.Pids[i]);
+		pids.push_back(result.Processes[i]);
 	}
 	return pids;
 }

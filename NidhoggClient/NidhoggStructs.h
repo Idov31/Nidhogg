@@ -120,9 +120,9 @@ struct PatchedModule {
 	WCHAR* ModuleName;
 };
 
-struct ProcessesList {
-	int PidsCount;
-	ULONG Pids[MAX_PIDS];
+struct OutputProtectedProcessesList {
+	ULONG PidsCount;
+	ULONG Processes[MAX_PIDS];
 };
 
 struct ThreadsList {

