@@ -179,8 +179,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
-		MemoryAllocator<ULONG*> allocator(&pid, sizeof(ULONG), PagedPool);
-		allocator.CopyData(data, sizeof(ULONG));
+		pid = *data;
 
 		if (!VALID_PROCESS(pid)) {
 			status = STATUS_INVALID_PARAMETER;
@@ -321,11 +320,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
-		MemoryAllocator<ULONG*> allocator(&tid, sizeof(ULONG), PagedPool);
-		status = allocator.CopyData(data, sizeof(ULONG));
-
-		if (!NT_SUCCESS(status))
-			break;
+		tid = *data;
 
 		if (tid <= 0) {
 			status = STATUS_INVALID_PARAMETER;
