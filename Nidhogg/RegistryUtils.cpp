@@ -857,7 +857,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 	switch (item->Type) {
 	case RegProtectedKey:
 	{
-		for (int i = 0; i < MAX_REG_ITEMS; i++)
+		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
@@ -885,7 +885,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 	}
 	case RegHiddenKey:
 	{
-		for (int i = 0; i < MAX_REG_ITEMS; i++)
+		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
@@ -913,7 +913,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 	}
 	case RegProtectedValue:
 	{
-		for (int i = 0; i < MAX_REG_ITEMS; i++) {
+		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
@@ -960,7 +960,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 
 	case RegHiddenValue:
 	{
-		for (int i = 0; i < MAX_REG_ITEMS; i++) {
+		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
 				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
