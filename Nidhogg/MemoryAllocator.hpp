@@ -4,18 +4,20 @@
 template<typename DataType>
 class MemoryAllocator {
 private:
-	PVOID AllocatedData;
+	DataType AllocatedData;
 	SIZE_T AllocatedSize;
-	POOL_TYPE PoolType;
 
 public:
 	MemoryAllocator(DataType Data, SIZE_T Size, POOL_TYPE PoolType) {
 		this->AllocatedData = Data;
 		this->AllocatedSize = Size;
-		this->PoolType = PoolType;
 
-		if (Size != 0)
+		if (Size != 0) {
 			Data = (DataType)ExAllocatePoolWithTag(PoolType, Size, DRIVER_TAG);
+
+			if (Data)
+				memset(Data, 0, Size);
+		}
 	}
 	~MemoryAllocator() {
 		if (this->AllocatedData) {
@@ -40,16 +42,5 @@ public:
 			status = bytesWritten == Size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;
 		}
 		return status;
-	}
-
-	NTSTATUS Realloc(SIZE_T Size) {
-		if (this->AllocatedData) {
-			ExFreePoolWithTag(this->AllocatedData, DRIVER_TAG);
-			this->AllocatedData = nullptr;
-		}
-
-		this->AllocatedSize = Size;
-		this->AllocatedData = ExAllocatePoolWithTag(this->PoolType, Size, DRIVER_TAG);
-		return this->AllocatedData ? STATUS_SUCCESS : STATUS_INSUFFICIENT_RESOURCES;
 	}
 };

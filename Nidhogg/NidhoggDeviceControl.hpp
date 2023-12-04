@@ -979,12 +979,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		errno_t err = strncpy_s(dllInfo.DllPath, data->DllPath, dllPathSize);
+		MemoryAllocator<CHAR*> dllPathAllocator(dllInfo.DllPath, dllPathSize + 1, PagedPool);
+		status = dllPathAllocator.CopyData(data->DllPath, dllPathSize);
 
-		if (err != 0) {
-			status = STATUS_INVALID_BUFFER_SIZE;
+		if (!NT_SUCCESS(status))
 			break;
-		}
 
 		if (!VALID_PROCESS(dllInfo.Pid)) {
 			status = STATUS_INVALID_PARAMETER;

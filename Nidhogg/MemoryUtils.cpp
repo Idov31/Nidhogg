@@ -11,7 +11,7 @@ MemoryUtils::MemoryUtils() {
 		this->NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
 
 	memset(this->hiddenDrivers.Items, 0, sizeof(this->hiddenDrivers.Items));
-	AutoLock lock(this->hiddenDrivers.Lock);
+	this->hiddenDrivers.Lock.Init();
 }
 
 MemoryUtils::~MemoryUtils() {
@@ -940,14 +940,15 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	UCHAR syscall = 0;
 	HANDLE csrssPid = 0;
 
-	MemoryAllocator<PSYSTEM_PROCESS_INFO> originalInfoAllocator(originalInfo, infoSize, PagedPool);
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		status = originalInfoAllocator.Realloc(infoSize);
+		if (originalInfo)
+			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
 
-		if (!NT_SUCCESS(status))
-			return functionAddress;
+		if (!originalInfo)
+			break;
 		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
 	}
 
@@ -1029,14 +1030,17 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	UCHAR pattern[] = "\x4c\x8d\x15\xcc\xcc\xcc\xcc\x4c\x8d\x1d\xcc\xcc\xcc\xcc\xf7";
 
 	// Getting ntoskrnl base first.
-	MemoryAllocator<PRTL_PROCESS_MODULES> infoAllocator(info, infoSize, PagedPool);
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		status = infoAllocator.Realloc(infoSize);
+		if (info)
+			ExFreePoolWithTag(info, DRIVER_TAG);
+		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
 
-		if (!NT_SUCCESS(status))
-			return status;
+		if (!info) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
 
 		status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 	}
@@ -1145,14 +1149,17 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	PSYSTEM_PROCESS_INFO info = NULL;
 	ULONG infoSize = 0;
 
-	MemoryAllocator<PSYSTEM_PROCESS_INFO> originalInfoAllocator(originalInfo, infoSize, PagedPool);
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		status = originalInfoAllocator.Realloc(infoSize);
+		if (originalInfo)
+			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
 
-		if (!NT_SUCCESS(status))
-			return status;
+		if (!originalInfo) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
 
 		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
 	}

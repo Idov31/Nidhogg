@@ -589,7 +589,7 @@ void ProcessUtils::ClearHiddenProcesses() {
 void ProcessUtils::ClearProtectedThreads() {
 	AutoLock locker(this->ThreadsLock);
 
-	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads) * MAX_TIDS);
+	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
 	this->ProtectedThreads.TidsCount = 0;
 	this->ProtectedThreads.LastIndex = 0;
 }

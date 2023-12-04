@@ -378,9 +378,7 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID searchedRoutineAddress = NULL;
-	UCHAR* targetFunctionSignature = NULL;
 	UCHAR* listSignature = NULL;
-	UCHAR* listCountSignature = NULL;
 	ULONG foundIndex = 0;
 	SIZE_T targetFunctionDistance = 0;
 	SIZE_T listDistance = 0;
@@ -569,17 +567,16 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	ULONG infoSize;
 
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
-	MemoryAllocator<PRTL_PROCESS_MODULES> infoAllocator(info, infoSize, PagedPool);
-
-	if (!info)
-		return STATUS_INSUFFICIENT_RESOURCES;
-	status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		status = infoAllocator.Realloc(infoSize);
+		if (info)
+			ExFreePoolWithTag(info, DRIVER_TAG);
+		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
 
-		if (!NT_SUCCESS(status))
-			return status;
+		if (!info) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
 		status = ZwQuerySystemInformation(SystemModuleInformation, info, infoSize, &infoSize);
 	}
 
@@ -619,7 +616,7 @@ NTSTATUS AntiAnalysis::AddDisabledCallback(DisabledKernelCallback Callback) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	AutoLock locker(this->Lock);
 
-	for (int i = 0; i < MAX_KERNEL_CALLBACKS; i++) {
+	for (ULONG i = 0; i < MAX_KERNEL_CALLBACKS; i++) {
 		if (!this->DisabledCallbacks[i].CallbackAddress) {
 			this->DisabledCallbacks[i].CallbackAddress = Callback.CallbackAddress;
 			this->DisabledCallbacks[i].Entry = Callback.Entry;

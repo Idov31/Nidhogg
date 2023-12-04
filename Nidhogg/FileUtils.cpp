@@ -188,7 +188,7 @@ bool FileUtils::FindFile(WCHAR* path) {
 bool FileUtils::AddFile(WCHAR* path) {
 	AutoLock locker(this->Lock);
 
-	for (int i = 0; i < MAX_FILES; i++)
+	for (ULONG i = 0; i < MAX_FILES; i++)
 		if (this->Files.FilesPath[i] == nullptr) {
 			SIZE_T len = (wcslen(path) + 1) * sizeof(WCHAR);
 			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
