@@ -389,14 +389,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (ProtectedFile*)Irp->AssociatedIrp.SystemBuffer;
-		MemoryAllocator<WCHAR*> allocator(protectedFile.FilePath, MAX_PATH * sizeof(WCHAR), PagedPool);
+
+		protectedFile.Protect = data->Protect;
 		SIZE_T filePathLen = wcslen(data->FilePath);
+		MemoryAllocator<WCHAR*> allocator(&protectedFile.FilePath, MAX_PATH * sizeof(WCHAR), PagedPool);
 		status = allocator.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		if (!protectedFile.FilePath || wcslen(protectedFile.FilePath) > MAX_PATH) {
+		if (!protectedFile.FilePath || filePathLen > MAX_PATH) {
 			KdPrint((DRIVER_PREFIX "Buffer data is invalid.\n"));
 			status = STATUS_INVALID_PARAMETER;
 			break;
@@ -474,7 +476,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
 		if (!VALID_SIZE(size, sizeof(FileItem))) {
 			status = STATUS_INVALID_BUFFER_SIZE;

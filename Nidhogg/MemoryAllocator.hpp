@@ -19,6 +19,18 @@ public:
 				memset(Data, 0, Size);
 		}
 	}
+	MemoryAllocator(DataType* Data, SIZE_T Size, POOL_TYPE PoolType) {
+		this->AllocatedSize = Size;
+
+		if (Size != 0) {
+			*Data = (DataType)ExAllocatePoolWithTag(PoolType, Size, DRIVER_TAG);
+
+			if (*Data) {
+				memset(*Data, 0, Size);
+				this->AllocatedData = *Data;
+			}
+		}
+	}
 	~MemoryAllocator() {
 		if (this->AllocatedData) {
 			ExFreePoolWithTag(this->AllocatedData, DRIVER_TAG);

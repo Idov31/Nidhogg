@@ -9,6 +9,7 @@ FileUtils::FileUtils() {
 	for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++)
 		this->Callbacks[i].Activated = false;
 
+	memset(&this->Files, 0, sizeof(this->Files));
 	this->Lock.Init();
 }
 
@@ -16,7 +17,7 @@ FileUtils::~FileUtils() {
 	AutoLock locker(this->Lock);
 
 	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
-		if (this->Files.FilesPath[i]) {
+		if (this->Files.FilesPath[i] != nullptr) {
 			ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
 			this->Files.FilesPath[i] = nullptr;
 		}
@@ -229,7 +230,7 @@ bool FileUtils::RemoveFile(WCHAR* path) {
 	AutoLock locker(this->Lock);
 
 	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
-		if (this->Files.FilesPath[i]) {
+		if (this->Files.FilesPath[i] != nullptr) {
 			if (_wcsicmp(this->Files.FilesPath[i], path) == 0) {
 				ExFreePoolWithTag(this->Files.FilesPath[i], DRIVER_TAG);
 
@@ -277,10 +278,13 @@ NTSTATUS FileUtils::QueryFiles(FileItem* item) {
 			}
 		}
 	}
-	else if (item->FileIndex > this->Files.FilesCount) {
+	else if (item->FileIndex > this->Files.LastIndex) {
 		status = STATUS_INVALID_PARAMETER;
 	}
 	else {
+		if (this->Files.FilesPath[item->FileIndex] == nullptr)
+			return STATUS_INVALID_PARAMETER;
+
 		err = wcscpy_s(item->FilePath, this->Files.FilesPath[item->FileIndex]);
 
 		if (err != 0) {
