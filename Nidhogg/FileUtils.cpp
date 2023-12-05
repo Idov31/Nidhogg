@@ -53,7 +53,7 @@ NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			break;
 
 		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR) + sizeof(DEFAULT_DRIVE_LETTER));
-		MemoryAllocator<WCHAR*> fullPathAlloc(fullPath, fullPathSize, PagedPool);
+		MemoryAllocator<WCHAR*> fullPathAlloc(&fullPath, fullPathSize, PagedPool);
 
 		if (!fullPath)
 			break;
