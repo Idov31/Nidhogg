@@ -127,7 +127,7 @@ std::vector<DWORD> NidhoggInterface::QueryProcesses() {
 
 std::vector<DWORD> NidhoggInterface::QueryThreads() {
 	DWORD returned;
-	ThreadsList result{};
+	OutputThreadsList result{};
 	std::vector<DWORD> tids;
 
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_QUERY_PROTECTED_THREADS, nullptr, 0, &result, sizeof(result), &returned,

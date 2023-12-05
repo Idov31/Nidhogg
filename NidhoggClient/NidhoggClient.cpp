@@ -388,6 +388,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 			for (int i = 0; i < result.size(); i++) {
 				std::cout << "\t" << result[i] << std::endl;
 			}
+
+			success = NIDHOGG_SUCCESS;
 			break;
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
@@ -403,6 +405,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 			for (int i = 0; i < result.size(); i++) {
 				std::wcout << "\t" << result[i] << std::endl;
 			}
+
+			success = NIDHOGG_SUCCESS;
 			break;
 		}
 		else if (_wcsicmp(argv[1], L"reg") == 0) {
@@ -439,6 +443,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 					std::wcout << "\tKeyName: " << result.Keys[i] << std::endl;
 					std::wcout << "\tValueName: " << result.Values[i] << std::endl;
 				}
+
+				success = NIDHOGG_SUCCESS;
 				break;
 			}
 			else if (_wcsicmp(argv[3], L"key") == 0) {
@@ -467,6 +473,8 @@ int wmain(int argc, const wchar_t* argv[]) {
 				for (int i = 0; i < result.size(); i++) {
 					std::wcout << "\t" << result[i] << std::endl;
 				}
+
+				success = NIDHOGG_SUCCESS;
 				break;
 			}
 			else {

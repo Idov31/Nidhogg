@@ -356,17 +356,17 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!VALID_SIZE(size, sizeof(ThreadsList))) {
+		if (!VALID_SIZE(size, sizeof(OutputThreadsList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (ThreadsList*)Irp->AssociatedIrp.SystemBuffer;
+		auto data = (OutputThreadsList*)Irp->AssociatedIrp.SystemBuffer;
 		NidhoggProccessUtils->QueryProtectedThreads(data);
 
-		len += sizeof(ThreadsList);
+		len += sizeof(OutputThreadsList);
 		break;
 	}
 

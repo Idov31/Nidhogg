@@ -1346,6 +1346,7 @@ inline ULONG GetThreadListEntryOffset() {
 	case WIN_20H2:
 	case WIN_21H1:
 	case WIN_21H2:
+	case WIN_22H2:
 		threadListEntry = 0x4e8;
 		break;
 	default:
@@ -1393,6 +1394,7 @@ inline ULONG GetThreadLockOffset() {
 	case WIN_20H2:
 	case WIN_21H1:
 	case WIN_21H2:
+	case WIN_22H2:
 		threadLockOffset = 0x500;
 		break;
 	default:

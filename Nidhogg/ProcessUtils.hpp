@@ -61,6 +61,11 @@ struct ProtectedThread {
 	bool Protect;
 };
 
+struct OutputThreadsList {
+	ULONG TidsCount;
+	ULONG Threads[MAX_TIDS];
+};
+
 struct ThreadsList {
 	ULONG LastIndex;
 	ULONG TidsCount;
@@ -97,7 +102,7 @@ public:
 	bool FindThread(ULONG tid);
 	bool AddThread(ULONG tid);
 	bool RemoveThread(ULONG tid);
-	void QueryProtectedThreads(ThreadsList* list);
+	void QueryProtectedThreads(OutputThreadsList* list);
 	NTSTATUS HideThread(ULONG tid);
 
 	void ClearProtectedProcesses();
