@@ -361,14 +361,14 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 
 	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
 	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(moduleName, moduleNameSize, PagedPool);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize, PagedPool);
 	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
 	
 	if (!NT_SUCCESS(status))
 		return status;
 
 	SIZE_T functionNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<CHAR*> functionNameAllocator(functionName, functionNameSize, PagedPool);
+	MemoryAllocator<CHAR*> functionNameAllocator(&functionName, functionNameSize, PagedPool);
 	status = functionNameAllocator.CopyData(ModuleInformation->FunctionName, functionNameSize);
 
 	if (!NT_SUCCESS(status))
@@ -398,7 +398,7 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	}
 	KeUnstackDetachProcess(&state);
 
-	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, UserMode);
+	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
 	ObDereferenceObject(TargetProcess);
 	return status;
 }
@@ -424,7 +424,7 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 	time.QuadPart = -100ll * 10 * 1000;
 
 	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(moduleName, moduleNameSize, PagedPool);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize, PagedPool);
 	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
 
 	if (!NT_SUCCESS(status))

