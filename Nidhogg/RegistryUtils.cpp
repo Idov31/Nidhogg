@@ -454,7 +454,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 		return STATUS_SUCCESS;
 	}
 
-	MemoryAllocator<PVOID> tempKeyInfoAlloc(tempKeyInformation, preInfo->Length, PagedPool);
+	MemoryAllocator<PVOID> tempKeyInfoAlloc(&tempKeyInformation, preInfo->Length, PagedPool);
 
 	if (tempKeyInformation) {
 		item.Type = RegHiddenKey;
@@ -566,7 +566,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-	MemoryAllocator<PVOID> tempValueInfoAlloc(tempValueInformation, preInfo->Length, PagedPool);
+	MemoryAllocator<PVOID> tempValueInfoAlloc(&tempValueInformation, preInfo->Length, PagedPool);
 
 	if (tempValueInformation) {
 		item.Type = RegHiddenValue;
