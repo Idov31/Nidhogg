@@ -156,7 +156,12 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, (PTHREAD_START_ROUTINE)loadLibraryAddress, remoteAddress, 0, NULL, NULL, NULL, NULL);
 	*previousMode = tmpPreviousMode;
 
-	ZwClose(hTargetThread);
+	if (hTargetThread)
+		ZwClose(hTargetThread);
+
+	if (!NT_SUCCESS(status))
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
+
 	ZwClose(hProcess);
 	ObDereferenceObject(TargetProcess);
 	return status;

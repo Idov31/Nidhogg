@@ -93,7 +93,7 @@ enum InjectionType {
 struct DllInformation {
 	InjectionType Type;
 	ULONG Pid;
-	CHAR* DllPath;
+	CHAR DllPath[MAX_PATH];
 };
 
 struct ShellcodeInformation {

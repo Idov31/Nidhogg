@@ -351,7 +351,7 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 			Callbacks->Callbacks[i].Context = currentCallback->Context;
 
 			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName))) {
-				err = strcpy_s(Callbacks->Callbacks[i].DriverName, strlen(driverName), driverName);
+				err = strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
 				
 				if (err != 0) {
 					status = STATUS_ABANDONED;

@@ -90,10 +90,9 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 
 	dllInformation.Type = injectionType;
 	dllInformation.Pid = pid;
-	SIZE_T dllPathSize = dllPath.size();
-	dllInformation.DllPath = (char*)dllPath.data();
+	errno_t err = strcpy_s(dllInformation.DllPath, dllPath.c_str());
 
-	if (!dllInformation.DllPath)
+	if (err != 0)
 		return NIDHOGG_GENERAL_ERROR;
 	
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_INJECT_DLL,
