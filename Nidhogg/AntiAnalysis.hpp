@@ -80,14 +80,14 @@ struct CmCallback {
 };
 
 struct ObCallbacksList {
-	ULONG NumberOfCallbacks;
 	CallbackType Type;
+	ULONG NumberOfCallbacks;
 	ObCallback* Callbacks;
 };
 
 struct PsRoutinesList {
-	ULONG NumberOfRoutines;
 	CallbackType Type;
+	ULONG NumberOfRoutines;
 	PsRoutine* Routines;
 };
 

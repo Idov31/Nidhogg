@@ -289,6 +289,7 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	PCM_CALLBACK currentCallback = NULL;
 	ULONG foundIndex = 0;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
+	errno_t err = 0;
 
 	// Find CmpRegisterCallbackInternal.
 	SIZE_T targetFunctionSigLen = sizeof(CallFunctionSignature);
@@ -350,14 +351,19 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 			Callbacks->Callbacks[i].Context = currentCallback->Context;
 
 			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName))) {
-				strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
+				err = strcpy_s(Callbacks->Callbacks[i].DriverName, strlen(driverName), driverName);
+				
+				if (err != 0) {
+					status = STATUS_ABANDONED;
+					break;
+				}
 			}
 		}
 		currentCallback = (PCM_CALLBACK)currentCallback->List.Flink;
 	}
 	ExReleasePushLockExclusiveEx(&callbackListLock, 0);
 
-	if (!ReplacedFunction && !ReplacerFunction)
+	if (ReplacedFunction == 0 && ReplacerFunction == 0)
 		Callbacks->NumberOfCallbacks = callbacksListCount;
 
 	return status;
@@ -387,7 +393,7 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 	SIZE_T listCountSigLen = 0;
 	SIZE_T countOffset = 0;
 	ULONG64 currentRoutine = 0;
-
+	errno_t err = 0;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
 
 	switch (Callbacks->Type) {
@@ -471,8 +477,14 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 		else {
 			Callbacks->Routines[i].CallbackAddress = *(PULONG64)(currentRoutine);
 
-			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Routines[i].CallbackAddress, driverName)))
-				strcpy_s(Callbacks->Routines[i].DriverName, driverName);
+			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Routines[i].CallbackAddress, driverName))) {
+				err = strcpy_s(Callbacks->Routines[i].DriverName, driverName);
+
+				if (err != 0) {
+					status = STATUS_ABANDONED;
+					break;
+				}
+			}
 		}
 	}
 
@@ -496,6 +508,7 @@ NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PFULL_OBJECT_TYPE objectType = NULL;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
+	errno_t err = 0;
 	ULONG index = 0;
 
 	switch (Callbacks->Type) {
@@ -529,15 +542,26 @@ NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 		do {
 			if (currentObjectCallback->Enabled) {
 				if (currentObjectCallback->PostOperation) {
-					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PostOperation, driverName)))
-						strcpy_s(Callbacks->Callbacks[index].DriverName, driverName);
+					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PostOperation, driverName))) {
+						err = strcpy_s(Callbacks->Callbacks[index].DriverName, strlen(driverName), driverName);
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+					}
 
 					Callbacks->Callbacks[index].PostOperation = currentObjectCallback->PostOperation;
 				}
 				if (currentObjectCallback->PreOperation) {
-					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PreOperation, driverName)))
-						if (strlen(Callbacks->Callbacks[index].DriverName) == 0)
-							strcpy_s(Callbacks->Callbacks[index].DriverName, driverName);
+					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PreOperation, driverName))) {
+						err = strcpy_s(Callbacks->Callbacks[index].DriverName, strlen(driverName), driverName);
+						
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+					}
 
 					Callbacks->Callbacks[index].PreOperation = currentObjectCallback->PreOperation;
 				}
@@ -565,6 +589,7 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	NTSTATUS status = STATUS_SUCCESS;
 	PRTL_PROCESS_MODULES info = NULL;
 	ULONG infoSize;
+	errno_t err = 0;
 
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
 
@@ -590,8 +615,12 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 			if (modules[i].FullPathName) {
 				SIZE_T fullPathNameSize = strlen((const char*)modules[i].FullPathName);
 
-				if (fullPathNameSize <= MAX_DRIVER_PATH)
-					strcpy_s(driverName, fullPathNameSize, (const char*)modules[i].FullPathName);
+				if (fullPathNameSize <= MAX_DRIVER_PATH) {
+					err = strcpy_s(driverName, MAX_DRIVER_PATH, (const char*)modules[i].FullPathName);
+
+					if (err != 0)
+						status = STATUS_UNSUCCESSFUL;
+				}
 			}
 			else
 				status = STATUS_UNSUCCESSFUL;

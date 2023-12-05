@@ -96,28 +96,22 @@ ObCallbacksList NidhoggInterface::ListObCallbacks(CallbackType callbackType, Nid
 	callbacks.NumberOfCallbacks = 0;
 	callbacks.Type = callbackType;
 
-	if (!DeviceIoControl(this->hNidhogg, IOCTL_LIST_OBCALLBACKS,
-		&callbacks, sizeof(callbacks),
-		&callbacks, sizeof(callbacks), &returned, nullptr)) {
-		*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
-		return callbacks;
-	}
-
 	if (callbackType == ObProcessType || callbackType == ObThreadType) {
+		if (!DeviceIoControl(this->hNidhogg, IOCTL_LIST_OBCALLBACKS,
+			&callbacks, sizeof(callbacks),
+			&callbacks, sizeof(callbacks), &returned, nullptr)) {
+			*success = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+			return callbacks;
+		}
+
 		if (callbacks.NumberOfCallbacks > 0) {
-			switch (callbackType) {
-			case ObProcessType:
-			case ObThreadType:
-				callbacks.Callbacks = (ObCallback*)malloc(callbacks.NumberOfCallbacks * sizeof(ObCallback));
+			callbacks.Callbacks = (ObCallback*)malloc(callbacks.NumberOfCallbacks * sizeof(ObCallback));
 
-				if (!callbacks.Callbacks) {
-					*success = NIDHOGG_GENERAL_ERROR;
-					return callbacks;
-				}
-				memset(callbacks.Callbacks, 0, callbacks.NumberOfCallbacks * sizeof(ObCallback));
-
-				break;
+			if (!callbacks.Callbacks) {
+				*success = NIDHOGG_GENERAL_ERROR;
+				return callbacks;
 			}
+			memset(callbacks.Callbacks, 0, callbacks.NumberOfCallbacks * sizeof(ObCallback));
 
 			if (!DeviceIoControl(this->hNidhogg, IOCTL_LIST_OBCALLBACKS,
 				&callbacks, sizeof(callbacks),
