@@ -508,7 +508,7 @@ NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
 	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
 	NTSTATUS status = STATUS_NOT_FOUND;
 
-	if (!ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, 1))
+	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
 		return STATUS_ABANDONED;
 
 	for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
@@ -535,7 +535,7 @@ NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
 		}
 	}
 
-	ExReleaseResourceLite(&PsLoadedModuleResource);
+	ExReleaseResourceLite(PsLoadedModuleResource);
 	return status;
 }
 
@@ -560,7 +560,7 @@ NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
 	if (driverIndex == ITEM_NOT_FOUND)
 		return status;
 
-	if (!ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, 1))
+	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
 		return STATUS_ABANDONED;
 
 	PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
@@ -570,7 +570,7 @@ NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
 	if (RemoveHiddenDriver(driverIndex))
 		status = STATUS_SUCCESS;
 
-	ExReleaseResourceLite(&PsLoadedModuleResource);
+	ExReleaseResourceLite(PsLoadedModuleResource);
 	return status;
 }
 
@@ -1259,6 +1259,12 @@ bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
 				return false;
 
 			memset(buffer, 0, bufferSize);
+			/*errno_t err = wcscpy_s(buffer, wcslen(item.DriverName), item.DriverName);
+
+			if (err != 0) {
+				ExFreePoolWithTag(buffer, DRIVER_TAG);
+				return false;
+			}*/
 
 			__try {
 				RtlCopyMemory(buffer, item.DriverName, bufferSize);

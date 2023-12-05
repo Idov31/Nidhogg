@@ -285,7 +285,7 @@ typedef struct _REAL_PEB {
 extern "C" POBJECT_TYPE * IoDriverObjectType;
 
 extern "C" PKLDR_DATA_TABLE_ENTRY PsLoadedModuleList;
-extern "C" ERESOURCE PsLoadedModuleResource;
+extern "C" PERESOURCE PsLoadedModuleResource;
 
 typedef struct _TRACE_ENABLE_INFO
 {

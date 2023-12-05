@@ -64,7 +64,7 @@ public:
 	NidhoggErrorCodes HideDriver(wchar_t* driverPath);
 	NidhoggErrorCodes UnhideDriver(wchar_t* driverPath);
 	NidhoggErrorCodes HideModule(DWORD pid, wchar_t* modulePath);
-	NidhoggErrorCodes InjectDll(DWORD pid, const char* dllPath, InjectionType injectionType);
+	NidhoggErrorCodes InjectDll(DWORD pid, std::string dllPath, InjectionType injectionType);
 	NidhoggErrorCodes InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3, InjectionType injectionType);
 	NidhoggErrorCodes PatchModule(DWORD pid, wchar_t* moduleName, char* functionName, std::vector<byte> patch);
 	NidhoggErrorCodes AmsiBypass(DWORD pid);

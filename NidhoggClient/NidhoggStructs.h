@@ -159,7 +159,7 @@ struct PkgReadWriteData {
 struct DllInformation {
 	InjectionType Type;
 	ULONG Pid;
-	CHAR DllPath[MAX_PATH];
+	CHAR* DllPath;
 };
 
 struct ShellcodeInformation {

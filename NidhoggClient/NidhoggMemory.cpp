@@ -78,24 +78,29 @@ NidhoggErrorCodes NidhoggInterface::HideModule(DWORD pid, wchar_t* modulePath) {
 	return NIDHOGG_SUCCESS;
 }
 
-NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, const char* dllPath, InjectionType injectionType) {
+NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, InjectionType injectionType) {
 	DWORD returned;
 	DllInformation dllInformation{};
 
-	if (pid <= 0 || pid == SYSTEM_PID || !dllPath)
+	if (pid <= 0 || pid == SYSTEM_PID || dllPath.empty())
 		return NIDHOGG_GENERAL_ERROR;
 
-	if (strlen(dllPath) > MAX_PATH)
+	if (dllPath.size() > MAX_PATH)
 		return NIDHOGG_GENERAL_ERROR;
 
 	dllInformation.Type = injectionType;
 	dllInformation.Pid = pid;
-	strcpy_s(dllInformation.DllPath, strlen(dllPath) + 1, dllPath);
+	SIZE_T dllPathSize = dllPath.size();
+	dllInformation.DllPath = (char*)dllPath.data();
 
+	if (!dllInformation.DllPath)
+		return NIDHOGG_GENERAL_ERROR;
+	
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_INJECT_DLL,
 		&dllInformation, sizeof(dllInformation),
-		nullptr, 0, &returned, nullptr))
+		nullptr, 0, &returned, nullptr)) {
 		return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+	}
 
 	return NIDHOGG_SUCCESS;
 }
@@ -128,7 +133,7 @@ NidhoggErrorCodes NidhoggInterface::PatchModule(DWORD pid, wchar_t* moduleName, 
 	PatchedModule patchedModule{};
 
 	patchedModule.Pid = pid;
-	patchedModule.PatchLength = patch.size();
+	patchedModule.PatchLength = (ULONG)patch.size();
 	patchedModule.ModuleName = moduleName;
 	patchedModule.FunctionName = functionName;
 	patchedModule.Patch = patch.data();

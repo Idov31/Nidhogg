@@ -119,7 +119,7 @@ std::vector<DWORD> NidhoggInterface::QueryProcesses() {
 		return pids;
 	}
 
-	for (int i = 0; i < result.PidsCount; i++) {
+	for (ULONG i = 0; i < result.PidsCount; i++) {
 		pids.push_back(result.Processes[i]);
 	}
 	return pids;
@@ -137,7 +137,7 @@ std::vector<DWORD> NidhoggInterface::QueryThreads() {
 		return tids;
 	}
 
-	for (int i = 0; i < result.TidsCount; i++) {
+	for (ULONG i = 0; i < result.TidsCount; i++) {
 		tids.push_back(result.Threads[i]);
 	}
 	return tids;

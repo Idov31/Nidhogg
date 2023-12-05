@@ -20,6 +20,7 @@ public:
 		}
 	}
 	MemoryAllocator(DataType* Data, SIZE_T Size, POOL_TYPE PoolType) {
+		this->AllocatedData = nullptr;
 		this->AllocatedSize = Size;
 
 		if (Size != 0) {
