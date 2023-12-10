@@ -2,9 +2,17 @@
 #include "pch.h"
 
 // #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
+#define PRINTS // Comment or uncomment for printing
 #define DRIVER_TAG 'hdiN'
 #define DRIVER_PREFIX "Nidhogg: "
 constexpr SIZE_T MAX_PATH = 260;
+
+#ifdef PRINTS
+typedef ULONG(NTAPI* tDbgPrint)(PCSTR Format, ...);
+constexpr tDbgPrint Print = DbgPrint;
+#else
+constexpr VOID Print(...) {};
+#endif
 
 // Globals.
 inline PVOID RegistrationHandle = NULL;

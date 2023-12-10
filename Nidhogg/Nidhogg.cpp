@@ -10,7 +10,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	Features.ProcessProtection = false;
 	Features.ThreadProtection = false;
 	Features.RegistryFeatures = false;
-	KdPrint((DRIVER_PREFIX "Driver is being reflectively loaded...\n"));
+	Print(DRIVER_PREFIX "Driver is being reflectively loaded...\n");
 
 	UNICODE_STRING driverName = RTL_CONSTANT_STRING(DRIVER_NAME);
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"IoCreateDriver");
@@ -22,7 +22,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	NTSTATUS status = IoCreateDriver(&driverName, &NidhoggEntry);
 
 	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "Failed to create driver: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create driver: (0x%08X)\n", status);
 	return status;
 #endif
 
@@ -60,7 +60,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status);
 		ClearAll();
 		return status;
 	}
@@ -68,7 +68,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	status = IoCreateSymbolicLink(&symbolicLink, &deviceName);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status);
 		IoDeleteDevice(DeviceObject);
 		ClearAll();
 		return status;
@@ -99,7 +99,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		status = ObRegisterCallbacks(&registrationCallbacks, &RegistrationHandle);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to register process callback: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to register process callback: (0x%08X)\n", status);
 			status = STATUS_SUCCESS;
 			Features.ProcessProtection = false;
 			Features.ThreadProtection = false;
@@ -108,7 +108,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryUtils->RegCookie, nullptr);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status);
 			status = STATUS_SUCCESS;
 			Features.RegistryFeatures = false;
 		}
@@ -123,7 +123,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = NidhoggCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = NidhoggDeviceControl;
 
-	KdPrint((DRIVER_PREFIX "Initialization finished.\n"));
+	Print(DRIVER_PREFIX "Initialization finished.\n");
 	return status;
 }
 
@@ -138,13 +138,13 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 * There is no return value.
 */
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
-	KdPrint((DRIVER_PREFIX "Unloading...\n"));
+	Print(DRIVER_PREFIX "Unloading...\n");
 
 	if (Features.RegistryFeatures) {
 		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryUtils->RegCookie);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status);
 		}
 	}
 

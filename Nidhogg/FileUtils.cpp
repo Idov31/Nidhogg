@@ -95,16 +95,13 @@ NTSTATUS FileUtils::InstallNtfsHook(int irpMjFunction) {
 	RtlInitUnicodeString(&ntfsName, L"\\FileSystem\\NTFS");
 	status = ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&ntfsDriverObject);
 
-	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to get ntfs driver object, (0x%08X).\n", status));
+	if (!NT_SUCCESS(status))
 		return status;
-	}
 
 	switch (irpMjFunction) {
 		case IRP_MJ_CREATE: {
 			this->Callbacks[0].Address = (PVOID)InterlockedExchange64((LONG64*)&ntfsDriverObject->MajorFunction[IRP_MJ_CREATE], (LONG64)HookedNtfsIrpCreate);
 			this->Callbacks[0].Activated = true;
-			KdPrint((DRIVER_PREFIX "Switched addresses\n"));
 			break;
 		}
 		default:
@@ -272,10 +269,8 @@ NTSTATUS FileUtils::QueryFiles(FileItem* item) {
 		if (this->Files.FilesCount > 0) {
 			err = wcscpy_s(item->FilePath, this->Files.FilesPath[0]);
 
-			if (err != 0) {
+			if (err != 0)
 				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
 		}
 	}
 	else if (item->FileIndex > this->Files.LastIndex) {
@@ -287,10 +282,8 @@ NTSTATUS FileUtils::QueryFiles(FileItem* item) {
 
 		err = wcscpy_s(item->FilePath, this->Files.FilesPath[item->FileIndex]);
 
-		if (err != 0) {
+		if (err != 0)
 			status = STATUS_INVALID_USER_BUFFER;
-			KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-		}
 	}
 
 	return status;

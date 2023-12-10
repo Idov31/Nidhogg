@@ -158,13 +158,8 @@ NTSTATUS RegistryUtils::RegNtPreDeleteKeyHandler(REG_DELETE_KEY_INFORMATION* inf
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 	regItem.Type = RegProtectedKey;
 
-	if (FindRegItem(&regItem)) {
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Protected key %ws\n", regItem.KeyPath));
-		KeRaiseIrql(prevIrql, &prevIrql);
+	if (FindRegItem(&regItem))
 		status = STATUS_ACCESS_DENIED;
-	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -203,13 +198,8 @@ NTSTATUS RegistryUtils::RegNtPreDeleteValueKeyHandler(REG_DELETE_VALUE_KEY_INFOR
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
 	regItem.Type = RegProtectedValue;
 
-	if (FindRegItem(&regItem)) {
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Protected value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
-		KeRaiseIrql(prevIrql, &prevIrql);
+	if (FindRegItem(&regItem))
 		status = STATUS_ACCESS_DENIED;
-	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -247,13 +237,8 @@ NTSTATUS RegistryUtils::RegNtPreQueryKeyHandler(REG_QUERY_KEY_INFORMATION* info)
 	wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
 	regItem.Type = RegHiddenKey;
 
-	if (FindRegItem(&regItem)) {
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Hid key from query %ws\n", regItem.KeyPath));
-		KeRaiseIrql(prevIrql, &prevIrql);
+	if (FindRegItem(&regItem))
 		status = STATUS_NOT_FOUND;
-	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -292,13 +277,8 @@ NTSTATUS RegistryUtils::RegNtPreQueryValueKeyHandler(REG_QUERY_VALUE_KEY_INFORMA
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
 	regItem.Type = RegHiddenValue;
 
-	if (FindRegItem(&regItem)) {
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Hid value from query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
-		KeRaiseIrql(prevIrql, &prevIrql);
+	if (FindRegItem(&regItem))
 		status = STATUS_NOT_FOUND;
-	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -340,10 +320,6 @@ NTSTATUS RegistryUtils::RegNtPreQueryMultipleValueKeyHandler(REG_QUERY_MULTIPLE_
 		wcsncpy_s(regItem.ValueName, info->ValueEntries[index].ValueName->Buffer, info->ValueEntries[index].ValueName->Length / sizeof(WCHAR));
 
 		if (FindRegItem(&regItem)) {
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
-			KdPrint((DRIVER_PREFIX "Hid value from multiple query %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
-			KeRaiseIrql(prevIrql, &prevIrql);
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -388,13 +364,8 @@ NTSTATUS RegistryUtils::RegNtPreSetValueKeyHandler(REG_SET_VALUE_KEY_INFORMATION
 	wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR));
 	regItem.Type = RegProtectedValue;
 
-	if (FindRegItem(&regItem)) {
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-		KdPrint((DRIVER_PREFIX "Blocked setting value %ws\\%ws\n", regItem.KeyPath, regItem.ValueName));
-		KeRaiseIrql(prevIrql, &prevIrql);
+	if (FindRegItem(&regItem))
 		status = STATUS_ACCESS_DENIED;
-	}
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -486,18 +457,13 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next key item, 0x%x\n", GetExceptionCode()));
+					Print(DRIVER_PREFIX "Failed to copy the next key item, 0x%x\n", GetExceptionCode());
 				}
 
 				copyKeyInformationitem = false;
 			}
-			else {
+			else
 				counter++;
-				auto prevIrql = KeGetCurrentIrql();
-				KeLowerIrql(PASSIVE_LEVEL);
-				KdPrint((DRIVER_PREFIX "Hid registry key %ws\n", item.KeyPath));
-				KeRaiseIrql(prevIrql, &prevIrql);
-			}
 
 			// To avoid concatenating bad item.
 			item.KeyPath[0] = L'\0';
@@ -596,19 +562,14 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 					RtlCopyMemory(preInfo->KeyValueInformation, tempValueInformation, resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
-					KdPrint((DRIVER_PREFIX "Failed to copy the next value item, 0x%x\n", GetExceptionCode()));
+					Print(DRIVER_PREFIX "Failed to copy the next value item, 0x%x\n", GetExceptionCode());
 				}
 
 				copyKeyInformationitem = false;
 				continue;
 			}
-			else {
+			else
 				counter++;
-				auto prevIrql = KeGetCurrentIrql();
-				KeLowerIrql(PASSIVE_LEVEL);
-				KdPrint((DRIVER_PREFIX "Hid registry value %ws\n", item.KeyPath));
-				KeRaiseIrql(prevIrql, &prevIrql);
-			}
 		}
 	}
 	else
@@ -1240,54 +1201,44 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 		if (this->ProtectedItems.Keys.KeysCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Keys.KeysPath[item->RegItemsIndex]);
 
-			if (err != 0) {
+			if (err != 0)
 				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
 		}
 	}
 	else if (item->Type == RegHiddenKey) {
 		if (this->HiddenItems.Keys.KeysCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->HiddenItems.Keys.KeysPath[item->RegItemsIndex]);
 
-			if (err != 0) {
+			if (err != 0)
 				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
 		}
 	}
 	else if (item->Type == RegProtectedValue) {
 		if (this->ProtectedItems.Values.ValuesCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Values.ValuesPath[item->RegItemsIndex]);
 
-			if (err != 0) {
-				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
+			if (err == 0) {
+				err = wcscpy_s(item->ValueName, this->ProtectedItems.Values.ValuesName[item->RegItemsIndex]);
 
-			err = wcscpy_s(item->ValueName, this->ProtectedItems.Values.ValuesName[item->RegItemsIndex]);
-
-			if (err != 0) {
-				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+				if (err != 0)
+					status = STATUS_INVALID_USER_BUFFER;
 			}
+			else
+				status = STATUS_INVALID_USER_BUFFER;	
 		}
 	}
 	else if (item->Type == RegHiddenValue) {
 		if (this->HiddenItems.Values.ValuesCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->HiddenItems.Values.ValuesPath[item->RegItemsIndex]);
 
-			if (err != 0) {
-				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
-			}
+			if (err == 0) {
+				err = wcscpy_s(item->ValueName, this->HiddenItems.Values.ValuesName[item->RegItemsIndex]);
 
-			err = wcscpy_s(item->ValueName, this->HiddenItems.Values.ValuesName[item->RegItemsIndex]);
-
-			if (err != 0) {
-				status = STATUS_INVALID_USER_BUFFER;
-				KdPrint((DRIVER_PREFIX "Failed to copy to user buffer with errno %d\n", err));
+				if (err != 0)
+					status = STATUS_INVALID_USER_BUFFER;				
 			}
+			else
+				status = STATUS_INVALID_USER_BUFFER;
 		}
 	}
 

