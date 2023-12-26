@@ -208,6 +208,21 @@ void ClearAll() {
 * There is no return value.
 */
 bool InitializeFeatures() {
+	// Get windows version.
+	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
+	NTSTATUS result = RtlGetVersion(&osVersion);
+
+	if (!NT_SUCCESS(result))
+		return false;
+
+	WindowsBuildNumber = osVersion.dwBuildNumber;
+
+	if (WindowsBuildNumber < WIN_1507)
+		return false;
+
+	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"ExAllocatePool2");
+	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
+
 	// Initialize utils.
 	NidhoggProccessUtils = new ProcessUtils();
 
@@ -232,18 +247,6 @@ bool InitializeFeatures() {
 	NidhoggRegistryUtils = new RegistryUtils();
 
 	if (!NidhoggRegistryUtils)
-		return false;
-
-	// Get windows version.
-	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
-	NTSTATUS result = RtlGetVersion(&osVersion);
-
-	if (!NT_SUCCESS(result))
-		return false;
-
-	WindowsBuildNumber = osVersion.dwBuildNumber;
-
-	if (WindowsBuildNumber < WIN_1507)
 		return false;
 
 	// Initialize functions.

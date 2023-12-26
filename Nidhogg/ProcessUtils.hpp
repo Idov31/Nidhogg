@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "MemoryHelper.hpp"
 
 extern "C" {
 	#include "WindowsTypes.hpp"
@@ -87,7 +88,7 @@ private:
 
 public:
 	void* operator new(size_t size) {
-		return ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+		return AllocateMemory(size, false);
 	}
 
 	void operator delete(void* p) {

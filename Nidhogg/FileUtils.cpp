@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "FileUtils.hpp"
 #include "MemoryAllocator.hpp"
+#include "MemoryHelper.hpp"
 
 FileUtils::FileUtils() {
 	this->Files.FilesCount = 0;
@@ -53,7 +54,7 @@ NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			break;
 
 		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR) + sizeof(DEFAULT_DRIVE_LETTER));
-		MemoryAllocator<WCHAR*> fullPathAlloc(&fullPath, fullPathSize, PagedPool);
+		MemoryAllocator<WCHAR*> fullPathAlloc(&fullPath, fullPathSize);
 
 		if (!fullPath)
 			break;
@@ -189,7 +190,7 @@ bool FileUtils::AddFile(WCHAR* path) {
 	for (ULONG i = 0; i < MAX_FILES; i++)
 		if (this->Files.FilesPath[i] == nullptr) {
 			SIZE_T len = (wcslen(path) + 1) * sizeof(WCHAR);
-			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+			WCHAR* buffer = (WCHAR*)AllocateMemory(len);
 
 			// Not enough resources.
 			if (!buffer) {

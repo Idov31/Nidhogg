@@ -425,7 +425,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 		return STATUS_SUCCESS;
 	}
 
-	MemoryAllocator<PVOID> tempKeyInfoAlloc(&tempKeyInformation, preInfo->Length, PagedPool);
+	MemoryAllocator<PVOID> tempKeyInfoAlloc(&tempKeyInformation, preInfo->Length);
 
 	if (tempKeyInformation) {
 		item.Type = RegHiddenKey;
@@ -532,7 +532,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-	MemoryAllocator<PVOID> tempValueInfoAlloc(&tempValueInformation, preInfo->Length, PagedPool);
+	MemoryAllocator<PVOID> tempValueInfoAlloc(&tempValueInformation, preInfo->Length);
 
 	if (tempValueInformation) {
 		item.Type = RegHiddenValue;
@@ -823,7 +823,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				WCHAR* buffer = (WCHAR*)AllocateMemory(len);
 
 				// Not enough resources.
 				if (!buffer)
@@ -851,7 +851,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, len, DRIVER_TAG);
+				WCHAR* buffer = (WCHAR*)AllocateMemory(len);
 
 				// Not enough resources.
 				if (!buffer)
@@ -879,14 +879,14 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				WCHAR* keyPath = (WCHAR*)AllocateMemory(keyLen);
 
 				if (!keyPath) {
 					break;
 				}
 
 				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				WCHAR* valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				WCHAR* valueName = (WCHAR*)AllocateMemory(valueNameLen);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
@@ -926,7 +926,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* keyPath = (WCHAR*)ExAllocatePoolWithTag(PagedPool, keyLen, DRIVER_TAG);
+				WCHAR* keyPath = (WCHAR*)AllocateMemory(keyLen);
 
 				// Not enough resources.
 				if (!keyPath) {
@@ -934,7 +934,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 				}
 
 				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				WCHAR* valueName = (WCHAR*)ExAllocatePoolWithTag(PagedPool, valueNameLen, DRIVER_TAG);
+				WCHAR* valueName = (WCHAR*)AllocateMemory(valueNameLen);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);

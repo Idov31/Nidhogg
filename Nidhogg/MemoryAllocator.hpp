@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "MemoryHelper.hpp"
 
 template<typename DataType>
 class MemoryAllocator {
@@ -8,23 +9,23 @@ private:
 	SIZE_T AllocatedSize;
 
 public:
-	MemoryAllocator(DataType Data, SIZE_T Size, POOL_TYPE PoolType) {
+	MemoryAllocator(DataType Data, SIZE_T Size) {
 		this->AllocatedData = Data;
 		this->AllocatedSize = Size;
 
 		if (Size != 0) {
-			Data = (DataType)ExAllocatePoolWithTag(PoolType, Size, DRIVER_TAG);
+			Data = (DataType)AllocateMemory(Size);
 
 			if (Data)
 				memset(Data, 0, Size);
 		}
 	}
-	MemoryAllocator(DataType* Data, SIZE_T Size, POOL_TYPE PoolType) {
+	MemoryAllocator(DataType* Data, SIZE_T Size) {
 		this->AllocatedData = nullptr;
 		this->AllocatedSize = Size;
 
 		if (Size != 0) {
-			*Data = (DataType)ExAllocatePoolWithTag(PoolType, Size, DRIVER_TAG);
+			*Data = (DataType)AllocateMemory(Size);
 
 			if (*Data) {
 				memset(*Data, 0, Size);

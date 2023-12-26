@@ -2,6 +2,7 @@
 
 // Globals
 inline ULONG WindowsBuildNumber = 0;
+inline PVOID AllocatePool2 = NULL;
 
 // Documented.
 #define WIN_1507 10240
@@ -1204,6 +1205,12 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 	SIZE_T SizeOfStackCommit,
 	SIZE_T SizeOfStackReserve,
 	PVOID lpBytesBuffer);
+
+typedef PVOID (NTAPI* tExAllocatePool2)(
+	POOL_FLAGS Flags,
+	SIZE_T     NumberOfBytes,
+	ULONG      Tag
+);
 
 extern "C" {
 	PPEB NTAPI PsGetProcessPeb(PEPROCESS Process);

@@ -13,10 +13,17 @@
 * Returns:
 * @ptr  [PVOID]  -- Allocated pointer on success else NULL.
 */
-inline PVOID AllocateMemory(SIZE_T size) {
-	return WindowsBuildNumber >= WIN_2004 ? 
-		ExAllocatePool2(POOL_FLAG_PAGED, size, DRIVER_TAG) :
-		ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG);
+inline PVOID AllocateMemory(SIZE_T size, bool paged = true) {
+	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004) {
+		return paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
+			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED_EXECUTE, size, DRIVER_TAG);
+	}
+
+#pragma warning( push )
+#pragma warning( disable : 4996)
+	return paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
+		ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+#pragma warning( pop )
 }
 
 /*
@@ -41,7 +48,7 @@ inline NTSTATUS CopyUnicodeString(PEPROCESS sourceProcess, PUNICODE_STRING sourc
 	target->MaximumLength = source->MaximumLength;
 
 	if (!target->Buffer) {
-		target->Buffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, target->Length, DRIVER_TAG);
+		target->Buffer = (WCHAR*)AllocateMemory(target->Length);
 
 		if (!target->Buffer)
 			return STATUS_INSUFFICIENT_RESOURCES;

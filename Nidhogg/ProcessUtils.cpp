@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "ProcessUtils.hpp"
+#include "MemoryHelper.hpp"
 
 ProcessUtils::ProcessUtils() {
 	this->ProtectedProcesses.PidsCount = 0;
@@ -290,7 +291,7 @@ NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo)
 			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+		originalInfo = (PSYSTEM_PROCESS_INFO)AllocateMemory(infoSize);
 
 		if (!originalInfo)
 			break;

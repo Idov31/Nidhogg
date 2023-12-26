@@ -21,7 +21,6 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Thread hiding
 - Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
-- File hiding
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
 - Querying currently protected processes, threads, files, registry keys and values
