@@ -1085,6 +1085,101 @@ typedef struct _MMVAD
 	FILE_OBJECT* FileObject;
 } MMVAD, *PMMVAD;
 
+typedef struct _PRIMARY_CREDENTIALS {
+	struct _PRIMARY_CREDENTIALS* next;
+	ANSI_STRING Primary;
+	LSA_UNICODE_STRING Credentials;
+} PRIMARY_CREDENTIALS, * PPRIMARY_CREDENTIALS;
+
+typedef struct _MSV1_0_CREDENTIALS {
+	struct _MSV1_0_CREDENTIALS* next;
+	DWORD AuthenticationPackageId;
+	PPRIMARY_CREDENTIALS PrimaryCredentials;
+} MSV1_0_CREDENTIALS, * PMSV1_0_CREDENTIALS;
+
+typedef struct _LSASRV_CREDENTIALS {
+	struct _LSASRV_CREDENTIALS* Flink;
+	struct _LSASRV_CREDENTIALS* Blink;
+	PVOID unk0;
+	ULONG unk1; // 0FFFFFFFFh
+	PVOID unk2; // 0
+	ULONG unk3; // 0
+	ULONG unk4; // 0
+	ULONG unk5; // 0A0007D0h
+	HANDLE hSemaphore6; // 0F9Ch
+	PVOID unk7; // 0
+	HANDLE hSemaphore8; // 0FB8h
+	PVOID unk9; // 0
+	PVOID unk10; // 0
+	ULONG unk11; // 0
+	ULONG unk12; // 0 
+	PVOID unk13; // unk_2C0A28
+	LUID LocallyUniqueIdentifier;
+	LUID SecondaryLocallyUniqueIdentifier;
+	BYTE waza[12]; // to do (maybe align)
+	LSA_UNICODE_STRING UserName;
+	LSA_UNICODE_STRING Domain;
+	PVOID unk14;
+	PVOID unk15;
+	LSA_UNICODE_STRING Type;
+	PSID  pSid;
+	ULONG LogonType;
+	PVOID unk18;
+	ULONG Session;
+	LARGE_INTEGER LogonTime; // autoalign x86
+	LSA_UNICODE_STRING LogonServer;
+	PMSV1_0_CREDENTIALS Credentials;
+	PVOID unk19;
+	PVOID unk20;
+	PVOID unk21;
+	ULONG unk22;
+	ULONG unk23;
+	ULONG unk24;
+	ULONG unk25;
+	ULONG unk26;
+	PVOID unk27;
+	PVOID unk28;
+	PVOID unk29;
+	PVOID CredentialManager;
+} LSASRV_CREDENTIALS, * PLSASRV_CREDENTIALS;
+
+typedef struct _HARD_KEY {
+	ULONG cbSecret;
+	UCHAR data[ANYSIZE_ARRAY];
+} HARD_KEY, * PHARD_KEY;
+
+typedef struct _BCRYPT_KEY {
+	ULONG size;
+	ULONG tag;	// 'MSSK'
+	ULONG type;
+	ULONG unk0;
+	ULONG unk1;
+	ULONG unk2;
+	ULONG unk3;
+	ULONG unk4;
+	PVOID unk5;	// before, align in x64
+	ULONG unk6;
+	ULONG unk7;
+	ULONG unk8;
+	ULONG unk9;
+	HARD_KEY hardkey;
+} BCRYPT_KEY, * PBCRYPT_KEY;
+
+typedef struct _BCRYPT_HANDLE_KEY {
+	ULONG size;
+	ULONG tag;	// 'UUUR'
+	PVOID hAlgorithm;
+	PBCRYPT_KEY key;
+	PVOID unk0;
+} BCRYPT_HANDLE_KEY, * PBCRYPT_HANDLE_KEY;
+
+typedef struct _BCRYPT_GEN_KEY {
+	PBCRYPT_HANDLE_KEY hKey;
+	PVOID hProvider;
+	PUCHAR pKey;
+	ULONG cbKey;
+} BCRYPT_GEN_KEY, * PBCRYPT_GEN_KEY;
+
 // Prototypes
 typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,

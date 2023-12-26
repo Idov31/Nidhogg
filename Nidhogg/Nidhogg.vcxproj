@@ -162,7 +162,7 @@
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;Cng.lib</AdditionalDependencies>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
@@ -182,7 +182,7 @@
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;Cng.lib</AdditionalDependencies>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
     <Inf>
@@ -205,6 +205,7 @@
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileUtils.hpp" />
     <ClInclude Include="MemoryUtils.hpp" />
+    <ClInclude Include="MemoryHelper.hpp" />
     <ClInclude Include="NidhoggCommon.h" />
     <ClInclude Include="NidhoggDeviceControl.hpp" />
     <ClInclude Include="Nidhogg.h" />

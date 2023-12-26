@@ -45,6 +45,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - ETWTI tampering
 - Module hiding
 - Driver hiding and unhiding
+- Credential Dumping
 
 ## Reflective loading
 
@@ -119,6 +120,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Registry Keys Hiding](https://github.com/JKornev/hidden)
 - [Process Signatures](https://github.com/itm4n/PPLcontrol)
 - [NtCreateThreadEx Hotfix](https://github.com/DarthTon/Blackbone)
+- [Credential Dumping](https://github.com/gentilkiwi/mimikatz)
 - [Logo](https://hotpot.ai/art-generator)
 
 ## Contributions

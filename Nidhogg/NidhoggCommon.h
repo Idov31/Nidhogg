@@ -14,6 +14,11 @@ constexpr tDbgPrint Print = DbgPrint;
 constexpr VOID Print(...) {};
 #endif
 
+inline auto AlignAddress = [](ULONGLONG Address) -> ULONGLONG {
+	ULONG remain = Address % 8;
+	return remain != 0 ? Address + 8 - remain : Address;
+};
+
 // Globals.
 inline PVOID RegistrationHandle = NULL;
 

