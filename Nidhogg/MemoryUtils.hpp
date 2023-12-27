@@ -235,7 +235,6 @@ public:
 	NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);
 	NTSTATUS InjectDllThread(DllInformation* DllInfo);
 	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
-	PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size, PULONG foundIndex, ULONG relativeOffset, bool reversed = false);
 	NTSTATUS HideModule(HiddenModuleInformation* ModuleInformation);
 	NTSTATUS HideDriver(HiddenDriverInformation* DriverInformation);
 	NTSTATUS UnhideDriver(HiddenDriverInformation* DriverInformation);
