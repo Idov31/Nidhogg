@@ -9,7 +9,6 @@ extern "C" {
 }
 
 // Definitions.
-#define DEFAULT_DRIVE_LETTER L"C:"
 constexpr SIZE_T MAX_FILES = 256;
 constexpr SIZE_T SUPPORTED_HOOKED_NTFS_CALLBACKS = 1;
 

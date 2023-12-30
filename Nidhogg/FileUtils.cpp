@@ -53,18 +53,13 @@ NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		if (stack->FileObject->FileName.Length == 0)
 			break;
 
-		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR) + sizeof(DEFAULT_DRIVE_LETTER));
+		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR));
 		MemoryAllocator<WCHAR*> fullPathAlloc(&fullPath, fullPathSize);
 
 		if (!fullPath)
 			break;
 
-		errno_t err = wcscpy_s(fullPath, sizeof(DEFAULT_DRIVE_LETTER), DEFAULT_DRIVE_LETTER);
-
-		if (err != 0)
-			break;
-
-		err = wcscat_s(fullPath, stack->FileObject->FileName.Length * sizeof(WCHAR), stack->FileObject->FileName.Buffer);
+		errno_t err = wcscpy_s(fullPath, stack->FileObject->FileName.Length * sizeof(WCHAR), stack->FileObject->FileName.Buffer);
 
 		if (err != 0)
 			break;
@@ -167,8 +162,12 @@ bool FileUtils::FindFile(WCHAR* path) {
 
 	for (ULONG i = 0; i <= this->Files.LastIndex; i++) {
 		if (this->Files.FilesPath[i]) {
-			if (_wcsicmp(this->Files.FilesPath[i], path) == 0)
-				return true;
+
+			// Checking the file path without the drive letter.
+			if (wcslen(this->Files.FilesPath[i]) > 3) {
+				if (_wcsnicmp(&this->Files.FilesPath[i][2], path, wcslen(this->Files.FilesPath[i]) - 2) == 0)
+					return true;
+			}
 		}
 	}
 	return false;
