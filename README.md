@@ -18,7 +18,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Process elevation
 - Process protection (anti-kill and dumping)
 - Bypass pe-sieve
-- Thread hiding
+- Thread hiding and unhiding
 - Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
 - Registry keys and values protection (anti-deletion and overwriting)

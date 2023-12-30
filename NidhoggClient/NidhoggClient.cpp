@@ -312,8 +312,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 			success = nidhoggInterface.ProcessUnhide(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"thread") == 0) {
-			std::cerr << "[ ! ] TBA" << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
+			success = nidhoggInterface.ThreadUnhide(_wtoi(argv[3]));
 		}
 		else if (_wcsicmp(argv[1], L"file") == 0) {
 			success = NIDHOGG_INVALID_OPTION;

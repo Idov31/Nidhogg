@@ -40,6 +40,7 @@ public:
 	NidhoggErrorCodes ProcessHide(DWORD pid);
 	NidhoggErrorCodes ProcessUnhide(DWORD pid);
 	NidhoggErrorCodes ThreadHide(DWORD tid);
+	NidhoggErrorCodes ThreadUnhide(DWORD tid);
 	NidhoggErrorCodes ProcessElevate(DWORD pid);
 	NidhoggErrorCodes ProcessSetProtection(DWORD pid, UCHAR signerType, UCHAR signatureSigner);
 	std::vector<DWORD> QueryProcesses();

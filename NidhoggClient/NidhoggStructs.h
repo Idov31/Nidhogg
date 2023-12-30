@@ -192,6 +192,11 @@ struct HiddenProcess {
 	bool Hide;
 };
 
+struct HiddenThread {
+	ULONG Tid;
+	bool Hide;
+};
+
 struct ProtectedThread {
 	ULONG Tid;
 	bool Protect;

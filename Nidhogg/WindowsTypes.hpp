@@ -1461,6 +1461,41 @@ inline ULONG GetThreadListEntryOffset() {
 
 /*
 * Description:
+* GetThreadListHeadOffset is responsible for getting the thread list head offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadListHead [ULONG] -- Offset of thread list head.
+*/
+inline ULONG GetThreadListHeadOffset() {
+	ULONG threadListHead = (ULONG)STATUS_UNSUCCESSFUL;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+		threadListHead = 0x480;
+		break;
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		threadListHead = 0x488;
+		break;
+	default:
+		threadListHead = 0x5e0;
+		break;
+	}
+
+	return threadListHead;
+}
+
+/*
+* Description:
 * GetThreadLockOffset is responsible for getting the ThreadLock offset depends on the windows version.
 *
 * Parameters:
