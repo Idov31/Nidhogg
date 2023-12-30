@@ -1,6 +1,9 @@
 #pragma once
 #include "pch.h"
-#include "WindowsTypes.hpp"
+
+extern "C" {
+	#include "WindowsTypes.hpp"
+}
 #include "NidhoggCommon.h"
 
 /*
