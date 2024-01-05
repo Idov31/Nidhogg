@@ -214,7 +214,7 @@ bool FileUtils::AddFile(WCHAR* path) {
 
 /*
 * Description:
-* RemoveFile is responsible for removing a file to the protected files list.
+* RemoveFile is responsible for removing a file from the protected files list.
 *
 * Parameters:
 * @path   [WCHAR*] -- File's path.
@@ -244,6 +244,16 @@ bool FileUtils::RemoveFile(WCHAR* path) {
 	return false;
 }
 
+/*
+* Description:
+* ClearFilesList is responsible for clearing the protected files list.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
 void FileUtils::ClearFilesList() {
 	AutoLock locker(this->Lock);
 
@@ -258,6 +268,16 @@ void FileUtils::ClearFilesList() {
 	this->Files.FilesCount = 0;
 }
 
+/*
+* Description:
+* QueryFiles is responsible for getting a protected file.
+*
+* Parameters:
+* @item   [FileItem*] -- Protected file to get.
+*
+* Returns:
+* @status [NTSTATUS]  -- Whether successfully copied or not.
+*/
 NTSTATUS FileUtils::QueryFiles(FileItem* item) {
 	NTSTATUS status = STATUS_SUCCESS;
 	errno_t err = 0;
