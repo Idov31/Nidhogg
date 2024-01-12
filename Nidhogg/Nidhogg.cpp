@@ -195,6 +195,7 @@ void ClearAll() {
 	delete NidhoggMemoryUtils;
 	delete NidhoggAntiAnalysis;
 	delete NidhoggRegistryUtils;
+	delete NidhoggNetworkUtils;
 }
 
 /*
@@ -247,6 +248,11 @@ bool InitializeFeatures() {
 	NidhoggRegistryUtils = new RegistryUtils();
 
 	if (!NidhoggRegistryUtils)
+		return false;
+
+	NidhoggNetworkUtils = new NetworkUtils();
+
+	if (!NidhoggNetworkUtils)
 		return false;
 
 	// Initialize functions.

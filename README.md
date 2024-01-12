@@ -23,7 +23,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - File protection (anti-deletion and overwriting)
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Querying currently protected processes, threads, files, registry keys and values
+- Querying currently protected processes, threads, files, hidden ports, registry keys and values
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
@@ -45,6 +45,7 @@ This repository contains a kernel driver with a C++ header to communicate with i
 - Module hiding
 - Driver hiding and unhiding
 - Credential Dumping
+- Port hiding/unhiding
 
 ## Reflective loading
 
@@ -120,6 +121,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Process Signatures](https://github.com/itm4n/PPLcontrol)
 - [NtCreateThreadEx Hotfix](https://github.com/DarthTon/Blackbone)
 - [Credential Dumping](https://github.com/gentilkiwi/mimikatz)
+- [Port Hiding](https://github.com/bytecode77/r77-rootkit)
 - [Logo](https://hotpot.ai/art-generator)
 
 ## Contributions

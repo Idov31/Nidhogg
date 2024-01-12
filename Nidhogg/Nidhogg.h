@@ -10,6 +10,7 @@ extern "C" {
 #include "FileUtils.hpp"
 #include "RegistryUtils.hpp"
 #include "AntiAnalysis.hpp"
+#include "NetworkUtils.hpp"
 #include "NidhoggDeviceControl.hpp"
 
 // Definitions.

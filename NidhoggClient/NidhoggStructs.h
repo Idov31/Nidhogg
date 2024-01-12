@@ -9,6 +9,7 @@ constexpr ULONG MAX_ROUTINES = 64;
 
 constexpr ULONG REG_KEY_LEN = 255;
 constexpr ULONG REG_VALUE_LEN = 260;
+constexpr ULONG MAX_PORTS = 256;
 
 enum NidhoggErrorCodes {
 	NIDHOGG_SUCCESS,
@@ -236,4 +237,27 @@ struct Credentials {
 struct OutputCredentials {
 	ULONG Index;
 	Credentials Creds;
+};
+
+enum PortType {
+	TCP,
+	UDP
+};
+
+struct InputHiddenPort {
+	bool Hide;
+	bool Remote;
+	PortType Type;
+	USHORT Port;
+};
+
+struct HiddenPort {
+	bool Remote;
+	PortType Type;
+	USHORT Port;
+};
+
+struct OutputHiddenPorts {
+	HiddenPort Ports[MAX_PORTS];
+	USHORT PortsCount;
 };

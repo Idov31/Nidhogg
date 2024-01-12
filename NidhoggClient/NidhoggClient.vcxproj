@@ -136,6 +136,7 @@
     <ClCompile Include="NidhoggClient.cpp" />
     <ClCompile Include="NidhoggFile.cpp" />
     <ClCompile Include="NidhoggMemory.cpp" />
+    <ClCompile Include="NidhoggNetwork.cpp" />
     <ClCompile Include="NidhoggProcess.cpp" />
     <ClCompile Include="NidhoggRegistry.cpp" />
     <ClCompile Include="pch.cpp">

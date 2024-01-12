@@ -1181,6 +1181,73 @@ typedef struct _BCRYPT_GEN_KEY {
 	ULONG cbKey;
 } BCRYPT_GEN_KEY, * PBCRYPT_GEN_KEY;
 
+typedef enum _COMUNICATION_TYPE
+{
+	UDP = 1,
+	TCP = 3
+} COMUNICATION_TYPE;
+
+typedef struct _NSI_TCP_ENTRY
+{
+	BYTE Reserved1[2];
+	USHORT Port;
+	ULONG IpAddress;
+	BYTE IpAddress6[16];
+	BYTE Reserved2[4];
+} NSI_TCP_ENTRY, * PNSI_TCP_ENTRY;
+
+typedef struct _NSI_TABLE_TCP_ENTRY
+{
+	NSI_TCP_ENTRY Local;
+	NSI_TCP_ENTRY Remote;
+} NSI_TABLE_TCP_ENTRY, * PNSI_TABLE_TCP_ENTRY;
+
+typedef struct _NSI_UDP_ENTRY
+{
+	BYTE Reserved1[2];
+	USHORT Port;
+	ULONG IpAddress;
+	BYTE IpAddress6[16];
+	BYTE Reserved2[4];
+} NSI_UDP_ENTRY, * PNSI_UDP_ENTRY;
+
+typedef struct _NSI_STATUS_ENTRY
+{
+	ULONG State;
+	BYTE Reserved[8];
+} NSI_STATUS_ENTRY, * PNSI_STATUS_ENTRY;
+
+typedef struct _NSI_PROCESS_ENTRY
+{
+	ULONG UdpProcessId;
+	ULONG Reserved1;
+	ULONG Reserved2;
+	ULONG TcpProcessId;
+	ULONG Reserved3;
+	ULONG Reserved4;
+	ULONG Reserved5;
+	ULONG Reserved6;
+} NSI_PROCESS_ENTRY, * PNSI_PROCESS_ENTRY;
+
+typedef struct _NSI_PARAM
+{
+	SIZE_T Reserved1;
+	SIZE_T Reserved2;
+	PVOID ModuleId;
+	COMUNICATION_TYPE Type;
+	ULONG Reserved3;
+	ULONG Reserved4;
+	PVOID Entries;
+	SIZE_T EntrySize;
+	PVOID Reserved5;
+	SIZE_T Reserved6;
+	PNSI_STATUS_ENTRY StatusEntries;
+	SIZE_T Reserved7;
+	PNSI_PROCESS_ENTRY ProcessEntries;
+	SIZE_T ProcessEntrySize;
+	SIZE_T Count;
+} NSI_PARAM, * PNSI_PARAM;
+
 // Prototypes
 typedef NTSTATUS(NTAPI* tNtfsIrpFunction)(
 	PDEVICE_OBJECT DeviceObject,
