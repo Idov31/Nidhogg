@@ -393,9 +393,8 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 	NTSTATUS status = STATUS_SUCCESS;
 	bool copyKeyInformationitem = true;
 
-	if (!NT_SUCCESS(info->Status)) {
-		return status;
-	}
+	if (!NT_SUCCESS(info->Status))
+		return info->Status;
 
 	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
@@ -502,9 +501,8 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 	bool copyKeyInformationitem = true;
 	int counter = 0;
 
-	if (!NT_SUCCESS(info->Status)) {
-		return STATUS_SUCCESS;
-	}
+	if (!NT_SUCCESS(info->Status))
+		return info->Status;
 
 	status = CmCallbackGetKeyObjectIDEx(&this->RegCookie, info->Object, nullptr, &regPath, 0);
 
