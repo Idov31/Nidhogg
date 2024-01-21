@@ -779,11 +779,10 @@ void ProcessUtils::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
 * SetProcessSignature is responsible for removing or adding process protection to a certain process.
 *
 * Parameters:
-* @pid	   [ULONG]    -- The id of the process that need to add or remove protection to.
-* @protect [bool]     -- Whether to add or remove the protection.
+* @ProcessSignature [ProcessSignature*] -- Contains the process PID, signer type and signature signer.
 *
 * Returns:
-* @status  [NTSTATUS] -- Whether the operation was successful or not.
+* @status  			[NTSTATUS] 			-- Whether the operation was successful or not.
 */
 NTSTATUS ProcessUtils::SetProcessSignature(ProcessSignature* ProcessSignature) {
 	PEPROCESS process;

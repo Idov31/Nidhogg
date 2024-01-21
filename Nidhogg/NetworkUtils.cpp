@@ -11,8 +11,6 @@ NetworkUtils::NetworkUtils() {
 }
 
 NetworkUtils::~NetworkUtils() {
-	// AutoLock locker(this->HiddenPortsList.Lock);
-	
 	if (this->CallbackActivated) {
 		this->CallbackActivated = false;
 		UninstallNsiHook();
@@ -202,7 +200,7 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 		ExFreePoolWithTag(Context, DRIVER_TAG);
 		return originalRoutine(DeviceObject, Irp, originalContext);
 	}
-
+	
 	ExFreePoolWithTag(Context, DRIVER_TAG);
 	return STATUS_SUCCESS;
 }
