@@ -6,11 +6,13 @@
 
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
-Nidhogg is a multi-functional rootkit for red teams. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for red team engagements that can be integrated with your C2 framework.
+Nidhogg is a multi-functional rootkit to showcase the variety of operations that can be done from kernel space. The goal of Nidhogg is to provide an all-in-one and easy-to-use rootkit with multiple helpful functionalities for operations. Besides that, it can also easily be integrated with your C2 framework.
 
 Nidhogg can work on any version of x64 Windows 10 and Windows 11.
 
-This repository contains a kernel driver with a C++ header to communicate with it.
+This repository contains a kernel driver with a C++ program to communicate with it.
+
+If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg/wiki) for a detailed explanation.
 
 ## Current Features
 
@@ -64,7 +66,7 @@ These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wi
 
 ## Basic Usage
 
-To see everything that you can do, run `NidhoggClient.exe`.
+To see the available commands you can run `NidhoggClient.exe` or look at the [wiki](https://github.com/Idov31/Nidhogg/wiki) for detailed information regarding how to use each command, the parameters it takes and how it works.
 
 ```sh
 NidhoggClient.exe
