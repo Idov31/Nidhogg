@@ -679,11 +679,13 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 	switch (item->Type) {
 		case RegProtectedKey:
 		{
-			for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
-				if (this->ProtectedItems.Keys.KeysPath[i]) {
-					if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0) {
-						found = true;
-						break;
+			if (this->ProtectedItems.Keys.KeysCount > 0) {
+				for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
+					if (this->ProtectedItems.Keys.KeysPath[i]) {
+						if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0) {
+							found = true;
+							break;
+						}
 					}
 				}
 			}
@@ -691,11 +693,13 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 		}
 		case RegHiddenKey:
 		{
-			for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
-				if (this->HiddenItems.Keys.KeysPath[i]) {
-					if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0) {
-						found = true;
-						break;
+			if (this->HiddenItems.Keys.KeysCount > 0) {
+				for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
+					if (this->HiddenItems.Keys.KeysPath[i]) {
+						if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0) {
+							found = true;
+							break;
+						}
 					}
 				}
 			}
@@ -703,12 +707,14 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 		}
 		case RegProtectedValue:
 		{
-			for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
-				if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
-					if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
-						_wcsnicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName, wcslen(this->ProtectedItems.Values.ValuesName[i])) == 0) {
-						found = true;
-						break;
+			if (this->ProtectedItems.Values.ValuesCount > 0) {
+				for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
+					if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
+						if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
+							_wcsnicmp(this->ProtectedItems.Values.ValuesName[i], item->ValueName, wcslen(this->ProtectedItems.Values.ValuesName[i])) == 0) {
+							found = true;
+							break;
+						}
 					}
 				}
 			}
@@ -716,12 +722,14 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 		}
 		case RegHiddenValue:
 		{
-			for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
-				if (this->HiddenItems.Values.ValuesPath[i] && this->HiddenItems.Values.ValuesName[i]) {
-					if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
-						_wcsnicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName, wcslen(this->HiddenItems.Values.ValuesName[i])) == 0) {
-						found = true;
-						break;
+			if (this->HiddenItems.Values.ValuesCount > 0) {
+				for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
+					if (this->HiddenItems.Values.ValuesPath[i] && this->HiddenItems.Values.ValuesName[i]) {
+						if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
+							_wcsnicmp(this->HiddenItems.Values.ValuesName[i], item->ValueName, wcslen(this->HiddenItems.Values.ValuesName[i])) == 0) {
+							found = true;
+							break;
+						}
 					}
 				}
 			}
