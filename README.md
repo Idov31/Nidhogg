@@ -48,6 +48,7 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Driver hiding and unhiding
 - Credential Dumping
 - Port hiding/unhiding
+- Script execution ([See more here](https://github.com/Idov31/NidhoggScript))
 
 ## Reflective loading
 
@@ -56,6 +57,10 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 - Process protection
 - Thread protection
 - Registry operations
+
+## Script Execution
+
+Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki)
 
 ## PatchGuard triggering features
 
