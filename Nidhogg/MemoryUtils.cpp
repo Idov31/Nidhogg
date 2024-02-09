@@ -1363,21 +1363,27 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 		}
 	}
 
-	if (!ntoskrnlBase)
+	if (!ntoskrnlBase) {
+		ExFreePoolWithTag(info, DRIVER_TAG);
 		return STATUS_NOT_FOUND;
+	}
 
 	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)ntoskrnlBase;
 
 	// Finding the SSDT address.
 	status = STATUS_NOT_FOUND;
 
-	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
+	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
+		ExFreePoolWithTag(info, DRIVER_TAG);
 		return STATUS_INVALID_ADDRESS;
+	}
 
 	PFULL_IMAGE_NT_HEADERS ntHeaders = (PFULL_IMAGE_NT_HEADERS)((PUCHAR)ntoskrnlBase + dosHeader->e_lfanew);
 
-	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
+	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
+		ExFreePoolWithTag(info, DRIVER_TAG);
 		return STATUS_INVALID_ADDRESS;
+	}
 
 	PIMAGE_SECTION_HEADER firstSection = (PIMAGE_SECTION_HEADER)(ntHeaders + 1);
 
@@ -1393,6 +1399,7 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 		}
 	}
 
+	ExFreePoolWithTag(info, DRIVER_TAG);
 	return status;
 }
 
