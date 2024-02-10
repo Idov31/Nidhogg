@@ -50,7 +50,8 @@ public:
 		if (Size > this->AllocatedSize)
 			return status;
 
-		status = MmCopyVirtualMemory(PsGetCurrentProcess(), Data, PsGetCurrentProcess(), this->AllocatedData, Size, KernelMode, &bytesWritten);
+		status = MmCopyVirtualMemory(PsGetCurrentProcess(), Data, PsGetCurrentProcess(), this->AllocatedData, Size,
+			KernelMode, &bytesWritten);
 
 		if (NT_SUCCESS(status)) {
 			status = bytesWritten == Size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;

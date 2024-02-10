@@ -11,6 +11,7 @@ extern "C" {
 #include "RegistryUtils.hpp"
 #include "AntiAnalysis.hpp"
 #include "NetworkUtils.hpp"
+#include "ScriptManager.h"
 #include "NidhoggDeviceControl.hpp"
 
 // Definitions.

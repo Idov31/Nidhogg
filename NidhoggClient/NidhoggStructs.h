@@ -261,3 +261,8 @@ struct OutputHiddenPorts {
 	HiddenPort Ports[MAX_PORTS];
 	USHORT PortsCount;
 };
+
+struct ScriptInformation {
+	PVOID Script;
+	ULONG ScriptSize;
+};

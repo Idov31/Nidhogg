@@ -2,6 +2,7 @@
 #include "Nidhogg.h"
 
 NidhoggInterface::NidhoggInterface() {
+	this->lastError = NIDHOGG_SUCCESS;
 	this->hNidhogg = CreateFile(DRIVER_NAME, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
 	if (hNidhogg == INVALID_HANDLE_VALUE)
@@ -29,4 +30,25 @@ void NidhoggInterface::PrintError(NidhoggErrorCodes errorCode) {
 		std::cout << "[ - ] Unknown error: " << GetLastError() << std::endl;
 		break;
 	}
+}
+
+NidhoggErrorCodes NidhoggInterface::ExecuteScript(BYTE* script, DWORD scriptSize) {
+	DWORD bytesReturned;
+	ScriptInformation scriptInfo{};
+	NidhoggErrorCodes errorCode = NIDHOGG_SUCCESS;
+
+	if (script == nullptr || scriptSize == 0) {
+		errorCode = NIDHOGG_INVALID_INPUT;
+		return errorCode;
+	}
+
+	scriptInfo.Script = script;
+	scriptInfo.ScriptSize = scriptSize;
+
+	if (!DeviceIoControl(this->hNidhogg, IOCTL_EXEC_SCRIPT, &scriptInfo, sizeof(scriptInfo), nullptr, 0,
+		&bytesReturned, nullptr)) {
+		errorCode = NIDHOGG_ERROR_DEVICECONTROL_DRIVER;
+	}
+
+	return errorCode;
 }

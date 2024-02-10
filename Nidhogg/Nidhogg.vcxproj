@@ -162,7 +162,7 @@
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;Cng.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)FltMgr.lib</AdditionalDependencies>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
@@ -182,7 +182,7 @@
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;Cng.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)FltMgr.lib</AdditionalDependencies>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
     <Inf>
@@ -199,6 +199,12 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BaseParser.h" />
+    <ClInclude Include="CallbacksParser.h" />
+    <ClInclude Include="DllInjectionParser.h" />
+    <ClInclude Include="DriverParser.h" />
+    <ClInclude Include="EtwTiParser.h" />
+    <ClInclude Include="FileParser.h" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.hpp" />
     <ClInclude Include="AutoLock.h" />
@@ -206,28 +212,51 @@
     <ClInclude Include="FileUtils.hpp" />
     <ClInclude Include="MemoryUtils.hpp" />
     <ClInclude Include="MemoryHelper.hpp" />
+    <ClInclude Include="ModuleParser.h" />
     <ClInclude Include="NetworkUtils.hpp" />
     <ClInclude Include="NidhoggCommon.h" />
     <ClInclude Include="NidhoggDeviceControl.hpp" />
     <ClInclude Include="Nidhogg.h" />
+    <ClInclude Include="Parsers.h" />
+    <ClInclude Include="PatchParser.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="NetworkParser.h" />
+    <ClInclude Include="ProcessParser.h" />
     <ClInclude Include="ProcessUtils.hpp" />
     <ClInclude Include="RegistryUtils.hpp" />
+    <ClInclude Include="RegistryParser.h" />
+    <ClInclude Include="ScriptManager.h" />
+    <ClInclude Include="ShellcodeInjectionParser.h" />
+    <ClInclude Include="ThreadParser.h" />
     <ClInclude Include="WindowsTypes.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AntiAnalysis.cpp" />
+    <ClCompile Include="BaseParser.cpp" />
+    <ClCompile Include="CallbacksParser.cpp" />
+    <ClCompile Include="DllInjectionParser.cpp" />
+    <ClCompile Include="DriverParser.cpp" />
+    <ClCompile Include="EtwTiParser.cpp" />
     <ClCompile Include="FastMutex.cpp" />
+    <ClCompile Include="FileParser.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="MemoryUtils.cpp" />
+    <ClCompile Include="ModuleParser.cpp" />
     <ClCompile Include="NetworkUtils.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
+    <ClCompile Include="PatchParser.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="NetworkParser.cpp" />
+    <ClCompile Include="ProcessParser.cpp" />
     <ClCompile Include="ProcessUtils.cpp" />
     <ClCompile Include="RegistryUtils.cpp" />
+    <ClCompile Include="RegistryParser.cpp" />
+    <ClCompile Include="ScriptManager.cpp" />
+    <ClCompile Include="ShellcodeInjectionParser.cpp" />
+    <ClCompile Include="ThreadParser.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

