@@ -135,53 +135,57 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 
 							RtlMoveMemory(&processEntries[i], &processEntries[entriesIndex], (nsiParameter->Count - entriesIndex) * nsiParameter->ProcessEntrySize);
 						}
-					};
+				};
 
 				for (SIZE_T i = 0; i < nsiParameter->Count; i++) {
 					if (nsiParameter->Type == COMUNICATION_TYPE::TCP) {
-
-						// Edge case of somehow the entries list is empty.
+						// Edge case of somehow the entries list is empty or invalid address of entry.
 						if (!tcpEntries)
 							continue;
 
-						HiddenPort hiddenPort{};
-						hiddenPort.Port = htohs(tcpEntries[i].Local.Port);
-						hiddenPort.Type = PortType::TCP;
-						hiddenPort.Remote = false;
-
-						if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
-							__try {
-								HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i);
-							}
-							__except (EXCEPTION_EXECUTE_HANDLER) {}
-						}
-
-						hiddenPort.Port = htohs(tcpEntries[i].Remote.Port);
-						hiddenPort.Type = PortType::TCP;
-						hiddenPort.Remote = true;
-
-						if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
-							__try {
-								HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i);
-							}
-							__except (EXCEPTION_EXECUTE_HANDLER) {}
-						}
-					}
-					else if (nsiParameter->Type == COMUNICATION_TYPE::UDP) {
-						// Edge case of somehow the entries list is empty.
-						if (!udpEntries)
+						if (!VALID_USERMODE_MEMORY((ULONGLONG)&tcpEntries[i]))
 							continue;
 
 						HiddenPort hiddenPort{};
-						hiddenPort.Port = htohs(udpEntries[i].Port);
-						hiddenPort.Type = PortType::UDP;
 
-						if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
-							__try {
+						__try {
+							hiddenPort.Port = htohs(tcpEntries[i].Local.Port);
+							hiddenPort.Type = PortType::TCP;
+							hiddenPort.Remote = false;
+
+							if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
+								HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i);
+							}
+
+							hiddenPort.Port = htohs(tcpEntries[i].Remote.Port);
+							hiddenPort.Type = PortType::TCP;
+							hiddenPort.Remote = true;
+
+							if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
+								HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i);
+							}
+						}
+						__except (EXCEPTION_EXECUTE_HANDLER) {}
+					}
+					else if (nsiParameter->Type == COMUNICATION_TYPE::UDP) {
+						// Edge case of somehow the entries list is empty or invalid address of entry.
+						if (!udpEntries)
+							continue;
+
+						if (!VALID_USERMODE_MEMORY((ULONGLONG)&udpEntries[i]))
+							continue;
+
+						HiddenPort hiddenPort{};
+
+						__try {
+							hiddenPort.Port = htohs(udpEntries[i].Port);
+							hiddenPort.Type = PortType::UDP;
+
+							if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
 								HidePort(udpEntries, nsiParameter, statusEntries, processEntries, i);
 							}
-							__except (EXCEPTION_EXECUTE_HANDLER) {}
 						}
+						__except (EXCEPTION_EXECUTE_HANDLER) { }
 					}
 				}
 
