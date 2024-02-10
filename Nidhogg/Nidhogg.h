@@ -13,6 +13,7 @@ extern "C" {
 #include "NetworkUtils.hpp"
 #include "ScriptManager.h"
 #include "NidhoggDeviceControl.hpp"
+#include "InitialOperation.hpp"
 
 // Definitions.
 constexpr SIZE_T REGISTERED_OB_CALLBACKS = 2;
@@ -28,3 +29,4 @@ DRIVER_UNLOAD NidhoggUnload;
 DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
 void ClearAll();
 bool InitializeFeatures();
+void ExecuteInitialOperations();

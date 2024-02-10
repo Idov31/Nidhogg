@@ -106,6 +106,12 @@
     <ClInclude Include="NetworkParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Parsers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="InitialOperation.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">

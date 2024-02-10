@@ -165,6 +165,12 @@
       <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)FltMgr.lib</AdditionalDependencies>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
+    <PreBuildEvent>
+      <Command>python.exe ..\\add_initial_operations.py</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>Adding initial opeartions if exists</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DriverSign>
@@ -194,6 +200,10 @@
     <Inf>
       <SpecifyDriverVerDirectiveDate>false</SpecifyDriverVerDirectiveDate>
     </Inf>
+    <PreBuildEvent>
+      <Command>python.exe ..\\add_initial_operations.py</Command>
+      <Message>Adding initial opeartions if exists</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
@@ -205,6 +215,7 @@
     <ClInclude Include="DriverParser.h" />
     <ClInclude Include="EtwTiParser.h" />
     <ClInclude Include="FileParser.h" />
+    <ClInclude Include="InitialOperation.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.hpp" />
     <ClInclude Include="AutoLock.h" />
