@@ -48,7 +48,7 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Driver hiding and unhiding
 - Credential Dumping
 - Port hiding/unhiding
-- Script execution ([See more here](https://github.com/Idov31/NidhoggScript))
+- Script execution
 
 ## Reflective loading
 
