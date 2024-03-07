@@ -44,32 +44,47 @@ FileUtils::~FileUtils() {
 */
 NTSTATUS HookedNtfsIrpCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	WCHAR* fullPath = NULL;
+	UNICODE_STRING fullPath = {0};
+	KIRQL prevIrql = 0;
+	NTSTATUS status = STATUS_SUCCESS;
 
 	do {
+		// Validating the file object.
 		if (!stack || !stack->FileObject)
 			break;
 
-		if (stack->FileObject->FileName.Length == 0)
+		if (stack->FileObject->FileName.Length == 0 || !stack->FileObject->FileName.Buffer)
 			break;
 
-		SIZE_T fullPathSize = (((SIZE_T)stack->FileObject->FileName.Length + 1) * sizeof(WCHAR));
-		MemoryAllocator<WCHAR*> fullPathAlloc(&fullPath, fullPathSize);
+		// Validating the address of the file name.
+		status = ProbeAddress(stack->FileObject->FileName.Buffer, stack->FileObject->FileName.Length,
+			sizeof(WCHAR*), STATUS_NOT_FOUND);
 
-		if (!fullPath)
+		if (!NT_SUCCESS(status))
 			break;
 
-		errno_t err = wcscpy_s(fullPath, stack->FileObject->FileName.Length * sizeof(WCHAR), stack->FileObject->FileName.Buffer);
+		// Acquiring the lock to prevent accessing to the file from other drivers.
+		KeAcquireSpinLock(&stack->FileObject->IrpListLock, &prevIrql);
+		KeLowerIrql(prevIrql);
 
-		if (err != 0)
+		status = CopyUnicodeString(PsGetCurrentProcess(), &stack->FileObject->FileName, PsGetCurrentProcess(), &fullPath, 
+			KernelMode);
+
+		if (!NT_SUCCESS(status) || !fullPath.Buffer)
 			break;
 
-		if (NidhoggFileUtils->FindFile(fullPath)) {
+		KeRaiseIrql(DISPATCH_LEVEL, &prevIrql);
+		KeReleaseSpinLock(&stack->FileObject->IrpListLock, prevIrql);
+
+		if (NidhoggFileUtils->FindFile(fullPath.Buffer)) {
+			ExFreePoolWithTag(fullPath.Buffer, DRIVER_TAG);
 			Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
 			return STATUS_SUCCESS;
 		}
 	} while (false);
 
+	if (fullPath.Buffer)
+		ExFreePoolWithTag(fullPath.Buffer, DRIVER_TAG);
 	return ((tNtfsIrpFunction)NidhoggFileUtils->GetNtfsCallback(0).Address)(DeviceObject, Irp);
 }
 
