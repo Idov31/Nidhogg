@@ -222,6 +222,15 @@ bool FileUtils::AddFile(WCHAR* path) {
 
 			this->Files.FilesPath[i] = buffer;
 			this->Files.FilesCount++;
+
+			if (!this->Callbacks[0].Activated) {
+				NTSTATUS status = this->InstallNtfsHook(IRP_MJ_CREATE);
+
+				if (!NT_SUCCESS(status)) {
+					this->RemoveFile(this->Files.FilesPath[i]);
+					break;
+				}
+			}
 			return true;
 		}
 	return false;
@@ -250,6 +259,13 @@ bool FileUtils::RemoveFile(WCHAR* path) {
 					this->Files.LastIndex = newLastIndex;
 				this->Files.FilesPath[i] = nullptr;
 				this->Files.FilesCount--;
+
+				if (this->GetFilesCount() == 0 && this->Callbacks[0].Activated) {
+					NTSTATUS status = this->UninstallNtfsHook(IRP_MJ_CREATE);
+
+					if (!NT_SUCCESS(status))
+						break;
+				}
 				return true;
 			}
 			else

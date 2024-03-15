@@ -430,7 +430,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				if (!NidhoggFileUtils->IsCallbackActivated(0)) {
+				/*if (!NidhoggFileUtils->IsCallbackActivated(0)) {
 					status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
 
 					if (!NT_SUCCESS(status)) {
@@ -438,7 +438,7 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 						Print(DRIVER_PREFIX "Failed to hook ntfs.\n");
 						break;
 					}
-				}
+				}*/
 
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
@@ -452,12 +452,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 				break;
 			}
 
-			if (NidhoggFileUtils->GetFilesCount() == 0) {
+			/*if (NidhoggFileUtils->GetFilesCount() == 0) {
 				status = NidhoggFileUtils->UninstallNtfsHook(IRP_MJ_CREATE);
 
 				if (!NT_SUCCESS(status))
 					Print(DRIVER_PREFIX "Failed to restore the hook.\n");
-			}
+			}*/
 
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
