@@ -577,7 +577,7 @@ NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 			if (currentObjectCallback->Enabled) {
 				if (currentObjectCallback->PostOperation) {
 					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PostOperation, driverName))) {
-						err = strcpy_s(Callbacks->Callbacks[index].DriverName, strlen(driverName), driverName);
+						err = strcpy_s(Callbacks->Callbacks[index].DriverName, driverName);
 
 						if (err != 0) {
 							status = STATUS_ABANDONED;
@@ -589,7 +589,7 @@ NTSTATUS AntiAnalysis::ListObCallbacks(ObCallbacksList* Callbacks) {
 				}
 				if (currentObjectCallback->PreOperation) {
 					if (NT_SUCCESS(MatchCallback(currentObjectCallback->PreOperation, driverName))) {
-						err = strcpy_s(Callbacks->Callbacks[index].DriverName, strlen(driverName), driverName);
+						err = strcpy_s(Callbacks->Callbacks[index].DriverName, driverName);
 
 						if (err != 0) {
 							status = STATUS_ABANDONED;
