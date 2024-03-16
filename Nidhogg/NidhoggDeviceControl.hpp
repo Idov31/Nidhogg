@@ -689,11 +689,13 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(status) || itemsCount == 0 || data->RegItemsIndex > itemsCount) {
+		if (!NT_SUCCESS(status) || data->RegItemsIndex > itemsCount) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggRegistryUtils->QueryRegItem(data);
+
+		if (itemsCount > 0)
+			status = NidhoggRegistryUtils->QueryRegItem(data);
 
 		len += sizeof(RegItem);
 		break;
