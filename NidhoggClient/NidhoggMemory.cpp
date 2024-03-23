@@ -202,7 +202,7 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 	DWORD returned;
 	DllInformation dllInformation{};
 
-	if (pid <= 0 || pid == SYSTEM_PID || dllPath.empty())
+	if (pid == 0 || pid == SYSTEM_PID || dllPath.empty())
 		return NIDHOGG_GENERAL_ERROR;
 
 	if (dllPath.size() > MAX_PATH)
@@ -224,11 +224,12 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 	return NIDHOGG_SUCCESS;
 }
 
-NidhoggErrorCodes NidhoggInterface::InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3, InjectionType injectionType) {
+NidhoggErrorCodes NidhoggInterface::InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, 
+	PVOID parameter2, PVOID parameter3, InjectionType injectionType) {
 	DWORD returned;
 	ShellcodeInformation shellcodeInformation{};
 
-	if (pid <= 0 || pid == SYSTEM_PID || !shellcode)
+	if (pid == 0 || pid == SYSTEM_PID || !shellcode)
 		return NIDHOGG_GENERAL_ERROR;
 
 	shellcodeInformation.Type = injectionType;
@@ -257,7 +258,8 @@ NidhoggErrorCodes NidhoggInterface::PatchModule(DWORD pid, wchar_t* moduleName, 
 	patchedModule.FunctionName = functionName;
 	patchedModule.Patch = patch.data();
 
-	if (patchedModule.ModuleName == nullptr || patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr)
+	if (pid == 0 || pid == SYSTEM_PID || patchedModule.ModuleName == nullptr || 
+		patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr)
 		return NIDHOGG_GENERAL_ERROR;
 
 	if (wcslen(moduleName) > MAX_PATH)
