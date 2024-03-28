@@ -24,6 +24,7 @@ If applicable, add screenshots to help explain your problem.
 **Versions**
  - OS & Build
  - Nidhogg's Version
+ - Branch name
  - Function that you attempted to run & error code
 
 **Additional context**
