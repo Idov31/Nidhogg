@@ -943,11 +943,16 @@ NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS Ta
 		return STATUS_UNSUCCESSFUL;
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
+	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || 
+		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+		!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
-	else if (mode == UserMode && (!VALID_USERMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
+	else if (mode == UserMode && (
+		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL)) || 
+		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+		!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
