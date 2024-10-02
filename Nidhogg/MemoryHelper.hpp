@@ -184,20 +184,20 @@ inline void FreeUnicodeString(PUNICODE_STRING source) {
 * Parameters:
 * @address	   [PVOID]	  -- Address to probe.
 * @len		   [SIZE_T]   -- Structure size.
-* @size		   [ULONG]    -- Expected size to read.
+* @alignment   [ULONG]    -- Address' required alignment.
 * @failureCode [NTSTATUS] -- Failure code.
 *
 * Returns:
 * @status	   [NTSTATUS] -- NTSUCCESS if succeeded else failure code.
 */
-inline NTSTATUS ProbeAddress(PVOID address, SIZE_T len, ULONG size, NTSTATUS failureCode) {
+inline NTSTATUS ProbeAddress(PVOID address, SIZE_T len, ULONG alignment, NTSTATUS failureCode) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!VALID_USERMODE_MEMORY((ULONGLONG)address))
 		return STATUS_ABANDONED;
 
 	__try {
-		ProbeForRead(address, len, size);
+		ProbeForRead(address, len, alignment);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = failureCode;

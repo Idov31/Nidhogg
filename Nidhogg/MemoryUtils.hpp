@@ -16,7 +16,6 @@ constexpr SIZE_T THREAD_PREVIOUSMODE_OFFSET = 0x232;
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
 constexpr SIZE_T MOV_EAX_OPCODE = 0xB8;
 constexpr SIZE_T PATH_OFFSET = 0x190;
-constexpr SIZE_T DLL_INJ_SHELLCODE_SIZE = 704;
 constexpr SIZE_T ALERTABLE_THREAD_FLAG_BIT = 0x10;
 constexpr SIZE_T ALERTABLE_THREAD_FLAG_OFFSET = 0x74;
 constexpr SIZE_T GUI_THREAD_FLAG_BIT = 0x80;
@@ -166,11 +165,11 @@ public:
 	MemoryUtils();
 	~MemoryUtils();
 
-	PVOID GetFuncAddress(CHAR* functionName, WCHAR* moduleName);
-	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+	PVOID GetFuncAddress(CHAR* functionName, WCHAR* moduleName, ULONG pid = 0);
+	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode, bool alignAddr = true);
 	NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 	NTSTATUS PatchModule(PatchedModule* ModuleInformation);
-	NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation);
+	NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation, bool injectedDll = false);
 	NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);
 	NTSTATUS InjectDllThread(DllInformation* DllInfo);
 	NTSTATUS InjectDllAPC(DllInformation* DllInfo);
