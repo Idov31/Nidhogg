@@ -38,6 +38,7 @@ constexpr SIZE_T RoutinesListOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 constexpr SIZE_T MAX_DRIVER_PATH = 256;
 constexpr SIZE_T MAX_KERNEL_CALLBACKS = 256;
+constexpr ULONG MAX_ROUTINES = 64;
 
 enum CallbackType {
 	ObProcessType,
