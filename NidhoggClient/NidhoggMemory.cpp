@@ -225,20 +225,29 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 }
 
 NidhoggErrorCodes NidhoggInterface::InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, 
-	PVOID parameter2, PVOID parameter3, InjectionType injectionType) {
+	PVOID parameter2, PVOID parameter3, InjectionType injectionType, ULONG param1Size, ULONG param2Size, ULONG param3Size) {
 	DWORD returned;
 	ShellcodeInformation shellcodeInformation{};
 
 	if (pid == 0 || pid == SYSTEM_PID || !shellcode)
 		return NIDHOGG_GENERAL_ERROR;
 
+	if (parameter1 && !param1Size || parameter2 && !param2Size || parameter3 && !param3Size)
+		return NIDHOGG_INVALID_INPUT;
+
+	if (param1Size && !parameter1 || param2Size && !parameter2 || param3Size && !parameter3)
+		return NIDHOGG_INVALID_INPUT;
+
 	shellcodeInformation.Type = injectionType;
 	shellcodeInformation.Pid = pid;
 	shellcodeInformation.ShellcodeSize = shellcodeSize;
 	shellcodeInformation.Shellcode = shellcode;
 	shellcodeInformation.Parameter1 = parameter1;
+	shellcodeInformation.Parameter1Size = param1Size;
 	shellcodeInformation.Parameter2 = parameter2;
+	shellcodeInformation.Parameter2Size = param2Size;
 	shellcodeInformation.Parameter3 = parameter3;
+	shellcodeInformation.Parameter3Size = param3Size;
 
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_INJECT_SHELLCODE,
 		&shellcodeInformation, sizeof(shellcodeInformation),

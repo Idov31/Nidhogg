@@ -169,8 +169,11 @@ struct ShellcodeInformation {
 	ULONG ShellcodeSize;
 	PVOID Shellcode;
 	PVOID Parameter1;
+	ULONG Parameter1Size;
 	PVOID Parameter2;
+	ULONG Parameter2Size;
 	PVOID Parameter3;
+	ULONG Parameter3Size;
 };
 
 struct HiddenModuleInformation {
