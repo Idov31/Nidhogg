@@ -216,7 +216,6 @@
     <ClInclude Include="EtwTiParser.h" />
     <ClInclude Include="FileParser.h" />
     <ClInclude Include="InitialOperation.hpp" />
-    <ClInclude Include="InjectionShellcode.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.hpp" />
     <ClInclude Include="AutoLock.h" />

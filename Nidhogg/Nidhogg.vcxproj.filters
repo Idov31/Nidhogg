@@ -112,9 +112,6 @@
     <ClInclude Include="InitialOperation.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="InjectionShellcode.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">
