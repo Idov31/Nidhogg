@@ -30,12 +30,14 @@ struct RegItem {
 };
 
 struct RegKeys {
+	FastMutex Lock;
 	ULONG LastIndex;
 	ULONG KeysCount;
 	WCHAR* KeysPath[MAX_REG_ITEMS];
 };
 
 struct RegValues {
+	FastMutex Lock;
 	ULONG LastIndex;
 	ULONG ValuesCount;
 	WCHAR* ValuesPath[MAX_REG_ITEMS];
@@ -51,9 +53,8 @@ class RegistryUtils {
 private:
 	RegItems ProtectedItems;
 	RegItems HiddenItems;
-	FastMutex Lock;
 
-	bool ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType type);
+	bool ContainsHiddenRegItem(UNICODE_STRING regKey, RegItemType type);
 	bool GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 	bool GetNameFromValueEnumPreInfo(KEY_VALUE_INFORMATION_CLASS infoClass, PVOID information, PUNICODE_STRING keyName);
 

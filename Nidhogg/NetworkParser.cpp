@@ -57,15 +57,6 @@ NTSTATUS NetworkParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-
-			if (!NidhoggNetworkUtils->IsCallbackActivated()) {
-				status = NidhoggNetworkUtils->InstallNsiHook();
-
-				if (!NT_SUCCESS(status)) {
-					NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort);
-					break;
-				}
-			}
 		}
 		break;
 	}
@@ -81,8 +72,6 @@ NTSTATUS NetworkParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggNetworkUtils->GetPortsCount() == 0)
-			status = NidhoggNetworkUtils->UninstallNsiHook();
 		break;
 	}
 	case Options::Clear:

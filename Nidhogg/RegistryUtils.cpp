@@ -24,11 +24,17 @@ RegistryUtils::RegistryUtils() {
 	memset(this->ProtectedItems.Values.ValuesPath, 0, sizeof(this->HiddenItems.Values.ValuesPath));
 	memset(this->ProtectedItems.Values.ValuesName, 0, sizeof(this->HiddenItems.Values.ValuesName));
 
-	this->Lock.Init();
+	this->ProtectedItems.Keys.Lock.Init();
+	this->ProtectedItems.Values.Lock.Init();
+	this->HiddenItems.Keys.Lock.Init();
+	this->HiddenItems.Values.Lock.Init();
 }
 
 RegistryUtils::~RegistryUtils() {
-	AutoLock locker(this->Lock);
+	AutoLock protectedKeysLocker(this->ProtectedItems.Keys.Lock);
+	AutoLock protectedValuesLocker(this->ProtectedItems.Values.Lock);
+	AutoLock hiddenKeysLocker(this->HiddenItems.Keys.Lock);
+	AutoLock hiddenValuesLocker(this->HiddenItems.Values.Lock);
 
 	// Protected items.
 	for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
@@ -402,7 +408,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateKeyHandler(REG_POST_OPERATION_INFORMAT
 		return status;
 
 	// Checking if the registry key contains any protected registry key.
-	if (!ContainsProtectedRegKey(*regPath, RegHiddenKey)) {
+	if (!ContainsHiddenRegItem(*regPath, RegHiddenKey)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -510,7 +516,7 @@ NTSTATUS RegistryUtils::RegNtPostEnumerateValueKeyHandler(REG_POST_OPERATION_INF
 		return STATUS_SUCCESS;
 
 	// Checking if the registry key contains any protected registry value.
-	if (!ContainsProtectedRegKey(*regPath, RegHiddenValue)) {
+	if (!ContainsHiddenRegItem(*regPath, RegHiddenValue)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -674,11 +680,12 @@ bool RegistryUtils::GetNameFromKeyEnumPreInfo(KEY_INFORMATION_CLASS infoClass, P
 */
 bool RegistryUtils::FindRegItem(RegItem* item) {
 	bool found = false;
-	AutoLock locker(this->Lock);
 
 	switch (item->Type) {
 	case RegProtectedKey:
 	{
+		AutoLock locker(this->ProtectedItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
 			if (this->ProtectedItems.Keys.KeysPath[i]) {
 				if (_wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->ProtectedItems.Keys.KeysPath[i])) == 0) {
@@ -691,6 +698,8 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 	}
 	case RegHiddenKey:
 	{
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
 			if (this->HiddenItems.Keys.KeysPath[i]) {
 				if (_wcsnicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath, wcslen(this->HiddenItems.Keys.KeysPath[i])) == 0) {
@@ -703,6 +712,8 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 	}
 	case RegProtectedValue:
 	{
+		AutoLock locker(this->ProtectedItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
 				if (_wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->ProtectedItems.Values.ValuesPath[i])) == 0 &&
@@ -716,6 +727,8 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 	}
 	case RegHiddenValue:
 	{
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] && this->HiddenItems.Values.ValuesName[i]) {
 				if (_wcsnicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath, wcslen(this->HiddenItems.Values.ValuesPath[i])) == 0 &&
@@ -734,7 +747,7 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 
 /*
 * Description:
-* ContainsProtectedRegKey is responsible for searching if a registry item is contained inside any registry items lists.
+* ContainsHiddenRegItem is responsible for searching if a registry item is contained inside any registry items lists.
 *
 * Parameters:
 * @regKey [UNICODE_STRING] -- Registry item to search.
@@ -743,25 +756,14 @@ bool RegistryUtils::FindRegItem(RegItem* item) {
 * Returns:
 * @status [bool]		   -- Whether found or not.
 */
-bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType type) {
+bool RegistryUtils::ContainsHiddenRegItem(UNICODE_STRING regKey, RegItemType type) {
 	bool found = false;
-	AutoLock locker(this->Lock);
 
 	switch (type) {
-	case RegProtectedKey:
-	{
-		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
-			if (this->ProtectedItems.Keys.KeysPath[i]) {
-				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Keys.KeysPath[i]) && _wcsnicmp(this->ProtectedItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
-					found = true;
-					break;
-				}
-			}
-		}
-		break;
-	}
 	case RegHiddenKey:
 	{
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
 			if (this->HiddenItems.Keys.KeysPath[i]) {
 				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Keys.KeysPath[i]) && _wcsnicmp(this->HiddenItems.Keys.KeysPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
@@ -772,20 +774,10 @@ bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType t
 		}
 		break;
 	}
-	case RegProtectedValue:
-	{
-		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
-			if (this->ProtectedItems.Values.ValuesPath[i]) {
-				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->ProtectedItems.Values.ValuesPath[i]) && _wcsnicmp(this->ProtectedItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
-					found = true;
-					break;
-				}
-			}
-		}
-		break;
-	}
 	case RegHiddenValue:
 	{
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i]) {
 				if ((regKey.Length / sizeof(WCHAR)) <= wcslen(this->HiddenItems.Values.ValuesPath[i]) && _wcsnicmp(this->HiddenItems.Values.ValuesPath[i], regKey.Buffer, regKey.Length / sizeof(WCHAR)) == 0) {
@@ -813,11 +805,12 @@ bool RegistryUtils::ContainsProtectedRegKey(UNICODE_STRING regKey, RegItemType t
 */
 bool RegistryUtils::AddRegItem(RegItem* item) {
 	bool added = false;
-	AutoLock locker(this->Lock);
 
 	switch (item->Type) {
 	case RegProtectedKey:
 	{
+		AutoLock locker(this->ProtectedItems.Keys.Lock);
+
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
@@ -846,6 +839,8 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 	}
 	case RegHiddenKey:
 	{
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
@@ -874,6 +869,8 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 	}
 	case RegProtectedValue:
 	{
+		AutoLock locker(this->ProtectedItems.Values.Lock);
+
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
@@ -921,6 +918,8 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 
 	case RegHiddenValue:
 	{
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
@@ -985,11 +984,12 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 bool RegistryUtils::RemoveRegItem(RegItem* item) {
 	bool removed = false;
 	ULONG newLastIndex = 0;
-	AutoLock locker(this->Lock);
 
 	switch (item->Type) {
 	case RegProtectedKey:
 	{
+		AutoLock locker(this->ProtectedItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
 			if (this->ProtectedItems.Keys.KeysPath[i]) {
 				if (_wcsicmp(this->ProtectedItems.Keys.KeysPath[i], item->KeyPath) == 0) {
@@ -1011,6 +1011,8 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 	}
 	case RegHiddenKey:
 	{
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
 			if (this->HiddenItems.Keys.KeysPath[i]) {
 				if (_wcsicmp(this->HiddenItems.Keys.KeysPath[i], item->KeyPath) == 0) {
@@ -1031,6 +1033,8 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 	}
 	case RegProtectedValue:
 	{
+		AutoLock locker(this->ProtectedItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] && this->ProtectedItems.Values.ValuesName[i]) {
 				if (_wcsicmp(this->ProtectedItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
@@ -1043,7 +1047,7 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 					if (i == this->ProtectedItems.Values.LastIndex)
 						this->ProtectedItems.Values.LastIndex = newLastIndex;
 					this->ProtectedItems.Values.ValuesCount--;
-					removed = false;
+					removed = true;
 					break;
 				}
 				else
@@ -1054,6 +1058,8 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 	}
 	case RegHiddenValue:
 	{
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i]) {
 				if (_wcsicmp(this->HiddenItems.Values.ValuesPath[i], item->KeyPath) == 0 &&
@@ -1092,11 +1098,11 @@ bool RegistryUtils::RemoveRegItem(RegItem* item) {
 * There is no return value.
 */
 void RegistryUtils::ClearRegItem(RegItemType regType) {
-	AutoLock locker(this->Lock);
-
 	switch (regType) {
 	case RegProtectedKey:
 	{
+		AutoLock locker(this->ProtectedItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Keys.LastIndex; i++) {
 			if (this->ProtectedItems.Keys.KeysPath[i]) {
 				ExFreePoolWithTag(this->ProtectedItems.Keys.KeysPath[i], DRIVER_TAG);
@@ -1110,6 +1116,8 @@ void RegistryUtils::ClearRegItem(RegItemType regType) {
 	}
 	case RegHiddenKey:
 	{
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Keys.LastIndex; i++) {
 			if (this->HiddenItems.Keys.KeysPath[i]) {
 				ExFreePoolWithTag(this->HiddenItems.Keys.KeysPath[i], DRIVER_TAG);
@@ -1123,6 +1131,8 @@ void RegistryUtils::ClearRegItem(RegItemType regType) {
 	}
 	case RegProtectedValue:
 	{
+		AutoLock locker(this->ProtectedItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->ProtectedItems.Values.LastIndex; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i]) {
 				ExFreePoolWithTag(this->ProtectedItems.Values.ValuesPath[i], DRIVER_TAG);
@@ -1141,6 +1151,8 @@ void RegistryUtils::ClearRegItem(RegItemType regType) {
 	}
 	case RegHiddenValue:
 	{
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		for (ULONG i = 0; i <= this->HiddenItems.Values.LastIndex; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i]) {
 				ExFreePoolWithTag(this->HiddenItems.Values.ValuesPath[i], DRIVER_TAG);
@@ -1191,11 +1203,12 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 	bool isFirstElement;
 	errno_t err = 0;
 	NTSTATUS status = STATUS_SUCCESS;
-	AutoLock locker(this->Lock);
 
 	isFirstElement = item->RegItemsIndex == 0;
 
 	if (item->Type == RegProtectedKey) {
+		AutoLock locker(this->ProtectedItems.Keys.Lock);
+
 		if (this->ProtectedItems.Keys.KeysCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Keys.KeysPath[item->RegItemsIndex]);
 
@@ -1204,6 +1217,8 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 		}
 	}
 	else if (item->Type == RegHiddenKey) {
+		AutoLock locker(this->HiddenItems.Keys.Lock);
+
 		if (this->HiddenItems.Keys.KeysCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->HiddenItems.Keys.KeysPath[item->RegItemsIndex]);
 
@@ -1212,6 +1227,8 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 		}
 	}
 	else if (item->Type == RegProtectedValue) {
+		AutoLock locker(this->ProtectedItems.Values.Lock);
+
 		if (this->ProtectedItems.Values.ValuesCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->ProtectedItems.Values.ValuesPath[item->RegItemsIndex]);
 
@@ -1226,6 +1243,8 @@ NTSTATUS RegistryUtils::QueryRegItem(RegItem* item) {
 		}
 	}
 	else if (item->Type == RegHiddenValue) {
+		AutoLock locker(this->HiddenItems.Values.Lock);
+
 		if (this->HiddenItems.Values.ValuesCount > 0) {
 			err = wcscpy_s(item->KeyPath, this->HiddenItems.Values.ValuesPath[item->RegItemsIndex]);
 

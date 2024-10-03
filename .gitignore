@@ -366,3 +366,4 @@ FodyWeavers.xsd
 
 # VSCode stuff
 .vscode/
+/Nidhogg/InjectionShellcode.hpp

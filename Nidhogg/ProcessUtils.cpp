@@ -897,7 +897,7 @@ void ProcessUtils::QueryProtectedProcesses(OutputProtectedProcessesList* list) {
 	AutoLock locker(this->ProtectedProcesses.Lock);
 	list->PidsCount = this->ProtectedProcesses.PidsCount;
 
-	for (ULONG i = 0; i < this->ProtectedProcesses.LastIndex; i++) {
+	for (ULONG i = 0; i <= this->ProtectedProcesses.LastIndex; i++) {
 		if (this->ProtectedProcesses.Processes[i] != 0) {
 			list->Processes[outputIndex] = this->ProtectedProcesses.Processes[i];
 			outputIndex++;
@@ -921,7 +921,7 @@ void ProcessUtils::QueryProtectedThreads(OutputThreadsList* list) {
 	AutoLock locker(this->ProtectedThreads.Lock);
 	list->TidsCount = this->ProtectedThreads.TidsCount;
 
-	for (ULONG i = 0; i < this->ProtectedThreads.LastIndex; i++) {
+	for (ULONG i = 0; i <= this->ProtectedThreads.LastIndex; i++) {
 		if (this->ProtectedThreads.Threads[i] != 0) {
 			list->Threads[outputIndex] = this->ProtectedThreads.Threads[i];
 			outputIndex++;

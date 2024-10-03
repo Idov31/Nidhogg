@@ -61,7 +61,6 @@ public:
 
 	ULONG GetFilesCount() { return this->Files.FilesCount; }
 	NtfsCallback GetNtfsCallback(ULONG index) { return this->Callbacks[index]; }
-	bool IsCallbackActivated(ULONG index) { return this->Callbacks[index].Activated; }
 };
 
 inline FileUtils* NidhoggFileUtils;

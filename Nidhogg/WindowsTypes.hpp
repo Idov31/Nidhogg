@@ -1280,6 +1280,7 @@ typedef PVOID (NTAPI* tExAllocatePool2)(
 );
 
 extern "C" {
+	PVOID NTAPI PsGetCurrentProcessWow64Process();
 	PPEB NTAPI PsGetProcessPeb(PEPROCESS Process);
 	NTSTATUS NTAPI ZwQuerySystemInformation(
 		SYSTEM_INFORMATION_CLASS SystemInformationClass,

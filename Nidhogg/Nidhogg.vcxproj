@@ -166,10 +166,10 @@
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
     <PreBuildEvent>
-      <Command>python.exe ..\\add_initial_operations.py</Command>
+      <Command>python.exe ..\\post_compilation_operation.py</Command>
     </PreBuildEvent>
     <PreBuildEvent>
-      <Message>Adding initial opeartions if exists</Message>
+      <Message>Executing post compilation operations</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -201,8 +201,8 @@
       <SpecifyDriverVerDirectiveDate>false</SpecifyDriverVerDirectiveDate>
     </Inf>
     <PreBuildEvent>
-      <Command>python.exe ..\\add_initial_operations.py</Command>
-      <Message>Adding initial opeartions if exists</Message>
+      <Command>python.exe ..\\post_compilation_operation.py</Command>
+      <Message>Executing post compilation operations</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

@@ -202,7 +202,7 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 	DWORD returned;
 	DllInformation dllInformation{};
 
-	if (pid <= 0 || pid == SYSTEM_PID || dllPath.empty())
+	if (pid == 0 || pid == SYSTEM_PID || dllPath.empty())
 		return NIDHOGG_GENERAL_ERROR;
 
 	if (dllPath.size() > MAX_PATH)
@@ -224,20 +224,30 @@ NidhoggErrorCodes NidhoggInterface::InjectDll(DWORD pid, std::string dllPath, In
 	return NIDHOGG_SUCCESS;
 }
 
-NidhoggErrorCodes NidhoggInterface::InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, PVOID parameter2, PVOID parameter3, InjectionType injectionType) {
+NidhoggErrorCodes NidhoggInterface::InjectShellcode(DWORD pid, PVOID shellcode, ULONG shellcodeSize, PVOID parameter1, 
+	PVOID parameter2, PVOID parameter3, InjectionType injectionType, ULONG param1Size, ULONG param2Size, ULONG param3Size) {
 	DWORD returned;
 	ShellcodeInformation shellcodeInformation{};
 
-	if (pid <= 0 || pid == SYSTEM_PID || !shellcode)
+	if (pid == 0 || pid == SYSTEM_PID || !shellcode)
 		return NIDHOGG_GENERAL_ERROR;
+
+	if (parameter1 && !param1Size || parameter2 && !param2Size || parameter3 && !param3Size)
+		return NIDHOGG_INVALID_INPUT;
+
+	if (param1Size && !parameter1 || param2Size && !parameter2 || param3Size && !parameter3)
+		return NIDHOGG_INVALID_INPUT;
 
 	shellcodeInformation.Type = injectionType;
 	shellcodeInformation.Pid = pid;
 	shellcodeInformation.ShellcodeSize = shellcodeSize;
 	shellcodeInformation.Shellcode = shellcode;
 	shellcodeInformation.Parameter1 = parameter1;
+	shellcodeInformation.Parameter1Size = param1Size;
 	shellcodeInformation.Parameter2 = parameter2;
+	shellcodeInformation.Parameter2Size = param2Size;
 	shellcodeInformation.Parameter3 = parameter3;
+	shellcodeInformation.Parameter3Size = param3Size;
 
 	if (!DeviceIoControl(this->hNidhogg, IOCTL_INJECT_SHELLCODE,
 		&shellcodeInformation, sizeof(shellcodeInformation),
@@ -257,7 +267,8 @@ NidhoggErrorCodes NidhoggInterface::PatchModule(DWORD pid, wchar_t* moduleName, 
 	patchedModule.FunctionName = functionName;
 	patchedModule.Patch = patch.data();
 
-	if (patchedModule.ModuleName == nullptr || patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr)
+	if (pid == 0 || pid == SYSTEM_PID || patchedModule.ModuleName == nullptr || 
+		patchedModule.FunctionName == nullptr || patchedModule.Patch == nullptr)
 		return NIDHOGG_GENERAL_ERROR;
 
 	if (wcslen(moduleName) > MAX_PATH)

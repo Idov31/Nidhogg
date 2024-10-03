@@ -33,11 +33,12 @@ constexpr SIZE_T EtwThreatIntProvRegHandleOffset = 8;
 constexpr SIZE_T CallFunctionOffset = 5;
 constexpr SIZE_T CmpInsertCallbackInListByAltitudeOffset = 7;
 constexpr SIZE_T CmpCallbackListLockOffset = 7;
-constexpr SIZE_T CallbacksListCountOffset = 3;
+constexpr SIZE_T CallbacksListCountOffset = 7;
 constexpr SIZE_T RoutinesListOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 constexpr SIZE_T MAX_DRIVER_PATH = 256;
 constexpr SIZE_T MAX_KERNEL_CALLBACKS = 256;
+constexpr ULONG MAX_ROUTINES = 64;
 
 enum CallbackType {
 	ObProcessType,

