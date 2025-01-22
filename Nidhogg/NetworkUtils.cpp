@@ -224,7 +224,7 @@ NTSTATUS HookedNsiDispatch(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
 
 	if (stack->Parameters.DeviceIoControl.IoControlCode == IOCTL_NSI_ENUMERATE_OBJECTS_ALL_PARAMETERS) {
-		HookedCompletionRoutine* context = (HookedCompletionRoutine*)AllocateMemory(sizeof(HookedCompletionRoutine), false);
+		HookedCompletionRoutine* context = AllocateMemory<HookedCompletionRoutine*>(sizeof(HookedCompletionRoutine), false);
 
 		if (context) {
 			context->OriginalCompletionRoutine = stack->CompletionRoutine;

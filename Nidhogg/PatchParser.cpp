@@ -99,7 +99,7 @@ NTSTATUS PatchParser::ParseArgs(PUCHAR data, size_t dataSize, size_t index, USHO
 		if (size)
 			*size = argSize;
 
-		PVOID currentArg = (PVOID)AllocateMemory(argSize);
+		PVOID currentArg = AllocateMemory<PVOID>(argSize);
 
 		if (!currentArg)
 			return STATUS_INSUFFICIENT_RESOURCES;

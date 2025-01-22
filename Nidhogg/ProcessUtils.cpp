@@ -428,7 +428,7 @@ NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo)
 			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)AllocateMemory(infoSize);
+		originalInfo = AllocateMemory<PSYSTEM_PROCESS_INFO>(infoSize);
 
 		if (!originalInfo)
 			break;

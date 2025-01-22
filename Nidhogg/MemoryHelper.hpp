@@ -72,25 +72,52 @@ inline PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const P
 
 /*
 * Description:
-* AllocateMemory is responsible for allocating memory with the right function depends on the windows version.
+* FreeVirtualMemory is responsible for freeing virtual memory and null it.
 *
 * Parameters:
-* @size [SIZE_T] -- Size to allocate.
+* @address [PVOID] -- Address to free.
 *
 * Returns:
-* @ptr  [PVOID]  -- Allocated pointer on success else NULL.
+* There is no return value.
 */
-inline PVOID AllocateMemory(SIZE_T size, bool paged = true) {
-	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004) {
-		return paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
-			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED_EXECUTE, size, DRIVER_TAG);
-	}
+inline void FreeVirtualMemory(_In_ PVOID address) {
+	if (!address)
+		return;
+	ExFreePoolWithTag(address, DRIVER_TAG);
+	address = NULL;
+}
 
+/*
+* Description:
+* AllocateVirtualMemory is responsible for allocating virtual memory with the right function depends on the windows version.
+*
+* Parameters:
+* @size				    [size_t]	  -- Size to allocate.
+* @paged				[bool]		  -- Paged or non-paged.
+* @forceDeprecatedAlloc [bool]		  -- Force allocation with ExAllocatePoolWithTag.
+*
+* Returns:
+* @ptr					[PointerType] -- Allocated pointer on success else NULL.
+*/
+template <typename PointerType>
+inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) {
+	PVOID allocatedMem = NULL;
+
+	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
+		allocatedMem = paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
+			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED, size, DRIVER_TAG);
+	}
+	else {
 #pragma warning( push )
 #pragma warning( disable : 4996)
-	return paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
-		ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+		allocatedMem = paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
+			ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
 #pragma warning( pop )
+	}
+
+	if (allocatedMem)
+		RtlSecureZeroMemory(allocatedMem, size);
+	return reinterpret_cast<PointerType>(allocatedMem);
 }
 
 /*
@@ -142,7 +169,7 @@ inline NTSTATUS CopyUnicodeString(PEPROCESS sourceProcess, PUNICODE_STRING sourc
 	target->MaximumLength = source->MaximumLength;
 
 	if (!target->Buffer) {
-		target->Buffer = (WCHAR*)AllocateMemory(target->Length);
+		target->Buffer = AllocateMemory<WCHAR*>(static_cast<SIZE_T>(target->Length));
 
 		if (!target->Buffer)
 			return STATUS_INSUFFICIENT_RESOURCES;

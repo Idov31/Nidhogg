@@ -5,7 +5,7 @@
 
 ModuleParser::ModuleParser() {
 	this->optionsSize = 1;
-	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+	this->options = AllocateMemory<OptionMetadata*>(this->optionsSize * sizeof(OptionMetadata));
 
 	if (!this->options)
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);

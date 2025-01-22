@@ -630,7 +630,7 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (info)
 			ExFreePoolWithTag(info, DRIVER_TAG);
-		info = (PRTL_PROCESS_MODULES)AllocateMemory(infoSize);
+		info = AllocateMemory<PRTL_PROCESS_MODULES>(infoSize);
 
 		if (!info) {
 			status = STATUS_INSUFFICIENT_RESOURCES;

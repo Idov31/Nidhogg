@@ -814,7 +814,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->ProtectedItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* buffer = (WCHAR*)AllocateMemory(len);
+				WCHAR* buffer = AllocateMemory<WCHAR*>(len);
 
 				// Not enough resources.
 				if (!buffer)
@@ -844,7 +844,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++)
 			if (this->HiddenItems.Keys.KeysPath[i] == nullptr) {
 				SIZE_T len = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* buffer = (WCHAR*)AllocateMemory(len);
+				WCHAR* buffer = AllocateMemory<WCHAR*>(len);
 
 				// Not enough resources.
 				if (!buffer)
@@ -874,14 +874,14 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->ProtectedItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* keyPath = (WCHAR*)AllocateMemory(keyLen);
+				WCHAR* keyPath = AllocateMemory<WCHAR*>(keyLen);
 
 				if (!keyPath) {
 					break;
 				}
 
 				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				WCHAR* valueName = (WCHAR*)AllocateMemory(valueNameLen);
+				WCHAR* valueName = AllocateMemory<WCHAR*>(valueNameLen);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);
@@ -923,7 +923,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 		for (ULONG i = 0; i < MAX_REG_ITEMS; i++) {
 			if (this->HiddenItems.Values.ValuesPath[i] == nullptr) {
 				SIZE_T keyLen = (wcslen(item->KeyPath) + 1) * sizeof(WCHAR);
-				WCHAR* keyPath = (WCHAR*)AllocateMemory(keyLen);
+				WCHAR* keyPath = AllocateMemory<WCHAR*>(keyLen);
 
 				// Not enough resources.
 				if (!keyPath) {
@@ -931,7 +931,7 @@ bool RegistryUtils::AddRegItem(RegItem* item) {
 				}
 
 				SIZE_T valueNameLen = (wcslen(item->ValueName) + 1) * sizeof(WCHAR);
-				WCHAR* valueName = (WCHAR*)AllocateMemory(valueNameLen);
+				WCHAR* valueName = AllocateMemory<WCHAR*>(valueNameLen);
 
 				if (!valueName) {
 					ExFreePoolWithTag(keyPath, DRIVER_TAG);

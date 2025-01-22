@@ -154,7 +154,7 @@ private:
 
 public:
 	void* operator new(size_t size) {
-		return AllocateMemory(size, false);
+		return AllocateMemory<PVOID>(size, false);
 	}
 
 	void operator delete(void* p) {

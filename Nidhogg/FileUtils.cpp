@@ -204,7 +204,7 @@ bool FileUtils::AddFile(WCHAR* path) {
 	for (ULONG i = 0; i < MAX_FILES; i++)
 		if (this->Files.FilesPath[i] == nullptr) {
 			SIZE_T len = (wcslen(path) + 1) * sizeof(WCHAR);
-			WCHAR* buffer = (WCHAR*)AllocateMemory(len);
+			WCHAR* buffer = AllocateMemory<WCHAR*>(len);
 
 			// Not enough resources.
 			if (!buffer) {
