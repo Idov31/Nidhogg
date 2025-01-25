@@ -35,7 +35,7 @@ NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 
 	hiddenModule.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(hiddenModule.Pid))
+	if (!IsValidPid(hiddenModule.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	// Converting string to unicode.

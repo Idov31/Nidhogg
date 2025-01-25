@@ -49,7 +49,7 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 
 	shellcodeInfo.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(shellcodeInfo.Pid))
+	if (!IsValidPid(shellcodeInfo.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	shellcodeInfo.Shellcode = args[1];

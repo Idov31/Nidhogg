@@ -38,7 +38,7 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	if (commandId != Options::Clear) {
 		pid = *(ULONG*)args[0];
 
-		if (!VALID_PROCESS(pid))
+		if (!IsValidPid(pid))
 			return STATUS_INVALID_PARAMETER;
 	}
 

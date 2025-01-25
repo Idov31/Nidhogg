@@ -27,7 +27,7 @@ NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 
 	patchedModule.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(patchedModule.Pid))
+	if (!IsValidPid(patchedModule.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	// Converting string to unicode.
