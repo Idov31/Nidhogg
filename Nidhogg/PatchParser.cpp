@@ -27,7 +27,7 @@ NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 
 	patchedModule.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(patchedModule.Pid))
+	if (!IsValidPid(patchedModule.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	// Converting string to unicode.
@@ -99,7 +99,7 @@ NTSTATUS PatchParser::ParseArgs(PUCHAR data, size_t dataSize, size_t index, USHO
 		if (size)
 			*size = argSize;
 
-		PVOID currentArg = (PVOID)AllocateMemory(argSize);
+		PVOID currentArg = AllocateMemory<PVOID>(argSize);
 
 		if (!currentArg)
 			return STATUS_INSUFFICIENT_RESOURCES;

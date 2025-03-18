@@ -5,7 +5,7 @@
 
 DllInjectionParser::DllInjectionParser() {
 	this->optionsSize = 2;
-	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+	this->options = AllocateMemory<OptionMetadata*>(this->optionsSize * sizeof(OptionMetadata));
 
 	if (!this->options)
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -31,7 +31,7 @@ NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 
 	dllInfo.Pid = *(ULONG*)args[0];
 
-	if (!VALID_PROCESS(dllInfo.Pid))
+	if (!IsValidPid(dllInfo.Pid))
 		return STATUS_INVALID_PARAMETER;
 
 	if (strlen((PCHAR)args[1]) > MAX_PATH)

@@ -4,7 +4,7 @@
 
 ProcessParser::ProcessParser() {
 	this->optionsSize = 7;
-	this->options = (OptionMetadata*)AllocateMemory(this->optionsSize * sizeof(OptionMetadata));
+	this->options = AllocateMemory<OptionMetadata*>(this->optionsSize * sizeof(OptionMetadata));
 
 	if (!this->options)
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -38,7 +38,7 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	if (commandId != Options::Clear) {
 		pid = *(ULONG*)args[0];
 
-		if (!VALID_PROCESS(pid))
+		if (!IsValidPid(pid))
 			return STATUS_INVALID_PARAMETER;
 	}
 

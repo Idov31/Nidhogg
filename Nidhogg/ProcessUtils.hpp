@@ -16,7 +16,9 @@ constexpr SIZE_T PROCESS_CREATE_THREAD = 0x2;
 constexpr SIZE_T PROCESS_VM_READ = 0x10;
 constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 
-#define VALID_PROCESS(Pid)(Pid > 0 && Pid != SYSTEM_PROCESS_PID)
+constexpr auto IsValidPid = [](ULONG pid) -> bool {
+	return pid > 0 && pid != SYSTEM_PROCESS_PID;
+};
 
 // Structs.
 struct OutputProtectedProcessesList {
@@ -113,7 +115,7 @@ private:
 
 public:
 	void* operator new(size_t size) {
-		return AllocateMemory(size, false);
+		return AllocateMemory<PVOID>(size, false);
 	}
 
 	void operator delete(void* p) {
@@ -142,7 +144,7 @@ public:
 	NTSTATUS UnhideProcess(ULONG pid);
 	NTSTATUS HideProcess(ULONG pid);
 
-	NTSTATUS FindPidByName(WCHAR* processName, ULONG* pid);
+	NTSTATUS FindPidByName(const wchar_t* processName, ULONG* pid);
 	ULONG GetProtectedProcessesCount() { return this->ProtectedProcesses.PidsCount; }
 	ULONG GetProtectedThreadsCount() { return this->ProtectedThreads.TidsCount; }
 };

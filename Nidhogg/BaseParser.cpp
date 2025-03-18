@@ -127,7 +127,7 @@ NTSTATUS BaseParser::ParseArgs(PUCHAR data, size_t dataSize, size_t index, USHOR
 			break;
 		}
 
-		OutArgs[argIndex] = (PVOID)AllocateMemory(argSize);
+		OutArgs[argIndex] = AllocateMemory<PVOID>(argSize);
 
 		if (!OutArgs[argIndex]) {
 			status = STATUS_INSUFFICIENT_RESOURCES;

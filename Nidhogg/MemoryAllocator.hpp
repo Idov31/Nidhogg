@@ -14,7 +14,7 @@ public:
 		this->AllocatedSize = Size;
 
 		if (Size != 0) {
-			Data = (DataType)AllocateMemory(Size);
+			Data = AllocateMemory<DataType>(Size);
 
 			if (Data)
 				memset(Data, 0, Size);
@@ -25,7 +25,7 @@ public:
 		this->AllocatedSize = Size;
 
 		if (Size != 0) {
-			*Data = (DataType)AllocateMemory(Size);
+			*Data = AllocateMemory<DataType>(Size);
 
 			if (*Data) {
 				memset(*Data, 0, Size);

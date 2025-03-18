@@ -414,7 +414,7 @@ NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 * Returns:
 * @status	   [NTSTATUS] -- Whether successfully found or not.
 */
-NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
+NTSTATUS ProcessUtils::FindPidByName(const wchar_t* processName, ULONG* pid) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
@@ -428,7 +428,7 @@ NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (originalInfo)
 			ExFreePoolWithTag(originalInfo, DRIVER_TAG);
-		originalInfo = (PSYSTEM_PROCESS_INFO)AllocateMemory(infoSize);
+		originalInfo = AllocateMemory<PSYSTEM_PROCESS_INFO>(infoSize);
 
 		if (!originalInfo)
 			break;
