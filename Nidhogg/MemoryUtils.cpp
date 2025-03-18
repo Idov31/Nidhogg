@@ -1185,7 +1185,7 @@ TABLE_SEARCH_RESULT MemoryUtils::VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG
 * Returns:
 * @moduleBase [PVOID]	  -- Base address of the module if found, else null.
 */
-PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
+PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, const wchar_t* moduleName) {
 	PVOID moduleBase = NULL;
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = -100ll * 10 * 1000;
@@ -1225,13 +1225,13 @@ PVOID MemoryUtils::GetModuleBase(PEPROCESS Process, WCHAR* moduleName) {
 * GetFunctionAddress is responsible for getting the function address inside given module from its EAT.
 *
 * Parameters:
-* @moduleBase      [PVOID] -- Module's image base address.
-* @functionName    [CHAR*] -- Function name to search.
+* @moduleBase      [PVOID]		 -- Module's image base address.
+* @functionName    [const char*] -- Function name to search.
 *
 * Returns:
-* @functionAddress [PVOID] -- Function address if found, else null.
+* @functionAddress [PVOID]		 -- Function address if found, else null.
 */
-PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
+PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, const char* functionName) {
 	PVOID functionAddress = NULL;
 	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)moduleBase;
 
@@ -1274,12 +1274,12 @@ PVOID MemoryUtils::GetFunctionAddress(PVOID moduleBase, CHAR* functionName) {
 * GetSSDTFunctionAddress is responsible for getting the SSDT's location.
 *
 * Parameters:
-* @functionName [CHAR*]	   -- Function name to search.
+* @functionName [const char*] -- Function name to search.
 *
 * Returns:
-* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
+* @status		[NTSTATUS]    -- STATUS_SUCCESS if found, else error.
 */
-PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
+PVOID MemoryUtils::GetSSDTFunctionAddress(const char* functionName) {
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
 	PVOID functionAddress = NULL;
@@ -1334,14 +1334,14 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(CHAR* functionName) {
 * GetSSDTFunctionAddress is responsible for getting the SSDT's location.
 *
 * Parameters:
-* @functionName [CHAR*]	   -- Function name to search.
-* @moduleName   [WCHAR*]   -- Module's name to search.
-* @pid 			[ULONG]	   -- Process id to search in.
+* @functionName [const char*]	 -- Function name to search.
+* @moduleName   [const wchar_t*] -- Module's name to search.
+* @pid 			[ULONG]			 -- Process id to search in.
 *
 * Returns:
-* @status		[NTSTATUS] -- STATUS_SUCCESS if found, else error.
+* @status		[NTSTATUS]		 -- STATUS_SUCCESS if found, else error.
 */
-PVOID MemoryUtils::GetFuncAddress(CHAR* functionName, WCHAR* moduleName, ULONG pid) {
+PVOID MemoryUtils::GetFuncAddress(const char* functionName, const wchar_t* moduleName, ULONG pid) {
 	NTSTATUS status;
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
@@ -1417,7 +1417,8 @@ NTSTATUS MemoryUtils::GetSSDTAddress() {
 	PRTL_PROCESS_MODULE_INFORMATION modules = info->Modules;
 
 	for (ULONG i = 0; i < info->NumberOfModules; i++) {
-		if (NtCreateFile >= modules[i].ImageBase && NtCreateFile < (PVOID)((PUCHAR)modules[i].ImageBase + modules[i].ImageSize)) {
+		if (NtCreateFile >= modules[i].ImageBase && 
+			static_cast<PVOID>(static_cast<PUCHAR>(modules[i].ImageBase) + modules[i].ImageSize) > NtCreateFile) {
 			ntoskrnlBase = modules[i].ImageBase;
 			break;
 		}

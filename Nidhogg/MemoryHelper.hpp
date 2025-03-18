@@ -126,12 +126,12 @@ inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDepr
 *
 * Parameters:
 * @container [UNICODE_STRING] -- Container string.
-* @containee [WCHAR*]		  -- Containee string.
+* @containee [const wchar_t*] -- Containee string.
 *
 * Returns:
 * @status	 [bool]			  -- True if contained else false.
 */
-inline bool IsIContained(UNICODE_STRING container, WCHAR* containee) {
+inline bool IsIContained(UNICODE_STRING container, const wchar_t* containee) {
 	bool contained = false;
 	SIZE_T containeeLen = wcslen(containee);
 
