@@ -1,46 +1,29 @@
 /*
    YARA Rule Set
    Author: Ido Veltzman
-   Date: 2022-07-15
+   Date: 2025-03-18
    Reference: https://github.com/Idov31/Nidhogg
 */
 
-/* Rule Set ----------------------------------------------------------------- */
-
-rule Downloads_Nidhogg {
+rule Nidhogg {
    meta:
       description = "Nidhogg rootkit"
       author = "Ido Veltzman"
       reference = "https://github.com/Idov31/Nidhogg"
-      date = "2022-07-15"
+      date = "2025-03-18"
 
    strings:
-      $s1 = "PsGetProcessPeb" fullword wide
-      $s2 = "AQAPRQPH" fullword ascii
-      $s3 = "\\Device\\Nidhogg" fullword wide
-      $s4 = "\\??\\Nidhogg" fullword wide
-      $s5 = "ZwProtectVirtualMemory" fullword wide
-      $s6 = "MmCopyVirtualMemory" fullword wide
-      $s7 = "-fffffff" fullword ascii
-      $s8 = "0XYZAXAY" fullword ascii
-      $s9 = "1325839516568735210" ascii
-      $s10 = " A_A^A]A\\_" fullword ascii
-      $s11 = "310221000000Z0/1-0+" fullword ascii
-      $s12 = "D$0Nidh@" fullword ascii
-      $s13 = "210221153246" ascii
-      $s14 = " A_A^_" fullword ascii
-      $s15 = "L9 t/A" fullword ascii
-      $s16 = "132583951656873521" ascii
-      $s17 = "b.reloc" fullword ascii
-      $s18 = "210221153246Z" fullword ascii
-      $s19 = " A_A^A]" fullword ascii
-      $s20 = "31105.6171" fullword wide
-      $s21 = "CmCallbackReleaseKeyObjectIDEx" fullword ascii
-      $s22 = "CmCallbackGetKeyObjectIDEx" fullword ascii
+      $s1 = "31122.6172" fullword wide
+      $s2 = "\\Device\\Nidhogg" fullword wide
+      $s3 = "\\??\\Nidhogg" fullword wide
+      $s4 = "31105.6171" fullword wide
+      $s5 = "\\Driver\\Nsiproxy" fullword wide
+      $s6 = "Nidhogg.pdb" fullword wide
 
-      $op0 = { 48 8b d3 48 8b cf e8 f8 a1 ff ff 48 8b 5c 24 30 }
-      $op1 = { af 04 4b 65 49 6e 69 74 69 61 6c 69 7a 65 45 76 }
+      $op1 = { 4C 8D 05 DC 95 00 00 48 8B D0 49 8B CE E8 E1 F4 FF FF }
+      $op2 = { 48 8B 55 CF 4C 8D 05 49 AE 00 00 48 8B CE E8 89 0E 00 00 }
+      $op3 = { 48 8D 44 24 78 4C 8B C6 49 8B CE 48 89 44 24 20 E8 EE FE FF FF }
    condition:
-      uint16(0) == 0x5a4d and filesize < 60KB and
-      ( 1 of ($x*) and 4 of them and all of ($op*) )
+      uint16(0) == 0x5a4d and filesize < 200KB and
+      ( 5 of ($s*) and 2 of ($op*) )
 }
