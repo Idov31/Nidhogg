@@ -144,7 +144,7 @@ public:
 	NTSTATUS UnhideProcess(ULONG pid);
 	NTSTATUS HideProcess(ULONG pid);
 
-	NTSTATUS FindPidByName(WCHAR* processName, ULONG* pid);
+	NTSTATUS FindPidByName(const wchar_t* processName, ULONG* pid);
 	ULONG GetProtectedProcessesCount() { return this->ProtectedProcesses.PidsCount; }
 	ULONG GetProtectedThreadsCount() { return this->ProtectedThreads.TidsCount; }
 };

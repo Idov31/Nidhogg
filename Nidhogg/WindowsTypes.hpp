@@ -5,22 +5,24 @@ inline ULONG WindowsBuildNumber = 0;
 inline PVOID AllocatePool2 = NULL;
 
 // Documented.
-#define WIN_1507 10240
-#define WIN_1511 10586
-#define WIN_1607 14393
-#define WIN_1703 15063
-#define WIN_1709 16299
-#define WIN_1803 17134
-#define WIN_1809 17763
-#define WIN_1903 18362
-#define WIN_1909 18363
-#define WIN_2004 19041
-#define WIN_20H2 19042
-#define WIN_21H1 19043
-#define WIN_21H2 19044
-#define WIN_22H2 19045
-#define WIN_1121H2 22000
-#define WIN_1122H2 22621
+constexpr ULONG64 WIN_1507 = 10240;
+constexpr ULONG64 WIN_1511 = 10586;
+constexpr ULONG64 WIN_1607 = 14393;
+constexpr ULONG64 WIN_1703 = 15063;
+constexpr ULONG64 WIN_1709 = 16299;
+constexpr ULONG64 WIN_1803 = 17134;
+constexpr ULONG64 WIN_1809 = 17763;
+constexpr ULONG64 WIN_1903 = 18362;
+constexpr ULONG64 WIN_1909 = 18363;
+constexpr ULONG64 WIN_2004 = 19041;
+constexpr ULONG64 WIN_20H2 = 19042;
+constexpr ULONG64 WIN_21H1 = 19043;
+constexpr ULONG64 WIN_21H2 = 19044;
+constexpr ULONG64 WIN_22H2 = 19045;
+constexpr ULONG64 WIN_11_21H2 = 22000;
+constexpr ULONG64 WIN_11_22H2 = 22621;
+constexpr ULONG64 WIN_11_23H2 = 22631;
+constexpr ULONG64 WIN_11_24H2 = 26100;
 
 #define IMAGE_DOS_SIGNATURE                 0x5A4D
 #define IMAGE_NT_SIGNATURE                  0x00004550
@@ -1360,6 +1362,9 @@ inline ULONG GetTokenOffset() {
 	case WIN_1809:
 		tokenOffset = 0x358;
 		break;
+	case WIN_11_24H2:
+		tokenOffset = 0x248;
+		break;
 	default:
 		tokenOffset = 0x4b8;
 		break;
@@ -1401,6 +1406,9 @@ inline ULONG GetSignatureLevelOffset() {
 	case WIN_1507:
 		signatureLevelOffset = 0x6a8;
 		break;
+	case WIN_11_24H2:
+		signatureLevelOffset = 0x5f8;
+		break;
 	default:
 		signatureLevelOffset = 0x878;
 		break;
@@ -1434,6 +1442,9 @@ inline ULONG GetActiveProcessLinksOffset() {
 	case WIN_1803:
 	case WIN_1809:
 		activeProcessLinks = 0x2e8;
+		break;
+	case WIN_11_24H2:
+		activeProcessLinks = 0x1d8;
 		break;
 	default:
 		activeProcessLinks = 0x448;
@@ -1470,6 +1481,9 @@ inline ULONG GetProcessLockOffset() {
 	case WIN_1903:
 	case WIN_1909:
 		processLockOffset = 0x2e0;
+		break;
+	case WIN_11_24H2:
+		processLockOffset = 0x1c8;
 		break;
 	default:
 		processLockOffset = 0x438;
@@ -1519,6 +1533,9 @@ inline ULONG GetThreadListEntryOffset() {
 	case WIN_22H2:
 		threadListEntry = 0x4e8;
 		break;
+	case WIN_11_24H2:
+		threadListEntry = 0x578;
+		break;
 	default:
 		threadListEntry = 0x538;
 		break;
@@ -1553,6 +1570,9 @@ inline ULONG GetThreadListHeadOffset() {
 	case WIN_1903:
 	case WIN_1909:
 		threadListHead = 0x488;
+		break;
+	case WIN_11_24H2:
+		threadListHead = 0x370;
 		break;
 	default:
 		threadListHead = 0x5e0;
@@ -1601,6 +1621,9 @@ inline ULONG GetThreadLockOffset() {
 	case WIN_21H2:
 	case WIN_22H2:
 		threadLockOffset = 0x500;
+		break;
+	case WIN_11_24H2:
+		threadLockOffset = 0x590;
 		break;
 	default:
 		threadLockOffset = 0x550;
@@ -1708,6 +1731,9 @@ inline ULONG GetVadRootOffset() {
 	case WIN_1909:
 		vadRootOffset = 0x658;
 		break;
+	case WIN_11_24H2:
+		vadRootOffset = 0x558;
+		break;
 	default:
 		vadRootOffset = 0x7d8;
 		break;
@@ -1732,6 +1758,9 @@ inline ULONG GetPageCommitmentLockOffset() {
 	case WIN_1903:
 	case WIN_1909:
 		pageCommitmentLockOffset = 0x378;
+		break;
+	case WIN_11_24H2:
+		pageCommitmentLockOffset = 0x260;
 		break;
 	default:
 		pageCommitmentLockOffset = 0x4d0;

@@ -145,11 +145,11 @@ private:
 	bool RemoveHiddenDriver(ULONG index);
 	NTSTATUS VadHideObject(PEPROCESS Process, ULONG_PTR TargetAddress);
 	TABLE_SEARCH_RESULT VadFindNodeOrParent(PRTL_AVL_TABLE Table, ULONG_PTR TargetPageAddress, PRTL_BALANCED_NODE* OutNode, EX_PUSH_LOCK* PageTableCommitmentLock);
-	PVOID GetModuleBase(PEPROCESS Process, WCHAR* moduleName);
-	PVOID GetFunctionAddress(PVOID moduleBase, CHAR* functionName);
+	PVOID GetModuleBase(PEPROCESS Process, const wchar_t* moduleName);
+	PVOID GetFunctionAddress(PVOID moduleBase, const char* functionName);
 	NTSTATUS FindAlertableThread(HANDLE pid, PETHREAD* Thread);
 	NTSTATUS GetSSDTAddress();
-	PVOID GetSSDTFunctionAddress(CHAR* functionName);
+	PVOID GetSSDTFunctionAddress(const char* functionName);
 	void SetCredLastIndex();
 
 public:
@@ -165,7 +165,7 @@ public:
 	MemoryUtils();
 	~MemoryUtils();
 
-	PVOID GetFuncAddress(CHAR* functionName, WCHAR* moduleName, ULONG pid = 0);
+	PVOID GetFuncAddress(const char* functionName, const wchar_t* moduleName, ULONG pid = 0);
 	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode, bool alignAddr = true);
 	NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 	NTSTATUS PatchModule(PatchedModule* ModuleInformation);

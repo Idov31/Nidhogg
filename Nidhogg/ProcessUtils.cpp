@@ -414,7 +414,7 @@ NTSTATUS ProcessUtils::ElevateProcess(ULONG pid) {
 * Returns:
 * @status	   [NTSTATUS] -- Whether successfully found or not.
 */
-NTSTATUS ProcessUtils::FindPidByName(WCHAR* processName, ULONG* pid) {
+NTSTATUS ProcessUtils::FindPidByName(const wchar_t* processName, ULONG* pid) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
