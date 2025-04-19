@@ -16,6 +16,9 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 
 ## Current Features
 
+> [!IMPORTANT]  
+> All the features have been fully tested up until Windows 11 22H2 and are gradually tested against 24H2. If you encounter a problem, please open an issue.
+
 - Process hiding and unhiding
 - Process elevation
 - Process protection (anti-kill and dumping)
