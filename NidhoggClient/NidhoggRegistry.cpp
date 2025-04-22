@@ -53,6 +53,57 @@ std::wstring NidhoggInterface::GetHKCUPath() {
 	return fullUsername;
 }
 
+std::wstring NidhoggInterface::GetHKCRUserPath() {
+	std::wstring userClassesPath = HKU_HIVE;
+	WCHAR username[MAX_PATH];
+	DWORD usernameSize = MAX_PATH;
+	wchar_t* domain;
+	SID* sid;
+	LPWSTR stringSid;
+	SID_NAME_USE sidUse;
+	DWORD sidSize = 0;
+	DWORD domainSize = 0;
+
+	if (!GetUserName(username, &usernameSize)) {
+		return L"";
+	}
+
+	if (LookupAccountName(0, username, 0, &sidSize, 0, &domainSize, &sidUse) == 0) {
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+			return L"";
+	}
+
+	sid = (SID*)LocalAlloc(LMEM_FIXED, sidSize);
+	if (sid == 0) {
+		return L"";
+	}
+	domain = (wchar_t*)LocalAlloc(LMEM_FIXED, domainSize);
+	if (domain == 0) {
+		LocalFree(sid);
+		return L"";
+	}
+
+	if (LookupAccountName(0, username, sid, &sidSize, (LPWSTR)domain, &domainSize, &sidUse) == 0) {
+		LocalFree(sid);
+		LocalFree(domain);
+		return L"";
+	}
+
+	if (!ConvertSidToStringSid(sid, &stringSid)) {
+		LocalFree(sid);
+		LocalFree(domain);
+		return L"";
+	}
+
+	LocalFree(sid);
+	LocalFree(domain);
+
+	userClassesPath.append(L"\\");
+	userClassesPath.append(stringSid);
+	userClassesPath.append(L"_Classes");
+	return userClassesPath;
+}
+
 std::wstring NidhoggInterface::ParseRegistryKey(wchar_t* key) {
 	std::wstring result = key;
 
@@ -63,10 +114,20 @@ std::wstring NidhoggInterface::ParseRegistryKey(wchar_t* key) {
 		result.replace(0, 4, HKLM_HIVE);
 	}
 	else if (result.find(HKCR) != std::wstring::npos) {
-		result.replace(0, 17, HKCR_HIVE);
+		std::wstring hkcrUserPath = GetHKCRUserPath();
+		if (!hkcrUserPath.empty()) {
+			result.replace(0, 17, hkcrUserPath);
+		} else {
+			result.replace(0, 17, HKCR_HIVE);
+		}
 	}
 	else if (result.find(HKCR_SHORT) != std::wstring::npos) {
-		result.replace(0, 4, HKCR_HIVE);
+		std::wstring hkcrUserPath = GetHKCRUserPath();
+		if (!hkcrUserPath.empty()) {
+			result.replace(0, 4, hkcrUserPath);
+		} else {
+			result.replace(0, 4, HKCR_HIVE);
+		}
 	}
 	else if (result.find(HKU) != std::wstring::npos) {
 		result.replace(0, 10, HKU_HIVE);

@@ -23,6 +23,7 @@ private:
 	NidhoggErrorCodes lastError;
 
 	std::wstring GetHKCUPath();
+	std::wstring GetHKCRUserPath();
 	std::wstring ParseRegistryKey(wchar_t* key);
 	std::wstring ParsePath(wchar_t* path);
 
