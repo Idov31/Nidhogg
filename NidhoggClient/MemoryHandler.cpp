@@ -46,7 +46,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		std::cout << "3DES Key (size: 0x" << std::hex << desKey->Size << "): ";
 
 		for (DWORD i = 0; i < desKey->Size; i++)
-			std::cout << reinterpret_cast<int>(desKey->Data.get()[i]);
+			std::cout << static_cast<int>(static_cast<PUCHAR>(desKey->Data)[i]);
 		std::cout << std::endl;
 		std::cout << "Credentials:" << std::endl;
 
@@ -74,6 +74,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 				credentials[i].EncryptedHash.Buffer = nullptr;
 			}
 		}
+		SafeFree(desKey->Data);
 		std::cout << std::dec << std::endl;
 	} else if (commandName.compare("hide_module") == 0) {
 		std::wstring modulePath = L"";
@@ -341,7 +342,7 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 
 	// Get 3DES key.
 	desKey->Size = 0;
-	desKey->Data.reset();
+	desKey->Data = nullptr;
 
 	if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
 		nullptr, 0, desKey.get(), sizeof(DesKeyInformation), &returned, nullptr)) {
@@ -351,13 +352,17 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 	if (desKey->Size == 0) {
 		throw MemoryHandlerException("Failed to get DES key size from driver.");
 	}
-	desKey->Data = std::make_unique<byte*>(new byte(desKey->Size));
 
-	if (!desKey->Data)
-		throw MemoryHandlerException("Failed to allocate memory for DES key.");
+	try {
+		desKey->Data = SafeAlloc<PVOID>(desKey->Size);
+	}
+	catch (const HelperException& e) {
+		throw MemoryHandlerException(e.what());
+	}
 
 	if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
 		desKey.get(), sizeof(DesKeyInformation), desKey.get(), sizeof(DesKeyInformation), &returned, nullptr)) {
+		SafeFree(desKey->Data);
 		throw MemoryHandlerException("Failed to get DES key data from driver.");
 	}
 
@@ -425,6 +430,7 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 			SafeFree(currentOutputCreds.Creds.Domain.Buffer);
 			SafeFree(currentOutputCreds.Creds.EncryptedHash.Buffer);
 		}
+		SafeFree(desKey->Data);
 		throw MemoryHandlerException("Failed to dump credentials from driver.");
 	}
 
