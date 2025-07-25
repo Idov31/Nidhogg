@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "NidhoggIoctls.h"
 #include "NidhoggStructs.h"
+#include "Helper.h"
 
 constexpr ULONG SYSTEM_PID = 4;
 constexpr const wchar_t* DRIVER_NAME = LR"(\\.\Nidhogg)";
@@ -22,7 +23,6 @@ private:
 	HANDLE hNidhogg;
 	NidhoggErrorCodes lastError;
 
-	std::wstring GetHKCUPath();
 	std::wstring ParseRegistryKey(wchar_t* key);
 	std::wstring ParsePath(wchar_t* path);
 
