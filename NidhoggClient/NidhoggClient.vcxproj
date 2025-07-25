@@ -132,6 +132,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AntiAnalysisHandler.cpp" />
     <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="Helper.cpp" />
     <ClCompile Include="MemoryHandler.cpp" />
@@ -152,6 +153,7 @@
     <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AntiAnalysisHandler.h" />
     <ClInclude Include="CommandHandler.h" />
     <ClInclude Include="FileHandler.h" />
     <ClInclude Include="Helper.h" />

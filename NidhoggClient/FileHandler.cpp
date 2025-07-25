@@ -2,7 +2,7 @@
 
 /*
 * Description:
-* HandleCommand is responsible for handling a process related command.
+* HandleCommand is responsible for handling a file related command.
 *
 * Parameters:
 * @command [_In_ std::string] -- The command to be handled.
