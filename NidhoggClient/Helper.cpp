@@ -1,5 +1,15 @@
 #include "Helper.h"
 
+/*
+* Description:
+* GetCurrentUserSID is responsible for getting the current user's SID.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @stringSid [std::wstring] -- The SID of the current user.
+*/
 std::wstring GetCurrentUserSID() {
 	std::wstring fullUsername = L"";
 	WCHAR username[MAX_PATH];
@@ -40,7 +50,17 @@ std::wstring GetCurrentUserSID() {
 	return result;
 }
 
-std::vector<byte> ConvertToVector(std::wstring rawPatch) {
+/*
+* Description:
+* ConvertToVector is responsible for converting a raw patch string into a vector of bytes.
+*
+* Parameters:
+* @rawPatch [_In_ std::wstring] -- The raw patch string to be converted.
+*
+* Returns:
+* @vec		[std::vector<byte>] -- The vector of bytes representing the patch.
+*/
+std::vector<byte> ConvertToVector(_In_ std::wstring rawPatch) {
 	int b;
 	std::vector<byte> vec;
 	std::wstringstream rawPatchStream(rawPatch);
@@ -62,7 +82,17 @@ std::vector<byte> ConvertToVector(std::wstring rawPatch) {
 	return vec;
 }
 
-int ConvertToInt(std::wstring rawString) {
+/*
+* Description:
+* ConvertToInt is responsible for converting a raw string into an integer.
+*
+* Parameters:
+* @rawString [_In_ std::wstring] -- The raw string to be converted.
+*
+* Returns:
+* @int							 -- The integer value of the raw string.
+*/
+int ConvertToInt(_In_ std::wstring rawString) {
 	std::wstringstream rawPatchStream(rawString);
 	std::wstringstream convertedString;
 
@@ -71,6 +101,72 @@ int ConvertToInt(std::wstring rawString) {
 	}
 
 	return _wtoi(convertedString.str().c_str());
+}
+
+/*
+* Description:
+* SplitStringBySpace is responsible for splitting a string by spaces and returning a vector of strings.
+*
+* Parameters:
+* @str	  [_In_ const std::string&]  -- The string to be split.
+*
+* Returns:
+* @result [std::vector<std::string>] -- A vector of strings split by spaces.
+*/
+std::vector<std::string> SplitStringBySpace(_In_ const std::string& str) {
+	std::vector<std::string> result;
+	std::istringstream iss(str);
+	std::string token;
+
+	while (iss >> token) {
+		result.push_back(token);
+	}
+
+	return result;
+}
+
+/*
+* Description:
+* SplitStringBySpaceW is responsible for splitting a string by spaces and returning a vector of wstrings.
+*
+* Parameters:
+* @str	  [_In_ const std::string&]  -- The string to be split.
+*
+* Returns:
+* @result [std::vector<std::wstring>] -- A vector of strings split by spaces.
+*/
+std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str) {
+	std::vector<std::wstring> result;
+	std::istringstream iss(str);
+	std::string token;
+
+	while (iss >> token) {
+		result.push_back(std::wstring(token.begin(), token.end()));
+	}
+
+	return result;
+}
+
+/*
+* Description:
+* ParsePath is responsible for parsing a file path and replacing certain parts with predefined strings.
+* 
+* Parameters:
+* @path [_In_ std::wstring] -- The file path to be parsed.
+* 
+* Returns:
+* @result [std::wstring] -- The parsed file path with certain parts replaced.
+*/
+std::wstring ParsePath(std::wstring path) {
+	std::wstring result = path;
+
+	if (result.find(LR"(C:\Windows)") != std::wstring::npos) {
+		result.replace(0, 10, LR"(\SystemRoot)");
+	}
+	else if (result.find(LR"(C:\)") != std::wstring::npos) {
+		result.replace(0, 3, LR"(\??\C:\)");
+	}
+	return result;
 }
 
 void PrintUsage() {

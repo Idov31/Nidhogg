@@ -6,7 +6,7 @@ class HelperException : public std::runtime_error
 {
     std::string msg;
 public:
-    HelperException(const std::string& message)
+    HelperException(_In_ const std::string& message)
 		: std::runtime_error(message), msg(message) {}
     const char* what() const override
     {
@@ -14,7 +14,10 @@ public:
     }
 };
 
-std::vector<byte> ConvertToVector(std::wstring rawPatch);
-int ConvertToInt(std::wstring rawString);
+std::vector<byte> ConvertToVector(_In_ std::wstring rawPatch);
+int ConvertToInt(_In_ std::wstring rawString);
 std::wstring GetCurrentUserSID();
+std::vector<std::string> SplitStringBySpace(_In_ const std::string& str);
+std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str);
+std::wstring ParsePath(std::wstring path);
 void PrintUsage();
