@@ -4,8 +4,6 @@
 #include "NidhoggIoctls.h"
 #include "Helper.h"
 
-constexpr DWORD SYSTEM_PID = 4;
-
 class CommandHandler {
 protected:
 	std::string contextName;

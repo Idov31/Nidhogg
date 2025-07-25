@@ -60,23 +60,43 @@ std::wstring GetCurrentUserSID() {
 * Returns:
 * @vec		[std::vector<byte>] -- The vector of bytes representing the patch.
 */
-std::vector<byte> ConvertToVector(_In_ std::wstring rawPatch) {
+template<TString String>
+std::vector<byte> ConvertToVector(_In_ String rawPatch) {
 	int b;
 	std::vector<byte> vec;
-	std::wstringstream rawPatchStream(rawPatch);
-	std::wstringstream byteToAdd;
 
-	for (wchar_t i; rawPatchStream >> i; rawPatchStream.good()) {
-		byteToAdd << std::hex << i;
+	if constexpr (std::same_as<String, std::wstring>) {
+		std::wstringstream rawPatchStream(rawPatch);
+		std::wstringstream byteToAdd;
 
-		if (rawPatchStream.peek() == L',') {
-			rawPatchStream.ignore();
-			byteToAdd >> b;
-			vec.push_back(b);
-			byteToAdd.clear();
+		for (wchar_t i; rawPatchStream >> i; rawPatchStream.good()) {
+			byteToAdd << std::hex << i;
+
+			if (rawPatchStream.peek() == L',') {
+				rawPatchStream.ignore();
+				byteToAdd >> b;
+				vec.push_back(b);
+				byteToAdd.clear();
+			}
 		}
+		byteToAdd >> b;
 	}
-	byteToAdd >> b;
+	else {
+		std::stringstream rawPatchStream(rawPatch);
+		std::stringstream byteToAdd;
+
+		for (char i; rawPatchStream >> i; rawPatchStream.good()) {
+			byteToAdd << std::hex << i;
+
+			if (rawPatchStream.peek() == L',') {
+				rawPatchStream.ignore();
+				byteToAdd >> b;
+				vec.push_back(b);
+				byteToAdd.clear();
+			}
+		}
+		byteToAdd >> b;
+	}
 	vec.push_back(b);
 
 	return vec;
@@ -101,6 +121,23 @@ int ConvertToInt(_In_ std::wstring rawString) {
 	}
 
 	return _wtoi(convertedString.str().c_str());
+}
+
+/*
+* Description:
+* SafeFree is responsible for safely freeing a pointer and setting it to nullptr.
+* 
+* Parameters:
+* @ptr [_Inout_opt_ PVOID] -- The pointer to be freed.
+* 
+* Returns:
+* There is no return value.
+*/
+void SafeFree(_Inout_opt_ PVOID ptr) {
+	if (ptr) {
+		free(ptr);
+		ptr = nullptr;
+	}
 }
 
 /*
@@ -149,25 +186,78 @@ std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str) {
 
 /*
 * Description:
+* IsValidPath is responsible for checking if a given path is valid.
+* 
+* Parameters:
+* @path [_In_ const string&] -- The path to be checked.
+* 
+* Returns:
+* @bool						 -- Whether the path is valid or not.
+*/
+template<TString String>
+bool IsValidPath(_In_ const String& path) {
+	if (path.length() > MAX_PATH) {
+		std::cerr << "Path length exceeds MAX_PATH" << std::endl;
+		return false;
+	}
+
+	if (!std::filesystem::exists(path)) {
+		std::cerr << "Path does not exist" << std::endl;
+		return false;
+	}
+	return true;
+}
+
+/*
+* Description:
 * ParsePath is responsible for parsing a file path and replacing certain parts with predefined strings.
 * 
 * Parameters:
-* @path [_In_ std::wstring] -- The file path to be parsed.
+* @path [_In_ InputString] -- The file path to be parsed.
 * 
 * Returns:
-* @result [std::wstring] -- The parsed file path with certain parts replaced.
+* @result [OutputString] -- The parsed file path with certain parts replaced.
 */
-std::wstring ParsePath(std::wstring path) {
-	std::wstring result = path;
+template<TString InputString, TString OutputString>
+OutputString ParsePath(_In_ InputString path) {
+	OutputString result = path;
 
-	if (result.find(LR"(C:\Windows)") != std::wstring::npos) {
-		result.replace(0, 10, LR"(\SystemRoot)");
+	if (!IsValidPath<InputString>(result))
+		throw HelperException("Invalid path provided");
+
+	if (result.find(InputString(WINDOWS_PATH)) != InputString::npos) {
+		result.replace(0, 10, OutputString(NATIVE_WINDOWS_PATH));
 	}
-	else if (result.find(LR"(C:\)") != std::wstring::npos) {
-		result.replace(0, 3, LR"(\??\C:\)");
+	else if (result.find(InputString(DEFAULT_DRIVE)) != InputString::npos) {
+		result.replace(0, 3, OutputString(NATIVE_DEFAULT_DRIVE));
 	}
 	return result;
 }
+
+/*
+* Description:
+* IsValidPid is responsible for checking if the given raw PID is valid.
+*
+* Parameters:
+* @rawPid [_In_ std::string] -- The raw PID to be checked.
+*
+* Returns:
+* @bool					-- Whether the PID is valid or not.
+*/
+bool IsValidPid(_In_ std::string rawPid) {
+	if (rawPid.empty() || !std::all_of(rawPid.begin(), rawPid.end(), ::isdigit)) {
+		std::cerr << "Invalid PID" << std::endl;
+		return false;
+	}
+	DWORD pid = static_cast<DWORD>(atoi(rawPid.c_str()));
+
+	if (pid < SYSTEM_PID || pid > MAXDWORD) {
+		std::cerr << "PID must be greater than 4 and smaller than max DWORD" << std::endl;
+		return false;
+	}
+	return true;
+}
+
 
 void PrintUsage() {
 	std::cout << "[ * ] Possible usage:" << std::endl;
