@@ -14,7 +14,6 @@ private:
 	bool ClearHiddenProcesses();
 	bool ClearAll();
 	bool CheckInput(_In_ const std::vector<std::string>& params);
-	bool IsValidPid(_In_ std::string rawPid);
 
 public:
 	ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Process", hNidhogg) {};

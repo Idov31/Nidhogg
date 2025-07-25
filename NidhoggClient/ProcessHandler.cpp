@@ -169,30 +169,6 @@ bool ProcessHandler::CheckInput(_In_ const std::vector<std::string>& params) {
 
 /*
 * Description:
-* IsValidPid is responsible for checking if the given raw PID is valid.
-* 
-* Parameters:
-* @rawPid [_In_ std::string] -- The raw PID to be checked.
-* 
-* Returns:
-* @bool					-- Whether the PID is valid or not.
-*/
-bool ProcessHandler::IsValidPid(_In_ std::string rawPid) {
-	if (rawPid.empty() || !std::all_of(rawPid.begin(), rawPid.end(), ::isdigit)) {
-		std::cerr << "Invalid PID" << std::endl;
-		return false;
-	}
-	DWORD pid = static_cast<DWORD>(atoi(rawPid.c_str()));
-
-	if (pid < SYSTEM_PID || pid > MAXDWORD) {
-		std::cerr << "PID must be greater than 4 and smaller than max DWORD" << std::endl;
-		return false;
-	}
-	return true;
-}
-
-/*
-* Description:
 * Protect is responsible for issuing a IOCTL_PROTECT_UNPROTECT_PROCESS to protect or unprotect a process.
 *
 * Parameters:
