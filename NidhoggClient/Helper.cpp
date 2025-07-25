@@ -142,6 +142,26 @@ void SafeFree(_Inout_opt_ PVOID ptr) {
 
 /*
 * Description:
+* SafeAlloc is responsible for safely allocating memory of a given size.
+* 
+* Parameters:
+* @size [_In_ SIZE_T] -- The size of memory to be allocated.
+* 
+* Returns:
+* @ptr  [PVOID] -- The pointer to the allocated memory.
+*/
+template<typename Ptr>
+Ptr SafeAlloc(_In_ SIZE_T size) {
+	Ptr ptr = reinterpret_cast<Ptr>(malloc(size));
+	
+	if (!ptr)
+		throw HelperException("Failed to allocate memory");
+	memset(ptr, 0, size);
+	return ptr;
+}
+
+/*
+* Description:
 * SplitStringBySpace is responsible for splitting a string by spaces and returning a vector of strings.
 *
 * Parameters:

@@ -25,6 +25,9 @@ public:
 
 void SafeFree(_Inout_opt_ PVOID ptr);
 
+template<typename Ptr>
+Ptr SafeAlloc(_In_ SIZE_T size);
+
 template<TString String>
 std::vector<byte> ConvertToVector(_In_ String rawPatch);
 int ConvertToInt(_In_ std::wstring rawString);
