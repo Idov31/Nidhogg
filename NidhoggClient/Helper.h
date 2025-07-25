@@ -30,7 +30,9 @@ Ptr SafeAlloc(_In_ SIZE_T size);
 
 template<TString String>
 std::vector<byte> ConvertToVector(_In_ String rawPatch);
-int ConvertToInt(_In_ std::wstring rawString);
+
+template<TString String, typename N>
+N ConvertToNumber(_In_ String rawString);
 std::wstring GetCurrentUserSID();
 std::vector<std::string> SplitStringBySpace(_In_ const std::string& str);
 std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str);

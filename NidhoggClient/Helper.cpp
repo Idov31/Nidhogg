@@ -107,20 +107,23 @@ std::vector<byte> ConvertToVector(_In_ String rawPatch) {
 * ConvertToInt is responsible for converting a raw string into an integer.
 *
 * Parameters:
-* @rawString [_In_ std::wstring] -- The raw string to be converted.
+* @rawString [_In_ String] -- The raw string to be converted.
 *
 * Returns:
-* @int							 -- The integer value of the raw string.
+* @int					   -- The integer value of the raw string.
 */
-int ConvertToInt(_In_ std::wstring rawString) {
-	std::wstringstream rawPatchStream(rawString);
-	std::wstringstream convertedString;
+template<TString String, typename N>
+N ConvertToNumber(_In_ String rawString) {
+	String str = rawString;
+	bool isHex = false;
 
-	for (wchar_t i; rawPatchStream >> i; rawPatchStream.good()) {
-		convertedString << std::hex << i;
+	if (str.starts_with(String("0x")) || str.starts_with(String("0X"))) {
+		str.erase(0, 2);
+		isHex = true;
 	}
-
-	return _wtoi(convertedString.str().c_str());
+	if (str.empty() || !std::all_of(str.begin(), str.end(), ::isdigit))
+		throw HelperException("Invalid integer string");
+	return isHex ? static_cast<N>(std::stoi(str, nullptr, 16)) : static_cast<N>(std::stoi(str));
 }
 
 /*
