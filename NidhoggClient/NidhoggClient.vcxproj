@@ -131,7 +131,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="Helper.cpp" />
+    <ClCompile Include="MemoryHandler.cpp" />
+    <ClCompile Include="NetworkHandler.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
     <ClCompile Include="NidhoggAntiAnalysis.cpp" />
     <ClCompile Include="NidhoggClient.cpp" />
@@ -143,14 +146,24 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="ProcessHandler.cpp" />
+    <ClCompile Include="RegistryHandler.cpp" />
+    <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CommandHandler.h" />
+    <ClInclude Include="FileHandler.h" />
     <ClInclude Include="Helper.h" />
+    <ClInclude Include="MemoryHandler.h" />
+    <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="Nidhogg.h" />
     <ClInclude Include="NidhoggClient.h" />
     <ClInclude Include="NidhoggIoctls.h" />
     <ClInclude Include="NidhoggStructs.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="ProcessHandler.h" />
+    <ClInclude Include="RegistryHandler.h" />
+    <ClInclude Include="ThreadHandler.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -7,5 +7,6 @@
 #include <sstream>
 #include <fstream>
 #include <sddl.h>
+#include <algorithm>
 
 #pragma comment(lib, "advapi32.lib")
