@@ -17,7 +17,7 @@ public:
 	}
 };
 
-class AntiAnalysisHandler : protected CommandHandler {
+class AntiAnalysisHandler : public CommandHandler {
 private:
 	const std::unordered_map<std::string, CallbackType> callbackTypeMap = {
 		{"ObProcessType", ObProcessType},

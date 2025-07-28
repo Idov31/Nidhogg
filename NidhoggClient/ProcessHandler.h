@@ -2,7 +2,7 @@
 #include "pch.h"
 #include "CommandHandler.h"
 
-class ProcessHandler : protected CommandHandler {
+class ProcessHandler : public CommandHandler {
 private:
 	bool Protect(_In_ DWORD pid, _In_ bool protect);
 	bool Hide(_In_ DWORD pid, _In_ bool hide);

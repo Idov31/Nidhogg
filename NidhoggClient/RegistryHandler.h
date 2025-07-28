@@ -25,7 +25,7 @@ public:
 	}
 };
 
-class RegistryHandler : protected CommandHandler {
+class RegistryHandler : public CommandHandler {
 private:
 	std::wstring ParseRegistryKey(_In_ const std::wstring& key);
 	bool ProtectKey(_In_ const std::wstring& key, _In_ bool protect);

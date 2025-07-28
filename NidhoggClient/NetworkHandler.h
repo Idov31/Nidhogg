@@ -2,7 +2,7 @@
 #include "pch.h"
 #include "CommandHandler.h"
 
-class NetworkHandler : protected CommandHandler {
+class NetworkHandler : public CommandHandler {
 private:
 	bool Hide(_In_ USHORT portNumber, _In_ PortType portType, _In_ bool remote, _In_ bool hide);
 	std::vector<HiddenPort> ListHiddenPorts();
