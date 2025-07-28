@@ -43,4 +43,3 @@ bool IsValidPath(_In_ const String& path);
 template<TString InputString, TString OutputString>
 OutputString ParsePath(_In_ InputString path);
 bool IsValidPid(_In_ std::string rawPid);
-void PrintUsage();

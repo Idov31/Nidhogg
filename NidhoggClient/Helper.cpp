@@ -130,10 +130,10 @@ N ConvertToNumber(_In_ String rawString) {
 /*
 * Description:
 * SafeFree is responsible for safely freeing a pointer and setting it to nullptr.
-* 
+*
 * Parameters:
 * @ptr [_Inout_opt_ PVOID] -- The pointer to be freed.
-* 
+*
 * Returns:
 * There is no return value.
 */
@@ -147,17 +147,17 @@ void SafeFree(_Inout_opt_ PVOID ptr) {
 /*
 * Description:
 * SafeAlloc is responsible for safely allocating memory of a given size.
-* 
+*
 * Parameters:
 * @size [_In_ SIZE_T] -- The size of memory to be allocated.
-* 
+*
 * Returns:
 * @ptr  [PVOID] -- The pointer to the allocated memory.
 */
 template<typename Ptr>
 Ptr SafeAlloc(_In_ SIZE_T size) {
 	Ptr ptr = reinterpret_cast<Ptr>(malloc(size));
-	
+
 	if (!ptr)
 		throw HelperException("Failed to allocate memory");
 	memset(ptr, 0, size);
@@ -211,10 +211,10 @@ std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str) {
 /*
 * Description:
 * IsValidPath is responsible for checking if a given path is valid.
-* 
+*
 * Parameters:
 * @path [_In_ const string&] -- The path to be checked.
-* 
+*
 * Returns:
 * @bool						 -- Whether the path is valid or not.
 */
@@ -235,10 +235,10 @@ bool IsValidPath(_In_ const String& path) {
 /*
 * Description:
 * ParsePath is responsible for parsing a file path and replacing certain parts with predefined strings.
-* 
+*
 * Parameters:
 * @path [_In_ InputString] -- The file path to be parsed.
-* 
+*
 * Returns:
 * @result [OutputString] -- The parsed file path with certain parts replaced.
 */
@@ -280,23 +280,4 @@ bool IsValidPid(_In_ std::string rawPid) {
 		return false;
 	}
 	return true;
-}
-
-
-void PrintUsage() {
-	std::cout << "[ * ] Possible usage:" << std::endl;
-	std::cout << "\tNidhoggClient.exe process [add | remove | clear | hide | unhide | elevate | signature | query ] [pid] [signer type] [signature signer]" << std::endl;
-	std::cout << "\tNidhoggClient.exe thread [add | remove | clear | hide | unhide | query ] [tid]" << std::endl;
-	std::cout << "\tNidhoggClient.exe module [hide] [pid] [module path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe driver [hide | unhide] [driver path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe file [add | remove | clear | query] [path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe reg [add | remove | clear | hide | unhide | query] [key] [value]" << std::endl;
-	std::cout << "\tNidhoggClient.exe patch [pid] [amsi | etw | module name] [function] [patch comma separated]" << std::endl;
-	std::cout << "\tNidhoggClient.exe shinject [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3]" << std::endl;
-	std::cout << "\tNidhoggClient.exe dllinject [apc | thread] [pid] [dll path]" << std::endl;
-	std::cout << "\tNidhoggClient.exe callbacks [query | remove | restore] [callback type] [callback address]" << std::endl;
-	std::cout << "\tNidhoggClient.exe etwti [enable | disable]" << std::endl;
-	std::cout << "\tNidhoggClient.exe dump_creds" << std::endl;
-	std::cout << "\tNidhoggClient.exe port [hide | unhide | query | clear] [port number] [tcp/udp] [remote/local]" << std::endl;
-	std::cout << "\tNidhoggClient.exe exec_script [script_file]" << std::endl;
 }
