@@ -1,10 +1,10 @@
 #pragma once
 #include "pch.h"
 
-constexpr char WINDOWS_PATH[] = R"(C:\Windows)";
 constexpr char NATIVE_WINDOWS_PATH[] = R"(\SystemRoot)";
-constexpr char DEFAULT_DRIVE[] = R"(C:\)";
-constexpr char NATIVE_DEFAULT_DRIVE[] = R"(\??\C:\)";
+constexpr char NT_DRIVE_PREFIX[] = R"(\??\)";
+constexpr char SYSTEM_ROOT_ENV[] = "SYSTEMROOT";
+constexpr char SYSTEM_DRIVE_ENV[] = "SystemDrive";
 
 class PathHelperException : public std::runtime_error
 {
@@ -54,26 +54,73 @@ inline bool IsValidPath(_In_ const String& path) {
 */
 template<TString InputString, TString OutputString>
 inline OutputString ParsePath(_In_ InputString path) {
+	InputString systemDir;
+	InputString systemDrive;
+	char* buffer = nullptr;
+
 	if (!IsValidPath<InputString>(path))
 		throw PathHelperException("Invalid path provided");
 	OutputString result = OutputString(path.begin(), path.end());
+	OutputString nativeWindowsPath;
 
-	OutputString windowsPath = OutputString(WINDOWS_PATH, WINDOWS_PATH + strlen(WINDOWS_PATH));
-	OutputString nativeWindowsPath = OutputString(NATIVE_WINDOWS_PATH, NATIVE_WINDOWS_PATH + strlen(NATIVE_WINDOWS_PATH));
-	OutputString defaultDrive = OutputString(DEFAULT_DRIVE, DEFAULT_DRIVE + strlen(DEFAULT_DRIVE));
-	OutputString nativeDefaultDrive = OutputString(NATIVE_DEFAULT_DRIVE, NATIVE_DEFAULT_DRIVE + strlen(NATIVE_DEFAULT_DRIVE));
-
-	auto windowsPos = result.find(windowsPath);
-
-	if (windowsPos != OutputString::npos) {
-		result.replace(windowsPos, windowsPath.length(), nativeWindowsPath);
+	if constexpr (IsUnicodeString<OutputString>) {
+		nativeWindowsPath = OutputString(std::begin(NATIVE_WINDOWS_PATH), std::end(NATIVE_WINDOWS_PATH) - 1);
 	}
 	else {
-		auto drivePos = result.find(defaultDrive);
+		nativeWindowsPath = OutputString(NATIVE_WINDOWS_PATH);
+	}
 
-		if (drivePos != OutputString::npos) {
-			result.replace(drivePos, defaultDrive.length(), nativeDefaultDrive);
+	if (_dupenv_s(&buffer, nullptr, SYSTEM_ROOT_ENV) == 0) {
+		if (!buffer || strlen(buffer) == 0) {
+			throw PathHelperException("Failed to get SYSTEMROOT environment variable");
 		}
+		if constexpr (IsUnicodeString<InputString>) {
+			size_t len = strlen(buffer);
+			systemDir.resize(len);
+			mbstowcs_s(nullptr, systemDir.data(), len + 1, buffer, len);
+		}
+		else {
+			systemDir = InputString(buffer);
+		}
+		SafeFree(buffer);
+	}
+
+	if (_dupenv_s(&buffer, nullptr, SYSTEM_DRIVE_ENV) == 0) {
+		if (!buffer || strlen(buffer) == 0) {
+			throw PathHelperException("Failed to get SystemDrive environment variable");
+		}
+		if constexpr (IsUnicodeString<InputString>) {
+			size_t len = strlen(buffer);
+			systemDrive.resize(len);
+			mbstowcs_s(nullptr, systemDrive.data(), len + 1, buffer, len);
+		}
+		else {
+			systemDrive = InputString(buffer);
+		}
+		systemDrive += typename InputString::value_type('\\');
+		SafeFree(buffer);
+	}
+
+	size_t systemDirPos = path.find(systemDir);
+
+	if (systemDirPos != InputString::npos) {
+		result.replace(systemDirPos, systemDir.length(), nativeWindowsPath);
+		return result;
+	}
+	size_t drivePos = path.find(systemDrive);
+
+	if (drivePos != InputString::npos) {
+		OutputString ntDrive;
+
+		if constexpr (IsUnicodeString<OutputString>) {
+			ntDrive = OutputString(std::begin(NT_DRIVE_PREFIX), std::end(NT_DRIVE_PREFIX) - 1);
+		}
+		else {
+			ntDrive = OutputString(NT_DRIVE_PREFIX);
+		}
+
+		ntDrive += OutputString(systemDrive.begin(), systemDrive.end());
+		result.replace(drivePos, systemDrive.length(), ntDrive);
 	}
 	return result;
 }
