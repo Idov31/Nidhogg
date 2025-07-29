@@ -4,6 +4,9 @@
 template<typename T>
 concept TString = std::same_as<T, std::string> || std::same_as<T, std::wstring>;
 
+template<typename T>
+using IsUnicodeString = std::is_same_v<typename T::value_type, std::wstring>;
+
 class ConvertorException : public std::runtime_error
 {
 	std::string msg;
