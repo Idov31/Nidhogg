@@ -11,5 +11,6 @@
 #include <concepts>
 #include <functional>
 #include <filesystem>
+#include <type_traits>
 
 #pragma comment(lib, "advapi32.lib")

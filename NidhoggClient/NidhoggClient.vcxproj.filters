@@ -89,5 +89,14 @@
     <ClInclude Include="NidhoggInterface.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SafeMemory.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Convertor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PathHelper.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

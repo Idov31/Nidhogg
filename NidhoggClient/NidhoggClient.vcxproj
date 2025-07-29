@@ -149,6 +149,7 @@
   <ItemGroup>
     <ClInclude Include="AntiAnalysisHandler.h" />
     <ClInclude Include="CommandHandler.h" />
+    <ClInclude Include="Convertor.hpp" />
     <ClInclude Include="FileHandler.h" />
     <ClInclude Include="Helper.h" />
     <ClInclude Include="MemoryHandler.h" />
@@ -156,9 +157,11 @@
     <ClInclude Include="NidhoggInterface.h" />
     <ClInclude Include="NidhoggIoctls.h" />
     <ClInclude Include="NidhoggStructs.h" />
+    <ClInclude Include="PathHelper.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHandler.h" />
     <ClInclude Include="RegistryHandler.h" />
+    <ClInclude Include="SafeMemory.hpp" />
     <ClInclude Include="ThreadHandler.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

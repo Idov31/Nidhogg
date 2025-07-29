@@ -51,7 +51,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 		try {
 			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(1));
 		}
-		catch (const HelperException& e) {
+		catch (const ConvertorException& e) {
 			std::cerr << e.what() << std::endl;
 			PrintHelp();
 			return;
@@ -86,7 +86,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 		try {
 			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(1));
 		}
-		catch (const HelperException& e) {
+		catch (const ConvertorException& e) {
 			std::cerr << e.what() << std::endl;
 			PrintHelp();
 			return;
@@ -281,7 +281,7 @@ CmCallbacksList AntiAnalysisHandler::ListRegistryCallbacks() {
 	try {
 		callbacks.Callbacks = SafeAlloc<CmCallback*>(MAX_ROUTINES * sizeof(CmCallback));
 	}
-	catch (const HelperException& e) {
+	catch (const SafeMemoryException& e) {
 		throw AntiAnalysisHandlerException(e.what());
 	}
 
@@ -315,7 +315,7 @@ ObCallbacksList AntiAnalysisHandler::ListObCallbacks(_In_ CallbackType callbackT
 		try {
 			callbacks.Callbacks = SafeAlloc<ObCallback*>(callbacks.NumberOfCallbacks * sizeof(ObCallback));
 		}
-		catch (const HelperException& e) {
+		catch (const SafeMemoryException& e) {
 			throw AntiAnalysisHandlerException(e.what());
 		}
 		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_OBCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, sizeof(callbacks), &returned, nullptr)) {
@@ -343,7 +343,7 @@ PsRoutinesList AntiAnalysisHandler::ListPsRoutines(_In_ CallbackType callbackTyp
 	try {
 		routines.Routines = SafeAlloc<PsRoutine*>(MAX_ROUTINES * sizeof(PsRoutine));
 	}
-	catch (const HelperException& e) {
+	catch (const SafeMemoryException& e) {
 		throw AntiAnalysisHandlerException(e.what());
 	}
 
