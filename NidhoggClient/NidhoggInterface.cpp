@@ -63,5 +63,16 @@ void NidhoggInterface::HandleCommands() {
 }
 
 void NidhoggInterface::HandleCommand(_In_ std::string handler, _In_ std::string command) {
-	
+	if (command.compare("exit") == 0)
+		return;
+	if (commandHandlers.find(handler) != commandHandlers.end()) {
+		commandHandlers[handler]->HandleCommand(command);
+	}
+	else {
+		std::cout << "Invalid handler '" << handler << "'" << std::endl;
+		std::cout << "Available handlers: " << std::endl;
+		for (const auto& h : commandHandlers) {
+			std::cout << h.first << std::endl;
+		}
+	}
 }
