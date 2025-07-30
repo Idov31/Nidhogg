@@ -16,7 +16,7 @@ public:
 	}
 	~CommandHandler() {}
 
-	void GetCommand() {
+	bool GetCommand() {
 		std::string command = "";
 
 		do {
@@ -30,13 +30,19 @@ public:
 			else if (command.compare("back") == 0)
 				break;
 			else if (command.compare("exit") == 0)
-				exit(0); // TODO: Handle exit gracefully
+				return true;
 			HandleCommand(command);
 			command = "";
 		} while (true);
+
+		return false;
 	};
 
 	void GetCommand(_In_ std::string command) {
+		if (command.empty() || command.compare("help") == 0) {
+			PrintHelp();
+			return;
+		}
 		if (command.compare("back") == 0 || command.compare("exit") == 0)
 			return;
 		HandleCommand(command);
