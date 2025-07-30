@@ -103,7 +103,11 @@ To compile the project, you will need the following tools:
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
 - [Python](https://www.python.org/downloads/) (for the initial operations)
 
-Clone the repository and build the driver.
+Clone the repository and build the project:
+
+```sh
+git clone https://github.com/Idov31/Nidhogg.git --recurse-submodules
+```
 
 ### Driver Testing
 
@@ -140,6 +144,7 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Credential Dumping](https://github.com/gentilkiwi/mimikatz)
 - [Port Hiding](https://github.com/bytecode77/r77-rootkit)
 - [Logo](https://hotpot.ai/art-generator)
+- [Termcolor](https://github.com/ikalnytskyi/termcolor)
 
 ## Contributions
 
