@@ -23,12 +23,12 @@ public:
 	FileHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("File", hNidhogg) {};
 
 	void PrintHelp() override {
-		std::cout << "Options:" << std::endl;
-		std::cout << "back - Go back to the main menu" << std::endl;
-		std::cout << "[add | protect] [file path] - Protecting a file path from being deleted" << std::endl;
-		std::cout << "[remove | unprotect] [file path] - Removing protection from a file path from being deleted" << std::endl;
-		std::cout << "list - Listing the currently protected files" << std::endl;
-		std::cout << "clear - Clear all protected files" << std::endl;
+		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[add | protect] [file path] - Protecting a file path from being deleted" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[remove | unprotect] [file path] - Removing protection from a file path from being deleted" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list - Listing the currently protected files" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all protected files" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

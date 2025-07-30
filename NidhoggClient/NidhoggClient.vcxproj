@@ -123,6 +123,8 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>
+      </AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -154,6 +156,7 @@
     <ClInclude Include="Helper.h" />
     <ClInclude Include="MemoryHandler.h" />
     <ClInclude Include="NetworkHandler.h" />
+    <ClInclude Include="NidhoggClient.h" />
     <ClInclude Include="NidhoggInterface.h" />
     <ClInclude Include="NidhoggIoctls.h" />
     <ClInclude Include="NidhoggStructs.h" />

@@ -13,13 +13,13 @@ public:
 	NetworkHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Network", hNidhogg) {};
 
 	void PrintHelp() override {
-		std::cout << "Options:" << std::endl;
-		std::cout << "exit - Exit the program" << std::endl;
-		std::cout << "back - Go back to the main menu" << std::endl;
-		std::cout << "[hide] [port number] [tcp/udp] [remote/local] - Hide a port" << std::endl;
-		std::cout << "[unhide | restore] [port number] [tcp/udp] [remote/local] - Revealing a port after hiding it" << std::endl;
-		std::cout << "list - Listing the currently hidden ports" << std::endl;
-		std::cout << "clear - Clear all hidden ports" << std::endl;
+		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "exit - Exit the program" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide [port number] [tcp/udp] [remote/local] - Hide a port" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide | restore] [port number] [tcp/udp] [remote/local] - Revealing a port after hiding it" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list - Listing the currently hidden ports" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all hidden ports" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

@@ -117,7 +117,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		HideDriver(driverPath, true) ? std::wcout << L"Driver " << driverPath << L"hidden successfully." << std::endl :
 			std::wcerr << L"Failed to hide driver " << driverPath << std::endl;
 	} 
-	else if (commandName.compare("unhide_driver") == 0 || commandName.compare("reveal_driver") == 0) {
+	else if (commandName.compare("unhide_driver") == 0 || commandName.compare("restore_driver") == 0) {
 		std::wstring driverPath = L"";
 
 		if (params.size() != 2) {

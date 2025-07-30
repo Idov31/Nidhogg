@@ -6,13 +6,13 @@ NidhoggInterface::NidhoggInterface() {
 
 	if (!IsValidHandle(hNidhogg.get()))
 		throw NidhoggInterfaceException("Failed to open Nidhogg device " + std::to_string(GetLastError()));
-	commandHandlers["AntiAnalysis"] = std::make_unique<AntiAnalysisHandler>(hNidhogg);
-	commandHandlers["File"] = std::make_unique<FileHandler>(hNidhogg);
-	commandHandlers["Memory"] = std::make_unique<MemoryHandler>(hNidhogg);
-	commandHandlers["Network"] = std::make_unique<NetworkHandler>(hNidhogg);
-	commandHandlers["Process"] = std::make_unique<ProcessHandler>(hNidhogg);
-	commandHandlers["Registry"] = std::make_unique<RegistryHandler>(hNidhogg);
-	commandHandlers["Thread"] = std::make_unique<ThreadHandler>(hNidhogg);
+	commandHandlers["antianalysis"] = std::make_unique<AntiAnalysisHandler>(hNidhogg);
+	commandHandlers["file"] = std::make_unique<FileHandler>(hNidhogg);
+	commandHandlers["memory"] = std::make_unique<MemoryHandler>(hNidhogg);
+	commandHandlers["network"] = std::make_unique<NetworkHandler>(hNidhogg);
+	commandHandlers["process"] = std::make_unique<ProcessHandler>(hNidhogg);
+	commandHandlers["registry"] = std::make_unique<RegistryHandler>(hNidhogg);
+	commandHandlers["thread"] = std::make_unique<ThreadHandler>(hNidhogg);
 }
 
 NidhoggInterface::~NidhoggInterface() {
@@ -35,16 +35,17 @@ void NidhoggInterface::HandleCommands() {
 	std::string command = "";
 
 	while (!exit) {
-		std::cout << "[Nidhogg :: Main]>> ";
+		std::cout << termcolor::magenta << "[Nidhogg :: Main]>> " << termcolor::reset;
 		std::getline(std::cin, command);
+		ToLower(command);
 
 		if (command.compare("exit") == 0)
 			exit = true;
 		else if (command.empty() || command.compare("help") == 0) {
-			std::cout << "Available handlers: " << std::endl;
+			std::cout << termcolor::underline << termcolor::bright_magenta << "Available handlers:" << termcolor::reset << std::endl;
 
 			for (const auto& handler : commandHandlers) {
-				std::cout << handler.first << std::endl;
+				std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << handler.first << std::endl;
 			}
 			continue;
 		}
@@ -52,10 +53,10 @@ void NidhoggInterface::HandleCommands() {
 			commandHandlers[command]->GetCommand();
 		}
 		else {
-			std::cout << "Invalid command '" << command << "'" << std::endl << "Available handlers: " << std::endl;
+			std::cout << "Invalid handler '" << command << "'" << std::endl << "Available handlers: " << std::endl;
 
 			for (const auto& handler : commandHandlers) {
-				std::cout << handler.first << std::endl;
+				std::cout << "\t[*] " << handler.first << std::endl;
 			}
 			continue;
 		}
@@ -71,8 +72,9 @@ void NidhoggInterface::HandleCommand(_In_ std::string handler, _In_ std::string 
 	else {
 		std::cout << "Invalid handler '" << handler << "'" << std::endl;
 		std::cout << "Available handlers: " << std::endl;
-		for (const auto& h : commandHandlers) {
-			std::cout << h.first << std::endl;
+
+		for (const auto& handler : commandHandlers) {
+			std::cout << "\t[*] " << handler.first << std::endl;
 		}
 	}
 }

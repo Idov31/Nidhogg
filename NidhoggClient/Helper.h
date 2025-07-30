@@ -19,6 +19,8 @@ public:
     }
 };
 
+bool EnableColors();
+void ToLower(_Inout_ std::string& str);
 std::wstring GetCurrentUserSID();
 std::vector<std::string> SplitStringBySpace(_In_ const std::string& str);
 std::vector<std::wstring> SplitStringBySpaceW(_In_ const std::string& str);

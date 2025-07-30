@@ -1,7 +1,11 @@
 #include "pch.h"
-#include "NidhoggInterface.h"
+#include "NidhoggClient.h"
 
 int main(int argc, char* argv[]) {
+	if (!EnableColors())
+		std::cerr << "Failed to enable colors in console :(" << std::endl;
+	PrintAsciiArt();
+
 	try {
 		NidhoggInterface nidhoggInterface = NidhoggInterface();
 		nidhoggInterface.HandleCommands();

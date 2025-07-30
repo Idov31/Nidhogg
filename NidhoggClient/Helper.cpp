@@ -1,6 +1,44 @@
 #include "pch.h"
 #include "Helper.h"
 
+bool EnableColors() {
+	DWORD oldMode = 0;
+	DWORD newMode = 0;
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	if (!hConsole || hConsole == INVALID_HANDLE_VALUE) {
+		std::cerr << "Failed to get console handle" << std::endl;
+		return false;
+	}
+	if (!GetConsoleMode(hConsole, &oldMode)) {
+		std::cerr << "Failed to get console mode" << std::endl;
+		return false;
+	}
+	newMode = oldMode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	
+	if (!SetConsoleMode(hConsole, newMode)) {
+		std::cerr << "Failed to set console mode" << std::endl;
+		return false;
+	}
+	return true;
+}
+
+/*
+* Description:
+* ToLower is responsible for converting a string to lowercase.
+* 
+* Parameters:
+* @str [_Inout_ std::string&] -- The string to be converted to lowercase.
+* 
+* Returns:
+* There is no return value, the string is modified in place.
+*/
+void ToLower(_Inout_ std::string& str) {
+	for (char& c : str) {
+		c = static_cast<char>(std::tolower(c));
+	}
+}
+
 /*
 * Description:
 * GetCurrentUserSID is responsible for getting the current user's SID.

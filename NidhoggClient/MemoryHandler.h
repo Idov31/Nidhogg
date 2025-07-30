@@ -35,19 +35,19 @@ public:
 	MemoryHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Memory", hNidhogg) {};
 
 	void PrintHelp() override {
-		std::cout << "Options:" << std::endl;
-		std::cout << "exit - Exit the program" << std::endl;
-		std::cout << "back - Go back to the main menu" << std::endl;
-		std::cout << "dump_creds - Dumping credentials from LSASS" << std::endl;
-		std::cout << "hide_module [pid] [module path] - Hiding a module inside a process" << std::endl;
-		std::cout << "hide_driver [driver path] - Hiding a driver" << std::endl;
-		std::cout << "[unhide_driver | reveal_driver] [driver path] - Revealing a driver after hiding it" << std::endl;
-		std::cout << "inject_dll [apc | thread] [pid] [dll path] - Injecting a DLL into a process" << std::endl;
-		std::cout << "inject_shellcode [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3] - Injecting shellcode into a process" << std::endl;
-		std::cout << "patch [pid] [module name] [function name] [patch comma separated] - Patching a module inside a process" << std::endl;
-		std::cout << "patch_amsi [pid] - Patch AMSI in a process" << std::endl;
-		std::cout << "patch_etw [pid] - Patch ETW in a process" << std::endl;
-		std::cout << "execute_script [script_file] - Execute a script in the kernel" << std::endl;
+		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "exit - Exit the program" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "dump_creds - Dumping credentials from LSASS" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide_module [pid] [module path] - Hiding a module inside a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide_driver [driver path] - Hiding a driver" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide_driver | restore_driver] [driver path] - Revealing a driver after hiding it" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "inject_dll [apc | thread] [pid] [dll path] - Injecting a DLL into a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "inject_shellcode [apc | thread] [pid] [shellcode file] [parameter 1] [parameter 2] [parameter 3] - Injecting shellcode into a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch [pid] [module name] [function name] [patch comma separated] - Patching a module inside a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch_amsi [pid] - Patch AMSI in a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch_etw [pid] - Patch ETW in a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "execute_script [script_file] - Execute a script in the kernel" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

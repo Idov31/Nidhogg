@@ -43,15 +43,15 @@ public:
 	RegistryHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Registry", hNidhogg) {};
 
 	void PrintHelp() override {
-		std::cout << "Options:" << std::endl;
-		std::cout << "exit - Exit the program" << std::endl;
-		std::cout << "back - Go back to the main menu" << std::endl;
-		std::cout << "[add | protect] [key] [value] - Protecting a registry key or value from being deleted" << std::endl;
-		std::cout << "[remove | unprotect] [key] [value] - Removing protection from a registry key or value" << std::endl;
-		std::cout << "[hide] [key] [value] - Hide a a registry key or value" << std::endl;
-		std::cout << "[unhide | restore] [pid] - Revealing a registry key or value after hiding it" << std::endl;
-		std::cout << "list [hidden | protected] [keys | values] - Listing the currently hidden or protected registry keys or values" << std::endl;
-		std::cout << "clear - Clear all hidden or protected registry keys or values" << std::endl;
+		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "exit - Exit the program" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[add | protect] [key] [value] - Protecting a registry key or value from being deleted" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[remove | unprotect] [key] [value] - Removing protection from a registry key or value" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide [key] [value] - Hide a a registry key or value" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide | restore] [pid] - Revealing a registry key or value after hiding it" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list [hidden | protected] [keys | values] - Listing the currently hidden or protected registry keys or values" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all hidden or protected registry keys or values" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

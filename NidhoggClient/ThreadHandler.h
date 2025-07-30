@@ -14,15 +14,15 @@ public:
 	ThreadHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Thread", hNidhogg) {};
 
 	void PrintHelp() override {
-		std::cout << "Options:" << std::endl;
-		std::cout << "exit - Exit the program" << std::endl;
-		std::cout << "back - Go back to the main menu" << std::endl;
-		std::cout << "[add | protect] [pid] - Protecting a thread from being killed" << std::endl;
-		std::cout << "[remove | unprotect] [pid] - Removing protection from a thread" << std::endl;
-		std::cout << "[hide] [pid] - Hide a process" << std::endl;
-		std::cout << "[unhide | restore] [pid] - Revealing a process after hiding it" << std::endl;
-		std::cout << "list - Listing the currently protected threads" << std::endl;
-		std::cout << "clear - Clear all protected threads" << std::endl;
+		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "exit - Exit the program" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[add | protect] [tid] - Protecting a thread from being killed" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[remove | unprotect] [tid] - Removing protection from a thread" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide [tid] - Hide a thread" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide | restore] [tid] - Revealing a process after hiding it" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list - Listing the currently protected threads" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all protected threads" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

@@ -20,12 +20,16 @@ public:
 		std::string command = "";
 
 		do {
-			std::cout << "[Nidhogg :: " << contextName << "]>> ";
+			std::cout << termcolor::magenta << "[Nidhogg :: " << contextName << "]>> " << termcolor::reset;
 			std::cin >> command;
 
-			if (command.compare("back") == 0)
+			if (command.empty() || command.compare("help") == 0) {
+				PrintHelp();
+				continue;
+			}
+			else if (command.compare("back") == 0)
 				break;
-			if (command.compare("exit") == 0)
+			else if (command.compare("exit") == 0)
 				exit(0); // TODO: Handle exit gracefully
 			HandleCommand(command);
 			command = "";
