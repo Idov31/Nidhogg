@@ -8,7 +8,20 @@ int main(int argc, char* argv[]) {
 
 	try {
 		NidhoggInterface nidhoggInterface = NidhoggInterface();
-		nidhoggInterface.HandleCommands();
+
+		switch (argc) {
+			case 1:
+				nidhoggInterface.HandleCommands();
+				break;
+			case 3:
+				nidhoggInterface.HandleCommand(argv[1], argv[2]);
+				break;
+			default:
+				std::cerr << termcolor::underline << termcolor::red << "Invalid number of arguments!" << termcolor::reset << std::endl;
+				std::cerr << "\t" << argv[0] << std::endl;
+				std::cerr << "\t" << argv[0] <<" <command> <argument>" << std::endl;
+				return ERROR_INVALID_PARAMETER;
+		}
 	}
 	catch (const NidhoggInterfaceException& e) {
 		std::cerr << "Error: " << e.what() << std::endl;
