@@ -1,0 +1,3 @@
+[submodule "termcolor"]
+	path = termcolor
+	url = https://github.com/ikalnytskyi/termcolor
