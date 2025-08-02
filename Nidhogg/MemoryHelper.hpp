@@ -6,6 +6,10 @@ extern "C" {
 }
 #include "NidhoggCommon.h"
 
+constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) -> bool {
+	return dataSize != 0 && dataSize % structSize == 0;
+};
+
 /*
 * Description:
 * FindPattern is responsible for finding a pattern in memory range.
@@ -100,7 +104,7 @@ inline void FreeVirtualMemory(_In_ PVOID address) {
 * @ptr					[PointerType] -- Allocated pointer on success else NULL.
 */
 template <typename PointerType>
-inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) {
+inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
 	PVOID allocatedMem = NULL;
 
 	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
