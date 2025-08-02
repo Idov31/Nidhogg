@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "NetworkParser.h"
-#include "NetworkUtils.hpp"
+#include "NetworkUtils.h"
 
 NetworkParser::NetworkParser() {
 	this->optionsSize = 3;

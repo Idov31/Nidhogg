@@ -1,4 +1,5 @@
 #pragma once
+#include "pch.h"
 
 // Globals
 inline ULONG WindowsBuildNumber = 0;

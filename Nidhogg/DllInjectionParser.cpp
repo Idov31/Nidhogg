@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "DllInjectionParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryUtils.h"
+#include "ProcessUtils.h"
 
 DllInjectionParser::DllInjectionParser() {
 	this->optionsSize = 2;

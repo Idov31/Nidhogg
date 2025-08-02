@@ -1,7 +1,7 @@
 #include "pch.h"
 #include <bcrypt.h>
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryUtils.h"
+#include "ProcessUtils.h"
 #include "MemoryAllocator.hpp"
 #include "MemoryHelper.hpp"
 

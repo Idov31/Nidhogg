@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "ShellcodeInjectionParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryUtils.h"
+#include "ProcessUtils.h"
 
 ShellcodeInjectionParser::ShellcodeInjectionParser() {
 	this->paramsSize = nullptr;

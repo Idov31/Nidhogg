@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ProcessParser.h"
-#include "ProcessUtils.hpp"
+#include "ProcessUtils.h"
 
 ProcessParser::ProcessParser() {
 	this->optionsSize = 7;

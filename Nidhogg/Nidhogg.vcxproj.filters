@@ -31,28 +31,28 @@
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ProcessUtils.hpp">
+    <ClInclude Include="ProcessUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="FileUtils.hpp">
+    <ClInclude Include="FileUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="RegistryUtils.hpp">
+    <ClInclude Include="RegistryUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="WindowsTypes.hpp">
+    <ClInclude Include="WindowsTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryUtils.hpp">
+    <ClInclude Include="MemoryUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Nidhogg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NidhoggDeviceControl.hpp">
+    <ClInclude Include="NidhoggDeviceControl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="AntiAnalysis.hpp">
+    <ClInclude Include="AntiAnalysis.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MemoryAllocator.hpp">
@@ -61,7 +61,7 @@
     <ClInclude Include="MemoryHelper.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NetworkUtils.hpp">
+    <ClInclude Include="NetworkUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BaseParser.h">
@@ -109,7 +109,7 @@
     <ClInclude Include="Parsers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="InitialOperation.hpp">
+    <ClInclude Include="InitialOperation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

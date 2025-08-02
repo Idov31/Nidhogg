@@ -2,7 +2,7 @@
 #include "pch.h"
 
 extern "C" {
-	#include "WindowsTypes.hpp"
+	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
 

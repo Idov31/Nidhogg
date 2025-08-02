@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "ProcessUtils.hpp"
+#include "ProcessUtils.h"
 #include "MemoryHelper.hpp"
 
 ProcessUtils::ProcessUtils() {

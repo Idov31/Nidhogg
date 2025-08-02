@@ -4,7 +4,7 @@
 #include "MemoryHelper.hpp"
 
 extern "C" {
-	#include "WindowsTypes.hpp"
+	#include "WindowsTypes.h"
 	#include "NidhoggCommon.h"
 }
 

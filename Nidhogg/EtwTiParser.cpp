@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "EtwTiParser.h"
-#include "AntiAnalysis.hpp"
+#include "AntiAnalysis.h"
 
 EtwTiParser::EtwTiParser() {
 	this->optionsSize = 2;

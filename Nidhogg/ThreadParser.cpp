@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ThreadParser.h"
-#include "ProcessUtils.hpp"
+#include "ProcessUtils.h"
 
 ThreadParser::ThreadParser() {
 	this->optionsSize = 5;

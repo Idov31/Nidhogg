@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "PatchParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryUtils.h"
+#include "ProcessUtils.h"
 
 /*
 * Description:

@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "RegistryUtils.hpp"
+#include "RegistryUtils.h"
 #include "MemoryAllocator.hpp"
 
 RegistryUtils::RegistryUtils() {

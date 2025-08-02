@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "ModuleParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryUtils.h"
+#include "ProcessUtils.h"
 
 ModuleParser::ModuleParser() {
 	this->optionsSize = 1;

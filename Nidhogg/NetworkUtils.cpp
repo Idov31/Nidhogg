@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "NetworkUtils.hpp"
+#include "NetworkUtils.h"
 
 NetworkUtils::NetworkUtils() {
 	this->CallbackActivated = false;

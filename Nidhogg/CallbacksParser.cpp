@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "CallbacksParser.h"
-#include "AntiAnalysis.hpp"
+#include "AntiAnalysis.h"
 
 CallbacksParser::CallbacksParser() {
 	this->optionsSize = 2;

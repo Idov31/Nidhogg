@@ -11,8 +11,8 @@ class NidhoggPostOperations():
 
         # If the initial operations file exists, read it.
         if os.path.exists(os.path.join(self.current_path, "out.ndhg")):
-            with open(os.path.join(self.current_path, "out.ndhg"), "rb") as initial_opearations_file:
-                data = initial_opearations_file.read()
+            with open(os.path.join(self.current_path, "out.ndhg"), "rb") as initial_operations_file:
+                data = initial_operations_file.read()
                 operations_size = len(data)
                 hexed_data = [hex(b) for b in data]
                 initial_operations = ",".join(hexed_data)
@@ -28,8 +28,8 @@ class NidhoggPostOperations():
             new_initial_operations += 'constexpr UCHAR InitialOperations[InitialOperationsSize] = {' + initial_operations + '};\n'
 
         # Writing the new header file.
-        with open(os.path.join(self.current_path, "Nidhogg\\InitialOperation.hpp"), "w") as initial_opeartions_header:
-            initial_opeartions_header.write(new_initial_operations)
+        with open(os.path.join(self.current_path, "Nidhogg\\InitialOperation.h"), "w") as initial_operations_header:
+            initial_operations_header.write(new_initial_operations)
     
 
 def main():

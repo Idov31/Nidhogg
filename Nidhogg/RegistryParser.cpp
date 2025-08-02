@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "RegistryParser.h"
-#include "RegistryUtils.hpp"
+#include "RegistryUtils.h"
 
 RegistryParser::RegistryParser() {
 	this->optionsSize = 5;
