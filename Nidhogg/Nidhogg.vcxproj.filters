@@ -112,6 +112,15 @@
     <ClInclude Include="InitialOperation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ThreadHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ListHelper.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcessHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">
@@ -181,6 +190,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NetworkParser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ProcessHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

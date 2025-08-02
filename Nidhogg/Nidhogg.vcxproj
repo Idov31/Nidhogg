@@ -216,6 +216,7 @@
     <ClInclude Include="EtwTiParser.h" />
     <ClInclude Include="FileParser.h" />
     <ClInclude Include="InitialOperation.h" />
+    <ClInclude Include="ListHelper.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.h" />
     <ClInclude Include="AutoLock.h" />
@@ -232,6 +233,7 @@
     <ClInclude Include="PatchParser.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="NetworkParser.h" />
+    <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="ProcessParser.h" />
     <ClInclude Include="ProcessUtils.h" />
     <ClInclude Include="RegistryUtils.h" />
@@ -239,6 +241,7 @@
     <ClInclude Include="ScriptManager.h" />
     <ClInclude Include="ShellcodeInjectionParser.h" />
     <ClInclude Include="ThreadParser.h" />
+    <ClInclude Include="ThreadHandler.h" />
     <ClInclude Include="WindowsTypes.h" />
   </ItemGroup>
   <ItemGroup>
@@ -261,6 +264,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="NetworkParser.cpp" />
+    <ClCompile Include="ProcessHelper.cpp" />
     <ClCompile Include="ProcessParser.cpp" />
     <ClCompile Include="ProcessUtils.cpp" />
     <ClCompile Include="RegistryUtils.cpp" />
@@ -268,6 +272,7 @@
     <ClCompile Include="ScriptManager.cpp" />
     <ClCompile Include="ShellcodeInjectionParser.cpp" />
     <ClCompile Include="ThreadParser.cpp" />
+    <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
