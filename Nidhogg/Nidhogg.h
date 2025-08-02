@@ -5,7 +5,7 @@ extern "C" {
 	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
-#include "ProcessUtils.h"
+#include "ProcessHandler.h"
 #include "MemoryUtils.h"
 #include "FileUtils.h"
 #include "RegistryUtils.h"

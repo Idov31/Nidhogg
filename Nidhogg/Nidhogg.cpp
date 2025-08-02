@@ -235,7 +235,7 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 * There is no return value.
 */
 void ClearAll() {
-	delete NidhoggProccessUtils;
+	delete NidhoggProcessHandler;
 	delete NidhoggFileUtils;
 	delete NidhoggMemoryUtils;
 	delete NidhoggAntiAnalysis;
@@ -270,9 +270,9 @@ bool InitializeFeatures() {
 	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
 
 	// Initialize utils.
-	NidhoggProccessUtils = new ProcessUtils();
+	NidhoggProcessHandler = new ProcessUtils();
 
-	if (!NidhoggProccessUtils)
+	if (!NidhoggProcessHandler)
 		return false;
 
 	NidhoggFileUtils = new FileUtils();

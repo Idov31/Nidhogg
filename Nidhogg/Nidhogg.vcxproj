@@ -235,7 +235,7 @@
     <ClInclude Include="NetworkParser.h" />
     <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="ProcessParser.h" />
-    <ClInclude Include="ProcessUtils.h" />
+    <ClInclude Include="ProcessHandler.h" />
     <ClInclude Include="RegistryUtils.h" />
     <ClInclude Include="RegistryParser.h" />
     <ClInclude Include="ScriptManager.h" />
