@@ -34,24 +34,12 @@ using MatcherFunction = bool(*)(const ListItem* item, Searchable searchable);
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
-inline bool AddEntry(_Inout_ List list, _In_ ListItem* entryToAdd) {
-	NTSTATUS status = NidhoggMemoryUtils->KeWriteProcessMemory(entryToAdd,
-		PsGetCurrentProcess(),
-		newEntry,
-		sizeof(ListItem),
-		KernelMode);
-
-	if (!NT_SUCCESS(status)) {
-		FreeVirtualMemory(newEntry);
-		return false;
-	}
-	InitializeListHead(&newEntry->Entry);
+inline void AddEntry(_Inout_ List list, _In_ ListItem* entryToAdd) {
+	InitializeListHead(&entryToAdd->Entry);
 
 	AutoLock locker(list.Lock);
 	list.Count++;
-	InsertTailList(list.Items, &newEntry->Entry);
-
-	return true;
+	InsertTailList(list.Items, &entryToAdd->Entry);
 }
 
 /*
