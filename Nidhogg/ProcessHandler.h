@@ -11,9 +11,10 @@ extern "C" {
 #include "MemoryUtils.h"
 
 // Structs
-enum ProcessType {
+enum class ProcessType {
 	Protected,
-	Hidden
+	Hidden,
+	All
 };
 
 struct IoctlProcessEntry {
@@ -22,6 +23,7 @@ struct IoctlProcessEntry {
 };
 
 struct IoctlProcessList {
+	ProcessType Type;
 	SIZE_T Count;
 	ULONG* Processes;
 };
@@ -71,7 +73,7 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	ProcessHandler();
+	ProcessHandler() noexcept;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	~ProcessHandler();
@@ -80,7 +82,7 @@ public:
 	bool FindProcess(_In_ ULONG pid, _In_ ProcessType type) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
-	bool AddProtectedProcess(_In_ ULONG pid);
+	bool ProtectProcess(_In_ ULONG pid);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	bool RemoveProcess(_In_ ULONG pid, _In_ ProcessType type);

