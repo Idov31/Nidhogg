@@ -7,6 +7,8 @@ extern "C" {
 	#include "WindowsTypes.h"
 	#include "NidhoggCommon.h"
 }
+#include "ProcessHelper.h"
+#include "MemoryAllocator.hpp"
 
 // Definitions.
 constexpr SIZE_T MAX_HIDDEN_DRIVERS = 255;

