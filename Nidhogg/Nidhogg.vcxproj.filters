@@ -49,9 +49,6 @@
     <ClInclude Include="Nidhogg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NidhoggDeviceControl.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="AntiAnalysis.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -121,6 +118,9 @@
     <ClInclude Include="ProcessHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="IrpHandlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">
@@ -138,7 +138,7 @@
     <ClCompile Include="MemoryUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ProcessUtils.cpp">
+    <ClCompile Include="ProcessHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="RegistryUtils.cpp">
@@ -196,6 +196,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ProcessHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IrpHandlers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -6,13 +6,14 @@ extern "C" {
 }
 #include "NidhoggCommon.h"
 #include "ProcessHandler.h"
+#include "ThreadHandler.h"
 #include "MemoryUtils.h"
 #include "FileUtils.h"
 #include "RegistryUtils.h"
 #include "AntiAnalysis.h"
 #include "NetworkUtils.h"
 #include "ScriptManager.h"
-#include "NidhoggDeviceControl.h"
+#include "IrpHandlers.h"
 #include "InitialOperation.h"
 
 // Definitions.
@@ -26,7 +27,6 @@ constexpr SIZE_T REGISTERED_OB_CALLBACKS = 2;
 // Prototypes.
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 DRIVER_UNLOAD NidhoggUnload;
-DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
 void ClearAll();
 bool InitializeFeatures();
 void ExecuteInitialOperations();
