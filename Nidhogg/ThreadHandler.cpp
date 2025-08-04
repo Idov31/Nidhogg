@@ -4,10 +4,12 @@
 _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::ThreadHandler() noexcept {
 	this->protectedThreads.Count = 0;
+	this->protectedThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 	InitializeListHead(this->protectedThreads.Items);
 	this->protectedThreads.Lock.Init();
 
 	this->hiddenThreads.Count = 0;
+	this->hiddenThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 	InitializeListHead(this->hiddenThreads.Items);
 	this->hiddenThreads.Lock.Init();
 }
@@ -16,6 +18,8 @@ _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::~ThreadHandler() {
 	ClearThreadList(ThreadType::Protected);
 	ClearThreadList(ThreadType::Hidden);
+	FreeVirtualMemory(this->protectedThreads.Items);
+	FreeVirtualMemory(this->hiddenThreads.Items);
 }
 
 /*

