@@ -110,12 +110,18 @@ inline bool RemoveListEntry(_Inout_ List list, _In_ ListItem* entry) {
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List list) {
+	ListItem* entry = nullptr;
 	AutoLock locker(list.Lock);
 
-	while (!IsListEmpty(list.Items)) {
-		PLIST_ENTRY current = RemoveHeadList(list.Items);
-		ListItem* entry = CONTAINING_RECORD(current, ListItem, Entry);
+	if (list.Count == 0 || !list.Items)
+		return;
+	PLIST_ENTRY current = list.Items->Flink;
+
+	while (current != list.Items) {
+		entry = CONTAINING_RECORD(current, ListItem, Entry);
+		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
+		current = current->Flink;
 	}
 	list.Count = 0;
 }
