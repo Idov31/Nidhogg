@@ -121,6 +121,9 @@
     <ClInclude Include="IrpHandlers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FileHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">
@@ -199,6 +202,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="IrpHandlers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MemoryHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

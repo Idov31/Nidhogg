@@ -214,6 +214,7 @@
     <ClInclude Include="DllInjectionParser.h" />
     <ClInclude Include="DriverParser.h" />
     <ClInclude Include="EtwTiParser.h" />
+    <ClInclude Include="FileHelper.h" />
     <ClInclude Include="FileParser.h" />
     <ClInclude Include="InitialOperation.h" />
     <ClInclude Include="IrpHandlers.h" />
@@ -252,9 +253,11 @@
     <ClCompile Include="DriverParser.cpp" />
     <ClCompile Include="EtwTiParser.cpp" />
     <ClCompile Include="FastMutex.cpp" />
+    <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="FileParser.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="IrpHandlers.cpp" />
+    <ClCompile Include="MemoryHelper.cpp" />
     <ClCompile Include="MemoryUtils.cpp" />
     <ClCompile Include="ModuleParser.cpp" />
     <ClCompile Include="NetworkUtils.cpp" />
