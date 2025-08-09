@@ -1,6 +1,6 @@
 #pragma once
 #include "pch.h"
-#include "MemoryUtils.h"
+#include "MemoryHelper.hpp"
 
 constexpr WCHAR NTFS_DRIVER_PATH[] = L"\\FileSystem\\NTFS";
 constexpr WCHAR CURRENT_VERSION_REGISTRY_KEY[] = L"\\Registry\\Machine\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion";
