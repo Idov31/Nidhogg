@@ -219,7 +219,7 @@ void ExecuteInitialOperations() {
 void ClearAll() {
 	delete NidhoggProcessHandler;
 	delete NidhoggThreadHandler;
-	delete NidhoggFileUtils;
+	delete NidhoggFileHandler;
 	delete NidhoggMemoryUtils;
 	delete NidhoggAntiAnalysis;
 	delete NidhoggRegistryUtils;
@@ -263,9 +263,9 @@ bool InitializeFeatures() {
 	if (!NidhoggThreadHandler)
 		return false;
 
-	NidhoggFileUtils = new FileUtils();
+	NidhoggFileHandler = new FileHandler();
 
-	if (!NidhoggFileUtils)
+	if (!NidhoggFileHandler)
 		return false;
 
 	NidhoggMemoryUtils = new MemoryUtils();

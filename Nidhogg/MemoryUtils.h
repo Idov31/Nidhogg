@@ -8,6 +8,7 @@ extern "C" {
 	#include "NidhoggCommon.h"
 }
 #include "ProcessHelper.h"
+#include "FileHelper.h"
 #include "MemoryAllocator.hpp"
 
 // Definitions.
@@ -168,8 +169,6 @@ public:
 	~MemoryUtils();
 
 	PVOID GetFuncAddress(const char* functionName, const wchar_t* moduleName, ULONG pid = 0);
-	NTSTATUS KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode, bool alignAddr = true);
-	NTSTATUS KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
 	NTSTATUS PatchModule(PatchedModule* ModuleInformation);
 	NTSTATUS InjectShellcodeAPC(ShellcodeInformation* ShellcodeInformation, bool isInjectedDll = false);
 	NTSTATUS InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo);

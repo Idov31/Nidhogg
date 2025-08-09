@@ -24,15 +24,16 @@ struct ProtectedFile {
 	bool Protect;
 };
 
-struct IoctlFileList {
-	SIZE_T Count;
-	FileItem* Files;
-};
-
 struct FileItem {
 	LIST_ENTRY Entry;
 	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];
+};
+
+struct IoctlFileList {
+	FileType Type;
+	SIZE_T Count;
+	FileItem* Files;
 };
 
 struct FilesList {

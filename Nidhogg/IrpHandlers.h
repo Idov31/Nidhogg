@@ -55,8 +55,8 @@ constexpr ULONG IOCTL_EXEC_SCRIPT = static_cast<ULONG>(CTL_CODE(0x8000, 0x81F, M
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
-NTSTATUS NidhoggCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
+NTSTATUS NidhoggCreateClose(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
-NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
+NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);

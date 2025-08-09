@@ -7,13 +7,13 @@
 * Every user communication should go through this function using the relevant IOCTL.
 *
 * Parameters:
-* @DeviceObject [_In_ PDEVICE_OBJECT] -- Not used.
-* @Irp			[_Inout_ PIRP]		  -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
+* @DeviceObject [_Inout_ PDEVICE_OBJECT] -- Not used.
+* @Irp			[_Inout_ PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
 *
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
-NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
+NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 
 	NTSTATUS status = STATUS_SUCCESS;
@@ -422,32 +422,19 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 		}
 
 		if (protectedFile.Protect) {
-			if (NidhoggFileUtils->GetFilesCount() == MAX_FILES) {
-				Print(DRIVER_PREFIX "List is full.\n");
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
+			if (!NidhoggFileHandler->ProtectFile(protectedFile.FilePath)) {
+				Print(DRIVER_PREFIX "Failed to add file.\n");
+				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			if (!NidhoggFileUtils->FindFile(protectedFile.FilePath)) {
-				if (!NidhoggFileUtils->AddFile(protectedFile.FilePath)) {
-					Print(DRIVER_PREFIX "Failed to add file.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
-
-				auto prevIrql = KeGetCurrentIrql();
-				KeLowerIrql(PASSIVE_LEVEL);
-				Print(DRIVER_PREFIX "Protecting file %ws.\n", protectedFile.FilePath);
-				KeRaiseIrql(prevIrql, &prevIrql);
-			}
+			auto prevIrql = KeGetCurrentIrql();
+			KeLowerIrql(PASSIVE_LEVEL);
+			Print(DRIVER_PREFIX "Protecting file %ws.\n", protectedFile.FilePath);
+			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 		else {
-			if (NidhoggFileUtils->GetFilesCount() == 0) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			if (!NidhoggFileUtils->RemoveFile(protectedFile.FilePath)) {
+			if (!NidhoggFileHandler->RemoveFile(protectedFile.FilePath, FileType::Protected)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
@@ -470,25 +457,35 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 			break;
 		}
 
-		NidhoggFileUtils->ClearFilesList();
+		NidhoggFileHandler->ClearFilesList(FileType::Protected);
 		break;
 	}
 
 	case IOCTL_LIST_FILES:
 	{
-		if (!Features.FileProtection) {
-			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!IsValidSize(size, sizeof(FileItem))) {
+		if (!IsValidSize(size, sizeof(IoctlFileList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<FileItem*>(Irp->AssociatedIrp.SystemBuffer);
-		status = NidhoggFileUtils->QueryFiles(data);
+		auto data = static_cast<IoctlFileList*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (data->Type) {
+		case FileType::Protected: {
+			if (!Features.FileProtection) {
+				Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+			status = NidhoggFileHandler->ListProtectedFiles(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+			break;
+		}
+		default: {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+		}
 
 		len += size;
 		break;
@@ -1354,15 +1351,15 @@ NTSTATUS NidhoggDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp
 * NidhoggCreateClose is responsible for creating a success response for given IRP.
 *
 * Parameters:
-* @DeviceObject [PDEVICE_OBJECT] -- Not used.
-* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
+* @DeviceObject [_Inout_ PDEVICE_OBJECT] -- Not used.
+* @Irp			[_Inout_ PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
 *
 * Returns:
-* @status		[NTSTATUS]		 -- Always will be STATUS_SUCCESS.
+* @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
-NTSTATUS NidhoggCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
+NTSTATUS NidhoggCreateClose(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	Irp->IoStatus.Information = 0;
