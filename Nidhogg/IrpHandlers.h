@@ -5,7 +5,7 @@
 #include "ProcessHandler.h"
 #include "ThreadHandler.h"
 #include "MemoryUtils.h"
-#include "FileUtils.h"
+#include "FileHandler.h"
 #include "RegistryUtils.h"
 #include "AntiAnalysis.h"
 #include "NetworkUtils.h"

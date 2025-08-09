@@ -223,7 +223,7 @@
     <ClInclude Include="AntiAnalysis.h" />
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />
-    <ClInclude Include="FileUtils.h" />
+    <ClInclude Include="FileHandler.h" />
     <ClInclude Include="MemoryUtils.h" />
     <ClInclude Include="MemoryHelper.hpp" />
     <ClInclude Include="ModuleParser.h" />
@@ -255,7 +255,7 @@
     <ClCompile Include="FastMutex.cpp" />
     <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="FileParser.cpp" />
-    <ClCompile Include="FileUtils.cpp" />
+    <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="IrpHandlers.cpp" />
     <ClCompile Include="MemoryHelper.cpp" />
     <ClCompile Include="MemoryUtils.cpp" />

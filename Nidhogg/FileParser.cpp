@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "FileParser.h"
-#include "FileUtils.h"
+#include "FileHandler.h"
 
 FileParser::FileParser() {
 	this->optionsSize = 3;
