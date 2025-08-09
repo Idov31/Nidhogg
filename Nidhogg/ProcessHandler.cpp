@@ -2,21 +2,28 @@
 #include "ProcessHandler.h"
 
 _IRQL_requires_max_(APC_LEVEL)
-ProcessHandler::ProcessHandler() noexcept {
+ProcessHandler::ProcessHandler() {
 	this->protectedProcesses.Count = 0;
 	protectedProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
+
+	if (!this->protectedProcesses.Items)
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+
 	InitializeListHead(this->protectedProcesses.Items);
 	this->protectedProcesses.Lock.Init();
 
 	this->hiddenProcesses.Count = 0;
-	hiddenProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-	InitializeListHead(this->protectedProcesses.Items);
+	this->hiddenProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
+
+	if (!this->hiddenProcesses.Items) {
+		FreeVirtualMemory(this->protectedProcesses.Items);
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+	}
 	this->hiddenProcesses.Lock.Init();
 }
 
 ProcessHandler::~ProcessHandler() {
-	ClearProcessList(ProcessType::Protected);
-	ClearProcessList(ProcessType::Hidden);
+	ClearProcessList(ProcessType::All);
 	FreeVirtualMemory(this->protectedProcesses.Items);
 	FreeVirtualMemory(this->hiddenProcesses.Items);
 }
@@ -389,6 +396,10 @@ void ProcessHandler::ClearProcessList(_In_ ProcessType type) {
 		ClearList<ProcessList, ProtectedProcessEntry>(this->protectedProcesses);
 		break;
 	case ProcessType::Hidden:
+		ClearList<ProcessList, HiddenProcessEntry>(this->hiddenProcesses);
+		break;
+	case ProcessType::All:
+		ClearList<ProcessList, ProtectedProcessEntry>(this->protectedProcesses);
 		ClearList<ProcessList, HiddenProcessEntry>(this->hiddenProcesses);
 		break;
 	}

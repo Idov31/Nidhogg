@@ -2,22 +2,29 @@
 #include "ThreadHandler.h"
 
 _IRQL_requires_max_(APC_LEVEL)
-ThreadHandler::ThreadHandler() noexcept {
+ThreadHandler::ThreadHandler() {
 	this->protectedThreads.Count = 0;
 	this->protectedThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
+
+	if (!this->protectedThreads.Items)
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 	InitializeListHead(this->protectedThreads.Items);
 	this->protectedThreads.Lock.Init();
 
 	this->hiddenThreads.Count = 0;
 	this->hiddenThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
+
+	if (!this->hiddenThreads.Items) {
+		FreeVirtualMemory(this->protectedThreads.Items);
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+	}
 	InitializeListHead(this->hiddenThreads.Items);
 	this->hiddenThreads.Lock.Init();
 }
 
 _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::~ThreadHandler() {
-	ClearThreadList(ThreadType::Protected);
-	ClearThreadList(ThreadType::Hidden);
+	ClearThreadList(ThreadType::All);
 	FreeVirtualMemory(this->protectedThreads.Items);
 	FreeVirtualMemory(this->hiddenThreads.Items);
 }
@@ -449,6 +456,10 @@ void ThreadHandler::ClearThreadList(_In_ ThreadType type) {
 		ClearList<ThreadList, ProtectedThreadEntry>(this->protectedThreads);
 		break;
 	case ThreadType::Hidden:
+		ClearList<ThreadList, HiddenThreadEntry>(this->hiddenThreads);
+		break;
+	case ThreadType::All:
+		ClearList<ThreadList, ProtectedThreadEntry>(this->protectedThreads);
 		ClearList<ThreadList, HiddenThreadEntry>(this->hiddenThreads);
 		break;
 	}

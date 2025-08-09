@@ -73,7 +73,7 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	ProcessHandler() noexcept;
+	ProcessHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
 	~ProcessHandler();

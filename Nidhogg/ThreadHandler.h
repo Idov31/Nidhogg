@@ -63,7 +63,7 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	ThreadHandler() noexcept;
+	ThreadHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
 	~ThreadHandler();
