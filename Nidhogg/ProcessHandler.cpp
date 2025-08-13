@@ -3,23 +3,13 @@
 
 _IRQL_requires_max_(APC_LEVEL)
 ProcessHandler::ProcessHandler() {
-	this->protectedProcesses.Count = 0;
-	protectedProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-
-	if (!this->protectedProcesses.Items)
+	if (!InitializeList(&protectedProcesses))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
-	InitializeListHead(this->protectedProcesses.Items);
-	this->protectedProcesses.Lock.Init();
-
-	this->hiddenProcesses.Count = 0;
-	this->hiddenProcesses.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-
-	if (!this->hiddenProcesses.Items) {
+	if (!InitializeList(&hiddenProcesses)) {
 		FreeVirtualMemory(this->protectedProcesses.Items);
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 	}
-	this->hiddenProcesses.Lock.Init();
 }
 
 ProcessHandler::~ProcessHandler() {

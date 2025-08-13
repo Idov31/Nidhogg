@@ -3,14 +3,8 @@
 
 _IRQL_requires_max_(APC_LEVEL)
 FileHandler::FileHandler() {
-	this->protectedFiles.Count = 0;
-	protectedFiles.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-
-	if (!this->protectedFiles.Items)
+	if (!InitializeList(&protectedFiles))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-
-	InitializeListHead(this->protectedFiles.Items);
-	this->protectedFiles.Lock.Init();
 	memset(this->Callbacks, 0, sizeof(this->Callbacks));
 }
 

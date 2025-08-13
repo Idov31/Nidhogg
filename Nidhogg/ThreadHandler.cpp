@@ -3,23 +3,13 @@
 
 _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::ThreadHandler() {
-	this->protectedThreads.Count = 0;
-	this->protectedThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-
-	if (!this->protectedThreads.Items)
+	if (!InitializeList(&protectedThreads))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-	InitializeListHead(this->protectedThreads.Items);
-	this->protectedThreads.Lock.Init();
 
-	this->hiddenThreads.Count = 0;
-	this->hiddenThreads.Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
-
-	if (!this->hiddenThreads.Items) {
+	if (!InitializeList(&hiddenThreads)) {
 		FreeVirtualMemory(this->protectedThreads.Items);
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 	}
-	InitializeListHead(this->hiddenThreads.Items);
-	this->hiddenThreads.Lock.Init();
 }
 
 _IRQL_requires_max_(APC_LEVEL)

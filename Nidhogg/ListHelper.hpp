@@ -24,6 +24,30 @@ using MatcherFunction = bool(*)(const ListItem* item, Searchable searchable);
 
 /*
 * Description:
+* InitializeList is responsible for initializing a list structure.
+* 
+* Parameters:
+* @list [_Inout_ List] -- List to initialize.
+* 
+* Returns:
+* @bool				   -- Whether successfully initialized or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+template<ListType List>
+inline bool InitializeList(_Inout_ List* list) {
+	list->Count = 0;
+	list->Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
+
+	if (!list->Items)
+		return false;
+
+	InitializeListHead(list->Items);
+	list->Lock.Init();
+	return true;
+}
+
+/*
+* Description:
 * AddEntry is responsible for adding an entry to a list.
 *
 * Parameters:
