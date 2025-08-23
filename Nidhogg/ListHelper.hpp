@@ -58,12 +58,12 @@ inline bool InitializeList(_Inout_ List* list) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
-inline void AddEntry(_Inout_ List list, _In_ ListItem* entryToAdd) {
+inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 	InitializeListHead(&entryToAdd->Entry);
 
-	AutoLock locker(list.Lock);
-	list.Count++;
-	InsertTailList(list.Items, &entryToAdd->Entry);
+	AutoLock locker(list->Lock);
+	list->Count++;
+	InsertTailList(list->Items, &entryToAdd->Entry);
 }
 
 /*
@@ -111,12 +111,12 @@ inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ 
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
-inline bool RemoveListEntry(_Inout_ List list, _In_ ListItem* entry) {
-	AutoLock locker(list.Lock);
+inline bool RemoveListEntry(_Inout_ List* list, _In_ ListItem* entry) {
+	AutoLock locker(list->Lock);
 	
 	if (!RemoveEntryList(&entry->Entry))
 		return false;
-	list.Count--;
+	list->Count--;
 	FreeVirtualMemory(entry);
 	return true;
 }
@@ -133,19 +133,19 @@ inline bool RemoveListEntry(_Inout_ List list, _In_ ListItem* entry) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
-inline void ClearList(_Inout_ List list) {
+inline void ClearList(_Inout_ List* list) {
 	ListItem* entry = nullptr;
-	AutoLock locker(list.Lock);
+	AutoLock locker(list->Lock);
 
-	if (list.Count == 0 || !list.Items)
+	if (list->Count == 0 || !list->Items)
 		return;
-	PLIST_ENTRY current = list.Items->Flink;
+	PLIST_ENTRY current = list->Items->Flink;
 
-	while (current != list.Items) {
+	while (current != list->Items) {
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
 		current = current->Flink;
 	}
-	list.Count = 0;
+	list->Count = 0;
 }

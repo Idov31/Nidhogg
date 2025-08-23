@@ -251,7 +251,7 @@ bool FileHandler::ProtectFile(_In_ WCHAR* path) {
 		FreeVirtualMemory(newEntry);
 		return false;
 	}
-	AddEntry<FilesList, FileItem>(protectedFiles, newEntry);
+	AddEntry<FilesList, FileItem>(&protectedFiles, newEntry);
 	return false;
 }
 
@@ -277,7 +277,7 @@ bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
 			return _wcsicmp(item->FilePath, path) == 0;
 		};
 		FileItem* entry = FindListEntry<FilesList, FileItem, WCHAR*>(protectedFiles, path, finder);
-		return RemoveListEntry<FilesList, FileItem>(protectedFiles, entry);
+		return RemoveListEntry<FilesList, FileItem>(&protectedFiles, entry);
 	}
 	default:
 		return false;
@@ -298,10 +298,10 @@ _IRQL_requires_max_(APC_LEVEL)
 void FileHandler::ClearFilesList(_In_ FileType type) {
 	switch (type) {
 		case FileType::Protected:
-			ClearList<FilesList, FileItem>(this->protectedFiles);
+			ClearList<FilesList, FileItem>(&this->protectedFiles);
 			break;
 		case FileType::All:
-			ClearList<FilesList, FileItem>(this->protectedFiles);
+			ClearList<FilesList, FileItem>(&this->protectedFiles);
 			break;
 	}
 }

