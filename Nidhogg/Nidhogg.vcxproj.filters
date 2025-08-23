@@ -37,7 +37,7 @@
     <ClInclude Include="FileHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="RegistryUtils.h">
+    <ClInclude Include="RegistryHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="WindowsTypes.h">
@@ -144,7 +144,7 @@
     <ClCompile Include="ProcessHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RegistryUtils.cpp">
+    <ClCompile Include="RegistryHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AntiAnalysis.cpp">

@@ -237,7 +237,7 @@
     <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="ProcessParser.h" />
     <ClInclude Include="ProcessHandler.h" />
-    <ClInclude Include="RegistryUtils.h" />
+    <ClInclude Include="RegistryHandler.h" />
     <ClInclude Include="RegistryParser.h" />
     <ClInclude Include="ScriptManager.h" />
     <ClInclude Include="ShellcodeInjectionParser.h" />
@@ -271,7 +271,7 @@
     <ClCompile Include="ProcessHelper.cpp" />
     <ClCompile Include="ProcessParser.cpp" />
     <ClCompile Include="ProcessHandler.cpp" />
-    <ClCompile Include="RegistryUtils.cpp" />
+    <ClCompile Include="RegistryHandler.cpp" />
     <ClCompile Include="RegistryParser.cpp" />
     <ClCompile Include="ScriptManager.cpp" />
     <ClCompile Include="ShellcodeInjectionParser.cpp" />

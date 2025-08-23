@@ -42,11 +42,11 @@ inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDepr
 			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED, size, DRIVER_TAG);
 	}
 	else {
-#pragma warning( push )
-#pragma warning( disable : 4996)
+#pragma warning(push)
+#pragma warning(disable : 4996)
 		allocatedMem = paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
 			ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
-#pragma warning( pop )
+#pragma warning(pop)
 	}
 
 	if (allocatedMem)

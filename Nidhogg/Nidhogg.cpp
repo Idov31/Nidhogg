@@ -105,7 +105,7 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			Features.ThreadProtection = false;
 		}
 
-		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryUtils->RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryHandler->regCookie, nullptr);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status);
@@ -143,7 +143,7 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	Print(DRIVER_PREFIX "Unloading...\n");
 
 	if (Features.RegistryFeatures) {
-		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryUtils->RegCookie);
+		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryHandler->regCookie);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status);
@@ -177,7 +177,7 @@ void ExecuteInitialOperations() {
 	ScriptManager* scriptManager = nullptr;
 	ScriptInformation scriptInfo{};
 
-	if (InitialOperationsSize == 0 || !InitialOperations)
+	if constexpr (InitialOperationsSize == 0 || !InitialOperations)
 		return;
 
 	scriptInfo.ScriptSize = InitialOperationsSize;
@@ -222,7 +222,7 @@ void ClearAll() {
 	delete NidhoggFileHandler;
 	delete NidhoggMemoryUtils;
 	delete NidhoggAntiAnalysis;
-	delete NidhoggRegistryUtils;
+	delete NidhoggRegistryHandler;
 	delete NidhoggNetworkUtils;
 }
 
@@ -278,9 +278,9 @@ bool InitializeFeatures() {
 	if (!NidhoggAntiAnalysis)
 		return false;
 
-	NidhoggRegistryUtils = new RegistryUtils();
+	NidhoggRegistryHandler = new RegistryHandler();
 
-	if (!NidhoggRegistryUtils)
+	if (!NidhoggRegistryHandler)
 		return false;
 
 	NidhoggNetworkUtils = new NetworkUtils();

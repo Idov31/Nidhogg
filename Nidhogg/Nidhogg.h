@@ -9,7 +9,7 @@ extern "C" {
 #include "ThreadHandler.h"
 #include "MemoryUtils.h"
 #include "FileHandler.h"
-#include "RegistryUtils.h"
+#include "RegistryHandler.h"
 #include "AntiAnalysis.h"
 #include "NetworkUtils.h"
 #include "ScriptManager.h"
