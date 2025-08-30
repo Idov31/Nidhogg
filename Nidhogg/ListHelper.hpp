@@ -20,7 +20,10 @@ concept ListItemType = requires(ListItem item) {
 };
 
 template<ListItemType ListItem, typename Searchable>
-using MatcherFunction = bool(*)(const ListItem* item, Searchable searchable);
+using MatcherFunction = bool(*)(_In_ const ListItem* item, _In_ Searchable searchable);
+
+template<ListItemType ListItem>
+using CleanupFunction = void(*)(_In_ ListItem* item);
 
 /*
 * Description:
@@ -80,7 +83,7 @@ inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
-inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) {
+inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
 	AutoLock locker(list.Lock);
 
 	if (list.Count == 0)
@@ -143,6 +146,36 @@ inline void ClearList(_Inout_ List* list) {
 
 	while (current != list->Items) {
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
+		RemoveEntryList(current);
+		FreeVirtualMemory(entry);
+		current = current->Flink;
+	}
+	list->Count = 0;
+}
+
+/*
+* Description:
+* ClearList is responsible for clearing a list.
+*
+* Parameters:
+* @list [_Inout_ List] -- List to clear.
+*
+* Returns:
+* There is no return value.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+template<ListType List, ListItemType ListItem>
+inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> function) {
+	ListItem* entry = nullptr;
+	AutoLock locker(list->Lock);
+
+	if (list->Count == 0 || !list->Items)
+		return;
+	PLIST_ENTRY current = list->Items->Flink;
+
+	while (current != list->Items) {
+		entry = CONTAINING_RECORD(current, ListItem, Entry);
+		function(entry);
 		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
 		current = current->Flink;
