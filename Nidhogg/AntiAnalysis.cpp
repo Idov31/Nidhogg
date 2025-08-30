@@ -676,6 +676,7 @@ NTSTATUS AntiAnalysis::MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_P
 		}
 	}
 
+	FreeVirtualMemory(info);
 	return status;
 }
 

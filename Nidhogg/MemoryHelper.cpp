@@ -75,7 +75,7 @@ PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID ba
 * Returns:
 * There is no return value.
 */
-void FreeVirtualMemory(_In_ PVOID address) {
+void FreeVirtualMemory(_Inout_ PVOID& address) {
 	if (!address)
 		return;
 	ExFreePoolWithTag(address, DRIVER_TAG);
