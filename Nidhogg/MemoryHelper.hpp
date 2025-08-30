@@ -4,7 +4,13 @@
 extern "C" {
 	#include "WindowsTypes.h"
 }
+#include "ProcessHelper.h"
 #include "NidhoggCommon.h"
+
+constexpr SIZE_T RETURN_OPCODE = 0xC3;
+constexpr SIZE_T MOV_EAX_OPCODE = 0xB8;
+constexpr UCHAR SYSCALL_SHIFT = 4;
+constexpr LONGLONG ONE_SECOND = -100ll * 10 * 1000;
 
 constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) -> bool {
 	return dataSize != 0 && dataSize % structSize == 0;
@@ -20,6 +26,21 @@ void FreeUnicodeString(PUNICODE_STRING source);
 NTSTATUS ProbeAddress(PVOID address, SIZE_T len, ULONG alignment, NTSTATUS failureCode);
 NTSTATUS WriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PVOID targetAddress, SIZE_T dataSize, MODE mode, bool alignAddr = true);
 NTSTATUS ReadProcessMemory(PEPROCESS Process, PVOID sourceAddress, PVOID targetAddress, SIZE_T dataSize, MODE mode);
+
+_IRQL_requires_max_(APC_LEVEL)
+PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName);
+
+_IRQL_requires_max_(APC_LEVEL)
+PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ const wchar_t* processName = L"csrss.exe");
+
+_IRQL_requires_max_(APC_LEVEL)
+PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ ULONG pid);
+
+_IRQL_requires_max_(APC_LEVEL)
+PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress();
+
+_IRQL_requires_max_(APC_LEVEL)
+PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _In_ const char* functionName);
 
 /*
 * Description:
