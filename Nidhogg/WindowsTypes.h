@@ -1332,6 +1332,14 @@ extern "C" {
 		KPRIORITY Increment);
 
 	BOOLEAN NTAPI KeTestAlertThread(KPROCESSOR_MODE AlertMode);
+
+	NTKERNELAPI
+	PVOID
+	NTAPI
+	RtlFindExportedRoutineByName(
+		_In_ PVOID ImageBase,
+		_In_ PCCH RoutineName
+	);
 }
 
 // Offset finding functions.
