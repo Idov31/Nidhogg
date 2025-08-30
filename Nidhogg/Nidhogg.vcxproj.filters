@@ -43,7 +43,7 @@
     <ClInclude Include="WindowsTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryUtils.h">
+    <ClInclude Include="MemoryHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Nidhogg.h">
@@ -138,7 +138,7 @@
     <ClCompile Include="FileHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MemoryUtils.cpp">
+    <ClCompile Include="MemoryHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ProcessHandler.cpp">

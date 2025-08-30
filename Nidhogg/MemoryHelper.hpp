@@ -31,10 +31,10 @@ _IRQL_requires_max_(APC_LEVEL)
 PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ const wchar_t* processName = L"csrss.exe");
+PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ ULONG pid);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ ULONG pid);
+PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ const wchar_t* processName = L"csrss.exe");
 
 _IRQL_requires_max_(APC_LEVEL)
 PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress();

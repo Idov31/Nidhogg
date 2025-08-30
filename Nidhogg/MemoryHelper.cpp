@@ -356,7 +356,7 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 * @PVOID							  -- Function address if found, else status is raised.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ wchar_t* processName) {
+PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ const wchar_t* processName) {
 	KAPC_STATE state;
 	PVOID moduleBase = nullptr;
 	PEPROCESS csrssProcess = nullptr;

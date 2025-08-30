@@ -4,7 +4,7 @@
 #include "MemoryAllocator.hpp"
 #include "ProcessHandler.h"
 #include "ThreadHandler.h"
-#include "MemoryUtils.h"
+#include "MemoryHandler.h"
 #include "FileHandler.h"
 #include "RegistryHandler.h"
 #include "AntiAnalysis.h"

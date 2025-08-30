@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "MemoryAllocator.hpp"
+#include "MemoryHelper.hpp"
 
 constexpr SIZE_T MAX_ARGS = 5;
 constexpr SIZE_T MAX_TYPES = 6;

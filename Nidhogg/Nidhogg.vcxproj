@@ -224,7 +224,7 @@
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileHandler.h" />
-    <ClInclude Include="MemoryUtils.h" />
+    <ClInclude Include="MemoryHandler.h" />
     <ClInclude Include="MemoryHelper.hpp" />
     <ClInclude Include="ModuleParser.h" />
     <ClInclude Include="NetworkUtils.h" />
@@ -258,7 +258,7 @@
     <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="IrpHandlers.cpp" />
     <ClCompile Include="MemoryHelper.cpp" />
-    <ClCompile Include="MemoryUtils.cpp" />
+    <ClCompile Include="MemoryHandler.cpp" />
     <ClCompile Include="ModuleParser.cpp" />
     <ClCompile Include="NetworkUtils.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
