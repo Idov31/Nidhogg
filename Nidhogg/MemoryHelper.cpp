@@ -250,17 +250,14 @@ NTSTATUS WriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PV
 		ZwClose(hTargetProcess);
 		return status;
 	}
-	ZwClose(hTargetProcess);
 
 	// Writing the data.
 	status = MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
 
 	// Restoring permissions and cleaning up.
-	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess) == STATUS_SUCCESS) {
-		patchLen = dataSize;
-		ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
-		ZwClose(hTargetProcess);
-	}
+	patchLen = dataSize;
+	status = ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
+	ZwClose(hTargetProcess);
 
 	return status;
 }
