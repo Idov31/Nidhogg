@@ -19,7 +19,6 @@ constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) ->
 
 PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID base, ULONG_PTR size,
 	PULONG foundIndex, ULONG relativeOffset, bool reversed = false);
-void FreeVirtualMemory(_In_ PVOID address);
 bool IsIContained(UNICODE_STRING container, const wchar_t* containee);
 NTSTATUS CopyUnicodeString(PEPROCESS sourceProcess, PUNICODE_STRING source, PEPROCESS targetProcess, PUNICODE_STRING target, MODE mode);
 void FreeUnicodeString(PUNICODE_STRING source);
@@ -73,4 +72,22 @@ inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDepr
 	if (allocatedMem)
 		RtlSecureZeroMemory(allocatedMem, size);
 	return reinterpret_cast<PointerType>(allocatedMem);
+}
+
+/*
+* Description:
+* FreeVirtualMemory is responsible for freeing virtual memory and null it.
+*
+* Parameters:
+* @address [PVOID] -- Address to free.
+*
+* Returns:
+* There is no return value.
+*/
+template<typename PointerType>
+void FreeVirtualMemory(_Inout_ PointerType& address) {
+	if (!address)
+		return;
+	ExFreePoolWithTag(address, DRIVER_TAG);
+	address = NULL;
 }

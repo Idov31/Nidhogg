@@ -67,23 +67,6 @@ PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID ba
 
 /*
 * Description:
-* FreeVirtualMemory is responsible for freeing virtual memory and null it.
-*
-* Parameters:
-* @address [PVOID] -- Address to free.
-*
-* Returns:
-* There is no return value.
-*/
-void FreeVirtualMemory(_Inout_ PVOID& address) {
-	if (!address)
-		return;
-	ExFreePoolWithTag(address, DRIVER_TAG);
-	address = NULL;
-}
-
-/*
-* Description:
 * IsIContained is responsible for check if one unicode string contain another, case insensitive.
 *
 * Parameters:
@@ -250,17 +233,14 @@ NTSTATUS WriteProcessMemory(PVOID sourceDataAddress, PEPROCESS TargetProcess, PV
 		ZwClose(hTargetProcess);
 		return status;
 	}
-	ZwClose(hTargetProcess);
 
 	// Writing the data.
 	status = MmCopyVirtualMemory(PsGetCurrentProcess(), sourceDataAddress, TargetProcess, targetAddress, dataSize, KernelMode, &bytesWritten);
 
 	// Restoring permissions and cleaning up.
-	if (ObOpenObjectByPointer(TargetProcess, OBJ_KERNEL_HANDLE, NULL, PROCESS_ALL_ACCESS, *PsProcessType, (KPROCESSOR_MODE)mode, &hTargetProcess) == STATUS_SUCCESS) {
-		patchLen = dataSize;
-		ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
-		ZwClose(hTargetProcess);
-	}
+	patchLen = dataSize;
+	status = ZwProtectVirtualMemory(hTargetProcess, &addressToProtect, &patchLen, oldProtection, &oldProtection);
+	ZwClose(hTargetProcess);
 
 	return status;
 }
