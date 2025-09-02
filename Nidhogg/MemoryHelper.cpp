@@ -67,23 +67,6 @@ PVOID FindPattern(PCUCHAR pattern, UCHAR wildcard, ULONG_PTR len, const PVOID ba
 
 /*
 * Description:
-* FreeVirtualMemory is responsible for freeing virtual memory and null it.
-*
-* Parameters:
-* @address [PVOID] -- Address to free.
-*
-* Returns:
-* There is no return value.
-*/
-void FreeVirtualMemory(_Inout_ PVOID& address) {
-	if (!address)
-		return;
-	ExFreePoolWithTag(address, DRIVER_TAG);
-	address = NULL;
-}
-
-/*
-* Description:
 * IsIContained is responsible for check if one unicode string contain another, case insensitive.
 *
 * Parameters:
