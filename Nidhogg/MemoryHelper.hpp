@@ -7,6 +7,22 @@ extern "C" {
 #include "ProcessHelper.h"
 #include "NidhoggCommon.h"
 
+template <typename Ptr>
+concept RegularPointerType = requires(Ptr ptr) {
+	ptr != nullptr;
+	sizeof(ptr) == sizeof(PVOID);
+	*ptr;
+};
+
+template <typename Ptr>
+concept VoidPointerType = requires(PVOID ptr) {
+	ptr != nullptr;
+	sizeof(ptr) == sizeof(PVOID);
+};
+
+template <typename Ptr>
+concept PointerType = RegularPointerType<Ptr> || VoidPointerType<Ptr>;
+
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
 constexpr SIZE_T MOV_EAX_OPCODE = 0xB8;
 constexpr UCHAR SYSCALL_SHIFT = 4;
@@ -51,10 +67,10 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 * @forceDeprecatedAlloc [bool]		  -- Force allocation with ExAllocatePoolWithTag.
 *
 * Returns:
-* @ptr					[PointerType] -- Allocated pointer on success else NULL.
+* @ptr					[Pointer] -- Allocated pointer on success else NULL.
 */
-template <typename PointerType>
-inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
+template <PointerType Pointer>
+inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
 	PVOID allocatedMem = NULL;
 
 	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
@@ -71,7 +87,7 @@ inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDepr
 
 	if (allocatedMem)
 		RtlSecureZeroMemory(allocatedMem, size);
-	return reinterpret_cast<PointerType>(allocatedMem);
+	return reinterpret_cast<Pointer>(allocatedMem);
 }
 
 /*
@@ -79,13 +95,13 @@ inline PointerType AllocateMemory(size_t size, bool paged = true, bool forceDepr
 * FreeVirtualMemory is responsible for freeing virtual memory and null it.
 *
 * Parameters:
-* @address [PVOID] -- Address to free.
+* @address [_Inout_ Pointer&] -- Address to free.
 *
 * Returns:
 * There is no return value.
 */
-template<typename PointerType>
-void FreeVirtualMemory(_Inout_ PointerType& address) {
+template <PointerType Pointer>
+void FreeVirtualMemory(_Inout_ Pointer& address) {
 	if (!address)
 		return;
 	ExFreePoolWithTag(address, DRIVER_TAG);
