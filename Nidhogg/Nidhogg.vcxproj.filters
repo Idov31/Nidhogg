@@ -55,7 +55,7 @@
     <ClInclude Include="MemoryAllocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryHelper.hpp">
+    <ClInclude Include="MemoryHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="NetworkUtils.h">

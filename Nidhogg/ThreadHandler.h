@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "ListHelper.hpp"
-#include "MemoryHelper.hpp"
+#include "MemoryHelper.h"
 #include "ProcessHelper.h"
 
 extern "C" {

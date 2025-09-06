@@ -225,7 +225,7 @@
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileHandler.h" />
     <ClInclude Include="MemoryHandler.h" />
-    <ClInclude Include="MemoryHelper.hpp" />
+    <ClInclude Include="MemoryHelper.h" />
     <ClInclude Include="ModuleParser.h" />
     <ClInclude Include="NetworkUtils.h" />
     <ClInclude Include="NidhoggCommon.h" />

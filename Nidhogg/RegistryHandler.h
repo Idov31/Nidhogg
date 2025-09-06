@@ -1,6 +1,6 @@
 #pragma once
 #include "pch.h"
-#include "MemoryHelper.hpp"
+#include "MemoryHelper.h"
 
 extern "C" {
 	#include "WindowsTypes.h"

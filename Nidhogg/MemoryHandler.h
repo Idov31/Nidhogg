@@ -1,7 +1,7 @@
 #pragma once
 
 #include "pch.h"
-#include "MemoryHelper.hpp"
+#include "MemoryHelper.h"
 
 extern "C" {
 	#include "WindowsTypes.h"
@@ -195,7 +195,7 @@ public:
 	NTSTATUS GetCredentials(_Inout_ IoctlCredentials* credentials);
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FoundNtCreateThreadEx() { return NtCreateThreadEx != NULL; }
+	bool FoundNtCreateThreadEx() const { return NtCreateThreadEx != NULL; }
 };
 
 inline MemoryHandler* NidhoggMemoryHandler;

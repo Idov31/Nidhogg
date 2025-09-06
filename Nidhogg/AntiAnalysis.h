@@ -5,7 +5,7 @@ extern "C" {
 	#include "WindowsTypes.h"
 	#include "NidhoggCommon.h"
 }
-#include "MemoryHelper.hpp"
+#include "MemoryHelper.h"
 
 constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = { 0x60, 0x4C, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = { 0xD2, 0x48, 0x8B, 0xCC };

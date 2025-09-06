@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "WindowsTypes.h"
-#include "MemoryHelper.hpp"
+#include "MemoryHelper.h"
 
 constexpr SIZE_T SYSTEM_PROCESS_PID = 0x4;
 constexpr SIZE_T PROCESS_TERMINATE = 0x1;
