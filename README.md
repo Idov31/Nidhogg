@@ -23,13 +23,13 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Process hiding and unhiding
 - Process elevation
 - Process protection (anti-kill and dumping)
-- Bypass pe-sieve
+- Bypass memory scanners (e.g. [pe-sieve](https://github.com/hasherezade/pe-sieve))
 - Thread hiding and unhiding
 - Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Querying currently protected processes, threads, files, hidden ports, registry keys and values
+- Listing currently protected or hidden processes, threads, files, ports, registry keys and values
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
@@ -41,17 +41,17 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - DLL Injection
   - APC
   - NtCreateThreadEx
-- Querying kernel callbacks
+- Listing kernel callbacks
   - ObCallbacks
   - Process and thread creation routines
   - Image loading routines
   - Registry callbacks
 - Removing and restoring kernel callbacks
-- ETWTI tampering
-- Module hiding
+- Disabling / Enabling ETW providers (e.g. ETW-TI)
+- Module hiding and unhiding
 - Driver hiding and unhiding
 - Credential Dumping
-- Port hiding/unhiding
+- Port hiding and unhiding
 - Script execution
 - Initial operations
 
@@ -77,6 +77,7 @@ These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wi
 
 - Process hiding
 - File protecting
+- Driver hiding
 
 ## Basic Usage
 
@@ -150,6 +151,4 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 
 Thanks a lot to those people who contributed to this project:
 
-- [BlackOfWorld](https://github.com/BlackOfWorld)
-- [0nlyDev](https://github.com/0nlyDev)
-- [SLiNv](https://x.com/_____vic______)
+[![BlackOfWorld](https://avatars.githubusercontent.com/BlackOfWorld?s=40&v=4)](https://github.com/BlackOfWorld)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://avatars.githubusercontent.com/0nlyDev?s=40&v=4" width="40" height="40" alt="0nlyDev">](https://github.com/0nlyDev)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://pbs.twimg.com/profile_images/1047696480327409664/tGLAvq8d_400x400.jpg" width="40" height="40" alt="SLiNv">](https://x.com/_____vic______)
