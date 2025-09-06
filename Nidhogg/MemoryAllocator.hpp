@@ -5,57 +5,61 @@
 template<typename DataType>
 class MemoryAllocator {
 private:
-	DataType AllocatedData;
-	SIZE_T AllocatedSize;
+	DataType allocatedData;
+	SIZE_T allocatedSize;
 
 public:
-	MemoryAllocator(DataType Data, SIZE_T Size) {
-		this->AllocatedData = Data;
-		this->AllocatedSize = Size;
+	_IRQL_requires_max_(APC_LEVEL)
+	MemoryAllocator(_Inout_ DataType data, _In_ SIZE_T size) noexcept {
+		this->allocatedData = nullptr;
+		this->allocatedSize = size;
 
-		if (Size != 0) {
-			Data = AllocateMemory<DataType>(Size);
+		if (size != 0) {
+			data = AllocateMemory<DataType>(size);
 
-			if (Data)
-				memset(Data, 0, Size);
-		}
-	}
-	MemoryAllocator(DataType* Data, SIZE_T Size) {
-		this->AllocatedData = nullptr;
-		this->AllocatedSize = Size;
-
-		if (Size != 0) {
-			*Data = AllocateMemory<DataType>(Size);
-
-			if (*Data) {
-				memset(*Data, 0, Size);
-				this->AllocatedData = *Data;
+			if (data) {
+				RtlSecureZeroMemory(data, size);
+				this->allocatedData = data;
 			}
 		}
 	}
-	~MemoryAllocator() {
-		if (this->AllocatedData) {
-			ExFreePoolWithTag(this->AllocatedData, DRIVER_TAG);
-			this->AllocatedData = nullptr;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	MemoryAllocator(_Inout_ DataType* data, _In_ SIZE_T size) noexcept {
+		this->allocatedData = nullptr;
+		this->allocatedSize = size;
+
+		if (size != 0) {
+			*data = AllocateMemory<DataType>(size);
+
+			if (*data) {
+				RtlSecureZeroMemory(*data, size);
+				this->allocatedData = *data;
+			}
 		}
 	}
 
-	NTSTATUS CopyData(DataType Data, SIZE_T Size) {
+	_IRQL_requires_max_(APC_LEVEL)
+	~MemoryAllocator() {
+		FreeVirtualMemory<DataType>(this->allocatedData);
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size) {
 		SIZE_T bytesWritten = 0;
 		NTSTATUS status = STATUS_INVALID_PARAMETER;
 
-		if (!Data || !this->AllocatedData)
+		if (!allocatedData)
 			return STATUS_INVALID_BUFFER_SIZE;
 
-		if (Size > this->AllocatedSize)
+		if (!data || size > this->allocatedSize)
 			return status;
 
-		status = MmCopyVirtualMemory(PsGetCurrentProcess(), Data, PsGetCurrentProcess(), this->AllocatedData, Size,
+		status = MmCopyVirtualMemory(PsGetCurrentProcess(), data, PsGetCurrentProcess(), this->allocatedData, size,
 			KernelMode, &bytesWritten);
 
-		if (NT_SUCCESS(status)) {
-			status = bytesWritten == Size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;
-		}
+		if (NT_SUCCESS(status))
+			status = bytesWritten == size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;
 		return status;
 	}
 };
