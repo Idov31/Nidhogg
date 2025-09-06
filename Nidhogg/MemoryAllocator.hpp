@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "NidhoggCommon.h"
+#include "WindowsTypes.h"
 
 template <typename Ptr>
 concept RegularPointerType = requires(Ptr ptr) {

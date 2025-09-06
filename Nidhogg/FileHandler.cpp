@@ -67,8 +67,7 @@ NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP I
 			break;
 
 		// Validating the address of the file name.
-		status = ProbeAddress(stack->FileObject->FileName.Buffer, stack->FileObject->FileName.Length,
-			sizeof(WCHAR*), STATUS_NOT_FOUND);
+		status = ProbeAddress(stack->FileObject->FileName.Buffer, stack->FileObject->FileName.Length, sizeof(WCHAR*));
 
 		if (!NT_SUCCESS(status))
 			break;

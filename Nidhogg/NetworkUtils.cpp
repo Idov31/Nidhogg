@@ -143,7 +143,7 @@ NTSTATUS NsiIrpComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
 			PNSI_PARAM nsiParameter = (PNSI_PARAM)Irp->UserBuffer;
 
 			if (VALID_USERMODE_MEMORY((ULONGLONG)nsiParameter)) {
-				if (!NT_SUCCESS(ProbeAddress(nsiParameter, sizeof(PNSI_PARAM), sizeof(PNSI_PARAM), STATUS_UNSUCCESSFUL)))
+				if (!NT_SUCCESS(ProbeAddress(nsiParameter, sizeof(PNSI_PARAM), sizeof(PNSI_PARAM))))
 					break;
 			}
 			else if (!VALID_KERNELMODE_MEMORY((ULONGLONG)nsiParameter) || !nsiParameter)
