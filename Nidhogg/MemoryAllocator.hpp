@@ -181,7 +181,7 @@ private:
 
 public:
 	_IRQL_requires_max_(APC_LEVEL)
-	MemoryGuard(_In_ PVOID address, _In_ ULONG length) noexcept {
+	MemoryGuard(_In_ PVOID address, _In_ ULONG length, _In_ KPROCESSOR_MODE mode) noexcept {
 		this->mdl = nullptr;
 		this->valid = false;
 
@@ -190,7 +190,7 @@ public:
 
 			if (this->mdl) {
 				__try {
-					MmProbeAndLockPages(this->mdl, KernelMode, IoReadAccess);
+					MmProbeAndLockPages(this->mdl, mode, IoReadAccess);
 					this->valid = true;
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {

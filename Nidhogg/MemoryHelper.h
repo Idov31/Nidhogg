@@ -22,7 +22,7 @@ NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG ali
 
 _IRQL_requires_max_(APC_LEVEL)
 PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len, _In_ const PVOID& base, _In_ ULONG_PTR size,
-	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ bool reversed = false) noexcept;
+	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ KPROCESSOR_MODE mode = KernelMode, _In_ bool reversed = false) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS CopyUnicodeString(_In_ const PEPROCESS& sourceProcess, _In_ PUNICODE_STRING source, _In_ const PEPROCESS& targetProcess, 

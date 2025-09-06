@@ -20,12 +20,15 @@
 */
 _IRQL_requires_max_(APC_LEVEL)
 PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len, _In_ const PVOID& base, _In_ ULONG_PTR size,
-	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ bool reversed) noexcept {
+	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ KPROCESSOR_MODE mode, _In_ bool reversed) noexcept {
 	bool found = false;
+
+	if (foundIndex)
+		*foundIndex = 0;
 
 	if (!pattern || !base || len == 0 || size == 0)
 		return NULL;
-	MemoryGuard guard(const_cast<PVOID>(base), size);
+	MemoryGuard guard(const_cast<PVOID>(base), size, mode);
 
 	if (!guard.IsValid())
 		return NULL;
