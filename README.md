@@ -151,4 +151,4 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 
 Thanks a lot to those people who contributed to this project:
 
-[![BlackOfWorld](https://avatars.githubusercontent.com/BlackOfWorld?s=40&v=4)](https://github.com/BlackOfWorld)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://avatars.githubusercontent.com/0nlyDev?s=40&v=4" width="40" height="40" alt="0nlyDev">](https://github.com/0nlyDev)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://pbs.twimg.com/profile_images/1047696480327409664/tGLAvq8d_400x400.jpg" width="40" height="40" alt="SLiNv">](https://x.com/_____vic______)
+[![BlackOfWorld](https://avatars.githubusercontent.com/BlackOfWorld?s=60&v=4)](https://github.com/BlackOfWorld)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://avatars.githubusercontent.com/0nlyDev?s=40&v=4" width="60" height="60" alt="0nlyDev">](https://github.com/0nlyDev)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://pbs.twimg.com/profile_images/1047696480327409664/tGLAvq8d_400x400.jpg" width="60" height="60" alt="SLiNv">](https://x.com/_____vic______)
