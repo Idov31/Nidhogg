@@ -2,6 +2,73 @@
 #include "pch.h"
 #include "NidhoggCommon.h"
 
+template <typename Ptr>
+concept RegularPointerType = requires(Ptr ptr) {
+	ptr != nullptr;
+	sizeof(ptr) == sizeof(PVOID);
+	*ptr;
+};
+
+template <typename Ptr>
+concept VoidPointerType = requires(PVOID ptr) {
+	ptr != nullptr;
+	sizeof(ptr) == sizeof(PVOID);
+};
+
+template <typename Ptr>
+concept PointerType = RegularPointerType<Ptr> || VoidPointerType<Ptr>;
+
+/*
+* Description:
+* AllocateVirtualMemory is responsible for allocating virtual memory with the right function depends on the windows version.
+*
+* Parameters:
+* @size				    [size_t]	  -- Size to allocate.
+* @paged				[bool]		  -- Paged or non-paged.
+* @forceDeprecatedAlloc [bool]		  -- Force allocation with ExAllocatePoolWithTag.
+*
+* Returns:
+* @ptr					[Pointer] -- Allocated pointer on success else NULL.
+*/
+template <PointerType Pointer>
+inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
+	PVOID allocatedMem = NULL;
+
+	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
+		allocatedMem = paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
+			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED, size, DRIVER_TAG);
+	}
+	else {
+#pragma warning(push)
+#pragma warning(disable : 4996)
+		allocatedMem = paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
+			ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+#pragma warning(pop)
+	}
+
+	if (allocatedMem)
+		RtlSecureZeroMemory(allocatedMem, size);
+	return reinterpret_cast<Pointer>(allocatedMem);
+}
+
+/*
+* Description:
+* FreeVirtualMemory is responsible for freeing virtual memory and null it.
+*
+* Parameters:
+* @address [_Inout_ Pointer&] -- Address to free.
+*
+* Returns:
+* There is no return value.
+*/
+template <PointerType Pointer>
+void FreeVirtualMemory(_Inout_ Pointer& address) {
+	if (!address)
+		return;
+	ExFreePoolWithTag(address, DRIVER_TAG);
+	address = NULL;
+}
+
 template<typename DataType>
 class MemoryAllocator {
 private:
@@ -102,6 +169,47 @@ public:
 	~WindowsMemoryAllocator() noexcept {
 		if (this->baseAddress) {
 			ZwFreeVirtualMemory(this->processHandle, &this->baseAddress, &this->allocatedSize, this->freeType);
+		}
+	}
+};
+
+class MemoryGuard {
+private:
+	PMDL mdl;
+	bool valid;
+
+public:
+	_IRQL_requires_max_(APC_LEVEL)
+	MemoryGuard(_In_ PVOID address, _In_ ULONG length) noexcept {
+		this->mdl = nullptr;
+		this->valid = false;
+
+		if (length != 0 && address) {
+			this->mdl = IoAllocateMdl(address, length, FALSE, FALSE, NULL);
+
+			if (this->mdl) {
+				__try {
+					MmProbeAndLockPages(this->mdl, KernelMode, IoReadAccess);
+					this->valid = true;
+				}
+				__except (EXCEPTION_EXECUTE_HANDLER) {
+					IoFreeMdl(this->mdl);
+					this->mdl = nullptr;
+				}
+			}
+		}
+	}
+
+	_IRQL_requires_max_(DISPATCH_LEVEL)
+	bool IsValid() const {
+		return this->valid;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	~MemoryGuard() noexcept {
+		if (this->mdl) {
+			MmUnlockPages(this->mdl);
+			IoFreeMdl(this->mdl);
 		}
 	}
 };
