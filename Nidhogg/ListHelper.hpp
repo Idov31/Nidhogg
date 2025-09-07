@@ -174,10 +174,8 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 
 	while (current != list->Items) {
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
-		function(entry);
-		RemoveEntryList(current);
-		FreeVirtualMemory(entry);
 		current = current->Flink;
+		function(entry);
 	}
 	list->Count = 0;
 }
