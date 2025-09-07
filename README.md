@@ -57,6 +57,10 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 
 ## Reflective loading
 
+> [!WARNING]  
+> When doing reflective loading, there are features that will be disabled by default and the automatic graceful unload of hidden modules and unhooking callbacks will not work as well.
+> It is the user's responsibility to ensure to manually unload any hidden modules upon process termination and unhook any callbacks if the target driver is unloading. Failing to do so may lead to system instability or crashes.
+
 Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://github.com/TheCruZ/kdmapper) but because [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) will be automatically triggered if the driver registers callbacks, Nidhogg will not register any callback. Meaning, that if you are loading the driver reflectively these features will be disabled by default:
 
 - Process protection
@@ -73,7 +77,8 @@ Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov
 
 ## PatchGuard triggering features
 
-These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
+> [!CAUTION]  
+> The following features are known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
 - File protecting
