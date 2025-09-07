@@ -156,7 +156,7 @@ bool IsFileExists(_In_ char* filePath) {
     RtlInitAnsiString(&ansiPath, filePath);
     status = RtlAnsiStringToUnicodeString(&unicodePath, &ansiPath, TRUE);
 
-    if (!NT_SUCCESS(status))
+    if (!NT_SUCCESS(status) || !unicodePath.Buffer)
         return false;
     bool result = IsFileExists(unicodePath.Buffer);
 
