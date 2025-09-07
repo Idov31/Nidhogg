@@ -76,6 +76,7 @@ struct PatchedModule {
 };
 
 struct HiddenModuleInformation {
+	bool Hide;
 	ULONG Pid;
 	WCHAR* ModuleName;
 };
@@ -85,13 +86,29 @@ struct HiddenDriverInformation {
 	bool Hide;
 };
 
-struct HiddenDriverEntry {
-	LIST_ENTRY Entry;
-	wchar_t* DriverPath;
-	PKLDR_DATA_TABLE_ENTRY originalEntry;
+struct PebLinks {
+	LIST_ENTRY InLoadOrderLinks;
+	LIST_ENTRY InInitializationOrderLinks;
+	LIST_ENTRY InMemoryOrderLinks;
+	LIST_ENTRY HashLinks;
 };
 
-struct HiddenDriversList {
+struct HiddenModuleEntry {
+	LIST_ENTRY Entry;
+	wchar_t* ModuleName;
+	ULONG Pid;
+	PebLinks Links;
+	PMMVAD_SHORT VadNode;
+	ULONG OriginalVadProtection;
+};
+
+struct HiddenDriverEntry {
+	LIST_ENTRY Entry;
+	wchar_t DriverPath[MAX_PATH];
+	PKLDR_DATA_TABLE_ENTRY OriginalEntry;
+};
+
+struct HiddenItemsList {
 	SIZE_T Count;
 	FastMutex Lock;
 	PLIST_ENTRY Items;
@@ -128,7 +145,8 @@ VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* Norma
 
 class MemoryHandler {
 private:
-	HiddenDriversList hiddenDrivers;
+	HiddenItemsList hiddenDrivers;
+	HiddenItemsList hiddenModules;
 	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
 	tNtCreateThreadEx NtCreateThreadEx;
 	LsassInformation cachedLsassInfo;
@@ -138,9 +156,16 @@ private:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	bool AddHiddenDriver(_Inout_ HiddenDriverEntry& item);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool AddHiddenModule(_Inout_ HiddenModuleEntry& item);
 	
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR targetAddress, _Inout_ HiddenModuleEntry& moduleEntry);
+
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	NTSTATUS VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR targetAddress);
+	NTSTATUS VadRestoreObject(_Inout_ PEPROCESS process, _In_ PMMVAD_SHORT vadNode, _In_opt_ wchar_t* moduleName = nullptr, 
+		_In_opt_ ULONG vadProtection = 0);
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
 	TABLE_SEARCH_RESULT VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table, _In_ ULONG_PTR targetPageAddress, 
@@ -148,6 +173,9 @@ private:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	PETHREAD FindAlertableThread(_In_ HANDLE pid);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS RestoreModule(_In_ HiddenModuleEntry* moduleEntry);
 
 public:
 	void* operator new(size_t size) {
@@ -181,6 +209,12 @@ public:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS HideModule(_In_ HiddenModuleInformation* moduleInformation);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS RestoreModule(_In_ HiddenModuleInformation* moduleInformation);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	HiddenModuleEntry* FindHiddenModule(_In_ HiddenModuleInformation* info) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS HideDriver(_In_ wchar_t* driverPath);
