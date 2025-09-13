@@ -8,6 +8,7 @@ extern "C" {
 	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
+#include "MemoryHandler.h"
 
 // Structs
 enum class ProcessType {
@@ -110,4 +111,6 @@ public:
 
 inline ProcessHandler* NidhoggProcessHandler;
 
-OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(_Inout_ PVOID registrationContext, _Inout_ POB_PRE_OPERATION_INFORMATION info);
+
+void OnProcessCreationExit(_In_ HANDLE parentId, _In_ HANDLE processId, _In_ BOOLEAN create);

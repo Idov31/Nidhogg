@@ -10,6 +10,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	Features.ProcessProtection = false;
 	Features.ThreadProtection = false;
 	Features.RegistryFeatures = false;
+	Features.AutoModuleUnload = false;
 	Print(DRIVER_PREFIX "Driver is being reflectively loaded...\n");
 
 	UNICODE_STRING driverName = RTL_CONSTANT_STRING(DRIVER_NAME);
@@ -112,6 +113,14 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			status = STATUS_SUCCESS;
 			Features.RegistryFeatures = false;
 		}
+
+		status = PsSetCreateProcessNotifyRoutine(OnProcessCreationExit, FALSE);
+
+		if (!NT_SUCCESS(status)) {
+			Print(DRIVER_PREFIX "Failed to register process creation callback: (0x%08X)\n", status);
+			status = STATUS_SUCCESS;
+			Features.AutoModuleUnload = false;
+		}
 	}
 	else {
 		DeviceObject->Flags |= DO_BUFFERED_IO;
@@ -150,13 +159,19 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 		}
 	}
 
-	ClearAll();
+	if (Features.AutoModuleUnload) {
+		NTSTATUS status = PsSetCreateProcessNotifyRoutine(OnProcessCreationExit, TRUE);
 
-	// To avoid BSOD.
+		if (!NT_SUCCESS(status)) {
+			Print(DRIVER_PREFIX "Failed to unregister process creation callback: (0x%08X)\n", status);
+		}
+	}
+
 	if (Features.ThreadProtection && Features.ProcessProtection && RegistrationHandle) {
 		ObUnRegisterCallbacks(RegistrationHandle);
 		RegistrationHandle = NULL;
 	}
+	ClearAll();
 
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);

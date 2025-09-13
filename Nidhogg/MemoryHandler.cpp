@@ -535,6 +535,19 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleInformation* moduleInform
 	return RestoreModule(entry);
 }
 
+_IRQL_requires_max_(APC_LEVEL)
+void MemoryHandler::RestoreModules(_In_ ULONG pid) {
+	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ ULONG pid) {
+		return item->Pid == pid;
+	};
+	HiddenModuleEntry* item = FindListEntry<HiddenItemsList, HiddenModuleEntry, ULONG>(hiddenModules, pid, finder);
+
+	while (item) {
+		RestoreModule(item);
+		item = FindListEntry<HiddenItemsList, HiddenModuleEntry, ULONG>(hiddenModules, pid, finder);
+	}
+}
+
 /*
 * Description:
 * RestoreModule is responsible for restoring a hidden user mode module that is loaded in a process.

@@ -29,25 +29,46 @@ ProcessHandler::~ProcessHandler() {
 * Returns:
 * @status			   [NTSTATUS]					   -- Always OB_PREOP_SUCCESS.
 */
-OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info) {
-	UNREFERENCED_PARAMETER(RegistrationContext);
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(_Inout_ PVOID registrationContext, _Inout_ POB_PRE_OPERATION_INFORMATION info) {
+	UNREFERENCED_PARAMETER(registrationContext);
 
-	if (Info->KernelHandle)
+	if (info->KernelHandle || !info->Object)
 		return OB_PREOP_SUCCESS;
 
-	PEPROCESS Process = static_cast<PEPROCESS>(Info->Object);
-	ULONG pid = HandleToULong(PsGetProcessId(Process));
+	PEPROCESS process = static_cast<PEPROCESS>(info->Object);
+	ULONG pid = HandleToULong(PsGetProcessId(process));
 
 	// If the process was found on the list, remove permissions for dump / write process memory and kill the process.
 	if (NidhoggProcessHandler->FindProcess(pid, ProcessType::Protected)) {
-		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
-		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_READ;
-		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
-		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_DUP_HANDLE;
-		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_TERMINATE;
+		info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
+		info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_READ;
+		info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_CREATE_THREAD;
+		info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_DUP_HANDLE;
+		info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_TERMINATE;
 	}
 
 	return OB_PREOP_SUCCESS;
+}
+
+/*
+* Description:
+* OnProcessCreationExit is responsible for restoring hidden modules when a process exits.
+* 
+* Parameters:
+* @parentId  [_In_ HANDLE]	 -- Parent PID, unused.
+* @processId [_In_ HANDLE]	 -- PID of the process that was created or exited.
+* @create	 [_In_ BOOLEAN]  -- TRUE if the process was created, FALSE if it exited.
+* 
+* Returns:
+* There is no return value.
+*/
+void OnProcessCreationExit(_In_ HANDLE parentId, _In_ HANDLE processId, _In_ BOOLEAN create) {
+	UNREFERENCED_PARAMETER(parentId);
+	ULONG pid = HandleToUlong(processId);
+
+	if (create || pid <= SYSTEM_PROCESS_PID)
+		return;
+	NidhoggMemoryHandler->RestoreModules(pid);
 }
 
 /*

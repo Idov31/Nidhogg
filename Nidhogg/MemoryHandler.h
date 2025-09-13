@@ -214,6 +214,9 @@ public:
 	NTSTATUS RestoreModule(_In_ HiddenModuleInformation* moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
+	void RestoreModules(_In_ ULONG pid);
+
+	_IRQL_requires_max_(APC_LEVEL)
 	HiddenModuleEntry* FindHiddenModule(_In_ HiddenModuleInformation* info) const;
 
 	_IRQL_requires_max_(APC_LEVEL)

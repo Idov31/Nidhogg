@@ -23,16 +23,17 @@ inline PVOID RegistrationHandle = NULL;
 
 struct EnabledFeatures {
 	bool DriverReflectivelyLoaded = false;
-	bool FunctionPatching		  = true;
-	bool ModuleHiding			  = true;
-	bool WriteData				  = true;
-	bool ReadData				  = true;
-	bool RegistryFeatures		  = true;
-	bool ProcessProtection		  = true;
-	bool ThreadProtection		  = true;
-	bool FileProtection			  = true;
-	bool EtwTiTamper			  = true;
-	bool ApcInjection			  = true;
-	bool CreateThreadInjection	  = false;
+	bool FunctionPatching = true;
+	bool ModuleHiding = true;
+	bool WriteData = true;
+	bool ReadData = true;
+	bool RegistryFeatures = true;
+	bool ProcessProtection = true;
+	bool ThreadProtection = true;
+	bool FileProtection = true;
+	bool EtwTiTamper = true;
+	bool ApcInjection = true;
+	bool CreateThreadInjection = false;
+	bool AutoModuleUnload = true;
 };
 inline EnabledFeatures Features;
