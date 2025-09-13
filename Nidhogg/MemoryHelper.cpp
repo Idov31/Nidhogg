@@ -28,7 +28,7 @@ PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len,
 
 	if (!pattern || !base || len == 0 || size == 0)
 		return NULL;
-	MemoryGuard guard(const_cast<PVOID>(base), size, mode);
+	MemoryGuard guard(const_cast<PVOID>(base), static_cast<ULONG>(size), mode);
 
 	if (!guard.IsValid())
 		return NULL;
@@ -46,7 +46,7 @@ PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len,
 
 			if (found) {
 				if (foundIndex)
-					*foundIndex = i;
+					*foundIndex = static_cast<ULONG>(i);
 				return static_cast<PUCHAR>(base) + i + relativeOffset;
 			}
 		}
@@ -163,7 +163,7 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 	SIZE_T patchLen;
 	SIZE_T bytesWritten;
 	NTSTATUS status = STATUS_SUCCESS;
-	SIZE_T alignment = alignAddr ? dataSize : 1;
+	ULONG alignment = static_cast<ULONG>(alignAddr ? dataSize : 1);
 
 	if (mode != KernelMode && mode != UserMode)
 		return STATUS_UNSUCCESSFUL;
@@ -177,7 +177,7 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 	}
 
 	else if (mode == UserMode && (
-		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, dataSize)) ||
+		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, static_cast<ULONG>(dataSize))) ||
 		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
 			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment))))) {
 		status = STATUS_UNSUCCESSFUL;
@@ -235,7 +235,7 @@ NTSTATUS ReadProcessMemory(_In_ const PEPROCESS& process, _In_ PVOID sourceAddre
 	// Making sure that the given kernel mode address is valid.
 	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)))
 		return STATUS_UNSUCCESSFUL;
-	else if (mode == UserMode && !NT_SUCCESS(ProbeAddress(sourceAddress, dataSize, dataSize)))
+	else if (mode == UserMode && !NT_SUCCESS(ProbeAddress(sourceAddress, dataSize, static_cast<ULONG>(dataSize))))
 		return STATUS_UNSUCCESSFUL;
 	return MmCopyVirtualMemory(process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
 }
@@ -304,10 +304,6 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ const wchar_t* processName) {
-	KAPC_STATE state;
-	PVOID moduleBase = nullptr;
-	PEPROCESS csrssProcess = nullptr;
-	PVOID functionAddress = nullptr;
 	ULONG searchedPid = 0;
 
 	__try {
@@ -347,7 +343,7 @@ PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* 
 	KeStackAttachProcess(csrssProcess, &state);
 
 	__try {
-		PVOID moduleBase = GetModuleBase(csrssProcess, moduleName);
+		moduleBase = GetModuleBase(csrssProcess, moduleName);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		KeUnstackDetachProcess(&state);
