@@ -3,7 +3,7 @@
 
 // #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
 #define PRINTS // Comment or uncomment for printing
-#define DRIVER_TAG 'hdiN'
+constexpr ULONG DRIVER_TAG = 'hdiN';
 #define DRIVER_PREFIX "Nidhogg: "
 
 #ifdef PRINTS

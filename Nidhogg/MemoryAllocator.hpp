@@ -153,7 +153,7 @@ public:
 			*status = ZwAllocateVirtualMemory(processHandle, &this->baseAddress, 0, size,
 				allocationType, protection);
 
-			if (NT_SUCCESS(status)) {
+			if (NT_SUCCESS(*status)) {
 				this->baseAddress = baseAddress;
 				memset(this->baseAddress, 0, allocatedSize);
 			}
