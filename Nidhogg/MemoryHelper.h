@@ -8,10 +8,34 @@ extern "C" {
 #include "MemoryAllocator.hpp"
 #include "NidhoggCommon.h"
 
+struct VersionRange {
+	ULONG MinVersion;
+	ULONG MaxVersion;
+};
+
+struct Pattern {
+	VersionRange Versions;
+	ULONG_PTR Length;
+	PCUCHAR Data;
+	UCHAR Wildcard;
+	int RelativeOffset;
+	bool Reversed;
+};
+
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
 constexpr SIZE_T MOV_EAX_OPCODE = 0xB8;
 constexpr UCHAR SYSCALL_SHIFT = 4;
 constexpr LONGLONG ONE_SECOND = -100ll * 10 * 1000;
+constexpr UCHAR SsdtSignature[] = { 0x4C, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0xCC, 0x4C, 0x8D, 0x1D, 0xCC, 0xCC, 0xCC, 0xCC, 0xF7 };
+
+Pattern SsdtPattern = {
+	{WIN_1507, WIN_11_24H2},
+	15,
+	SsdtSignature,
+	0xCC,
+	3,
+	false
+};
 
 constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) -> bool {
 	return dataSize != 0 && dataSize % structSize == 0;
@@ -21,8 +45,12 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len, _In_ const PVOID& base, _In_ ULONG_PTR size,
-	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ KPROCESSOR_MODE mode = KernelMode, _In_ bool reversed = false) noexcept;
+PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex, 
+	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
+
+_IRQL_requires_max_(APC_LEVEL)
+PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS CopyUnicodeString(_In_ const PEPROCESS& sourceProcess, _In_ PUNICODE_STRING source, _In_ const PEPROCESS& targetProcess, 

@@ -3,42 +3,79 @@
 
 /*
 * Description:
+* FindPatterns is responsible for finding one or more patterns in memory range.
+*
+* Parameters:
+* @patterns		 [_In_ Pattern[]]	-- Pattern to search for.
+* @patternsCount [_In_ SIZE_T]		-- Number of patterns to search for.
+* @base			 [_In_ const PVOID] -- Base address for searching.
+* @size			 [_In_ ULONG_PTR]	-- Address range to search in.
+* @foundIndex	 [_Out_ PULONG]		-- Index of the found signature.
+* @reversed		 [_In_ bool]		-- If want to reverse search or regular search.
+*
+* Returns:
+* @address		 [PVOID]			-- Pattern's address if found, else 0.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+	_In_ KPROCESSOR_MODE mode) noexcept {
+	PVOID address = nullptr;
+
+	if (foundIndex)
+		*foundIndex = 0;
+
+	for (SIZE_T i = 0; i < patternsCount; i++) {
+		address = FindPattern(patterns[i], base, size, foundIndex, mode);
+
+		if (address) {
+			if (!NT_SUCCESS(ProbeAddress(address, patterns[i].Length, sizeof(UCHAR)))) {
+				address = nullptr;
+				continue;
+			}
+			return address;
+		}
+	}
+	return address;
+}
+/*
+* Description:
 * FindPattern is responsible for finding a pattern in memory range.
 *
 * Parameters:
-* @pattern		  [_In_ PCUCHAR]	 -- Pattern to search for.
-* @wildcard		  [_In_ UCHAR]		 -- Used wildcard.
-* @len			  [_In_ ULONG_PTR]	 -- Pattern length.
-* @base			  [_In_ const PVOID] -- Base address for searching.
-* @size			  [_In_ ULONG_PTR]	 -- Address range to search in.
-* @relativeOffset [_In_ ULONG]		 -- If wanted, relative offset to get from.
-* @foundIndex	  [_Out_ PULONG]	 -- Index of the found signature.
-* @reversed		  [_In_ bool]		 -- If want to reverse search or regular search.
+* @pattern	  [_In_ Pattern]	 -- Pattern to search for.
+* @base		  [_In_ const PVOID] -- Base address for searching.
+* @size		  [_In_ ULONG_PTR]	 -- Address range to search in.
+* @foundIndex [_Out_ PULONG]	 -- Index of the found signature.
+* @reversed	  [_In_ bool]		 -- If want to reverse search or regular search.
 *
 * Returns:
-* @address		  [PVOID]			 -- Pattern's address if found, else 0.
+* @address	  [PVOID]			 -- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len, _In_ const PVOID& base, _In_ ULONG_PTR size,
-	_In_ ULONG relativeOffset, _Out_opt_ PULONG foundIndex, _In_ KPROCESSOR_MODE mode, _In_ bool reversed) noexcept {
+PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+	_In_ KPROCESSOR_MODE mode) noexcept {
 	bool found = false;
 
 	if (foundIndex)
 		*foundIndex = 0;
 
-	if (!pattern || !base || len == 0 || size == 0)
-		return NULL;
+	if (!pattern.Data || !base || pattern.Length == 0 || size == 0 || pattern.Length > size)
+		return nullptr;
+
+	if (pattern.Versions.MinVersion > WindowsBuildNumber ||
+		pattern.Versions.MaxVersion < WindowsBuildNumber)
+		return nullptr;
 	MemoryGuard guard(const_cast<PVOID>(base), static_cast<ULONG>(size), mode);
 
 	if (!guard.IsValid())
-		return NULL;
+		return nullptr;
 
-	if (!reversed) {
+	if (!pattern.Reversed) [[ likely ]] {
 		for (ULONG_PTR i = 0; i < size; i++) {
 			found = true;
 
-			for (ULONG_PTR j = 0; j < len; j++) {
-				if (pattern[j] != wildcard && pattern[j] != (static_cast<PCUCHAR>(base))[i + j]) {
+			for (ULONG_PTR j = 0; j < pattern.Length; j++) {
+				if (pattern.Data[j] != pattern.Wildcard && pattern.Data[j] != (static_cast<PCUCHAR>(base))[i + j]) {
 					found = false;
 					break;
 				}
@@ -47,7 +84,7 @@ PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len,
 			if (found) {
 				if (foundIndex)
 					*foundIndex = static_cast<ULONG>(i);
-				return static_cast<PUCHAR>(base) + i + relativeOffset;
+				return static_cast<PUCHAR>(base) + i + pattern.RelativeOffset;
 			}
 		}
 	}
@@ -55,8 +92,8 @@ PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len,
 		for (int i = static_cast<int>(size); i >= 0; i--) {
 			found = true;
 
-			for (ULONG_PTR j = 0; j < len; j++) {
-				if (pattern[j] != wildcard && pattern[j] != *(static_cast<PCUCHAR>(base) - i + j)) {
+			for (ULONG_PTR j = 0; j < pattern.Length; j++) {
+				if (pattern.Data[j] != pattern.Wildcard && pattern.Data[j] != *(static_cast<PCUCHAR>(base) - i + j)) {
 					found = false;
 					break;
 				}
@@ -65,12 +102,12 @@ PVOID FindPattern(_In_ PCUCHAR pattern, _In_ UCHAR wildcard, _In_ ULONG_PTR len,
 			if (found) {
 				if (foundIndex)
 					*foundIndex = i;
-				return static_cast<PUCHAR>(base) - i - relativeOffset;
+				return static_cast<PUCHAR>(base) - i - pattern.RelativeOffset;
 			}
 		}
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 /*
@@ -450,7 +487,6 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt = NULL;
 	PRTL_PROCESS_MODULES info = NULL;
 	NTSTATUS status = STATUS_SUCCESS;
-	UCHAR pattern[] = "\x4c\x8d\x15\xcc\xcc\xcc\xcc\x4c\x8d\x1d\xcc\xcc\xcc\xcc\xf7";
 
 	// Getting ntoskrnl base first.
 	status = ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoSize);
@@ -505,13 +541,13 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 
 	for (PIMAGE_SECTION_HEADER section = firstSection; section < firstSection + ntHeaders->FileHeader.NumberOfSections; section++) {
 		if (strcmp(reinterpret_cast<const char*>(section->Name), ".text") == 0) {
-			ssdtRelativeLocation = FindPattern(pattern, 0xCC, sizeof(pattern) - 1, static_cast<PUCHAR>(ntoskrnlBase) + section->VirtualAddress, 
-				section->Misc.VirtualSize, NULL, NULL);
+			ssdtRelativeLocation = FindPattern(SsdtPattern, static_cast<PUCHAR>(ntoskrnlBase) + section->VirtualAddress, 
+				section->Misc.VirtualSize, NULL);
 
 			if (ssdtRelativeLocation) {
 				status = STATUS_SUCCESS;
 				ssdt = reinterpret_cast<PSYSTEM_SERVICE_DESCRIPTOR_TABLE>(static_cast<PUCHAR>(ssdtRelativeLocation) + 
-					*reinterpret_cast<PULONG>(static_cast<PUCHAR>(ssdtRelativeLocation) + 3) + 7);
+					*static_cast<PULONG>(ssdtRelativeLocation) + 7);
 				break;
 			}
 		}
