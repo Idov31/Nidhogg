@@ -227,7 +227,7 @@
     <ClInclude Include="MemoryHandler.h" />
     <ClInclude Include="MemoryHelper.h" />
     <ClInclude Include="ModuleParser.h" />
-    <ClInclude Include="NetworkUtils.h" />
+    <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggCommon.h" />
     <ClInclude Include="Nidhogg.h" />
     <ClInclude Include="Parsers.h" />
@@ -260,7 +260,7 @@
     <ClCompile Include="MemoryHelper.cpp" />
     <ClCompile Include="MemoryHandler.cpp" />
     <ClCompile Include="ModuleParser.cpp" />
-    <ClCompile Include="NetworkUtils.cpp" />
+    <ClCompile Include="NetworkHandler.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
     <ClCompile Include="PatchParser.cpp" />
     <ClCompile Include="pch.cpp">

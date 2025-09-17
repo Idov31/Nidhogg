@@ -58,7 +58,7 @@
     <ClInclude Include="MemoryHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NetworkUtils.h">
+    <ClInclude Include="NetworkHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BaseParser.h">
@@ -150,7 +150,7 @@
     <ClCompile Include="AntiAnalysis.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="NetworkUtils.cpp">
+    <ClCompile Include="NetworkHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BaseParser.cpp">

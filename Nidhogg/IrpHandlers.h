@@ -8,7 +8,7 @@
 #include "FileHandler.h"
 #include "RegistryHandler.h"
 #include "AntiAnalysis.h"
-#include "NetworkUtils.h"
+#include "NetworkHandler.h"
 #include "ScriptManager.h"
 
 // ** IOCTLS **********************************************************************************************
