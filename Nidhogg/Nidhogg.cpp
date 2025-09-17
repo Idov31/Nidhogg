@@ -194,7 +194,8 @@ void ExecuteInitialOperations() {
 
 	if constexpr (InitialOperationsSize == 0 || !InitialOperations)
 		return;
-
+#pragma warning(push)
+#pragma warning(disable : 4702)
 	scriptInfo.ScriptSize = InitialOperationsSize;
 	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
 	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
@@ -219,6 +220,7 @@ void ExecuteInitialOperations() {
 		Print(DRIVER_PREFIX "Failed to execute initial operations (0x%08X)\n", status);
 	else
 		Print(DRIVER_PREFIX "Executed initial opeartions successfully.\n");
+#pragma warning(pop)
 }
 
 /*
@@ -238,7 +240,7 @@ void ClearAll() {
 	delete NidhoggMemoryHandler;
 	delete NidhoggAntiAnalysis;
 	delete NidhoggRegistryHandler;
-	delete NidhoggNetworkUtils;
+	delete NidhoggNetworkHandler;
 }
 
 /*
@@ -298,9 +300,9 @@ bool InitializeFeatures() {
 	if (!NidhoggRegistryHandler)
 		return false;
 
-	NidhoggNetworkUtils = new NetworkUtils();
+	NidhoggNetworkHandler = new NetworkHandler();
 
-	if (!NidhoggNetworkUtils)
+	if (!NidhoggNetworkHandler)
 		return false;
 
 	// Initialize functions.
