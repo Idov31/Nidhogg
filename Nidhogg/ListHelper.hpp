@@ -166,7 +166,7 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> function) {
 	ListItem* entry = nullptr;
-	AutoLock locker(list->Lock);
+	list->Lock.Lock();
 
 	if (list->Count == 0 || !list->Items)
 		return;
@@ -175,7 +175,9 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 	while (current != list->Items) {
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		current = current->Flink;
+		list->Lock.Unlock();
 		function(entry);
+		list->Lock.Lock();
 	}
 	list->Count = 0;
 }
