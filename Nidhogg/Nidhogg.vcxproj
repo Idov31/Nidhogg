@@ -220,7 +220,7 @@
     <ClInclude Include="IrpHandlers.h" />
     <ClInclude Include="ListHelper.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
-    <ClInclude Include="AntiAnalysis.h" />
+    <ClInclude Include="AntiAnalysisHandler.h" />
     <ClInclude Include="AutoLock.h" />
     <ClInclude Include="FastMutex.h" />
     <ClInclude Include="FileHandler.h" />
@@ -246,7 +246,7 @@
     <ClInclude Include="WindowsTypes.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AntiAnalysis.cpp" />
+    <ClCompile Include="AntiAnalysisHandler.cpp" />
     <ClCompile Include="BaseParser.cpp" />
     <ClCompile Include="CallbacksParser.cpp" />
     <ClCompile Include="DllInjectionParser.cpp" />

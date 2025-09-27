@@ -238,7 +238,7 @@ void ClearAll() {
 	delete NidhoggThreadHandler;
 	delete NidhoggFileHandler;
 	delete NidhoggMemoryHandler;
-	delete NidhoggAntiAnalysis;
+	delete NidhoggAntiAnalysisHandler;
 	delete NidhoggRegistryHandler;
 	delete NidhoggNetworkHandler;
 }
@@ -290,9 +290,9 @@ bool InitializeFeatures() {
 	if (!NidhoggMemoryHandler)
 		return false;
 
-	NidhoggAntiAnalysis = new AntiAnalysis();
+	NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
 
-	if (!NidhoggAntiAnalysis)
+	if (!NidhoggAntiAnalysisHandler)
 		return false;
 
 	NidhoggRegistryHandler = new RegistryHandler();

