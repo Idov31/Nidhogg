@@ -61,10 +61,6 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 	_In_ SIZE_T dataSize, _In_ MODE mode, _In_ bool alignAddr = true);
 
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ReadProcessMemory(_In_ const PEPROCESS& process, _In_ PVOID sourceAddress, _Inout_ PVOID targetAddress, _In_ SIZE_T dataSize, 
-	_In_ MODE mode);
-
-_IRQL_requires_max_(APC_LEVEL)
 PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName);
 
 _IRQL_requires_max_(APC_LEVEL)

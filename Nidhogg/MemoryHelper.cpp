@@ -249,36 +249,6 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 
 /*
 * Description:
-* ReadProcessMemory is responsible for read data from any target process.
-*
-* Parameters:
-* @process		 [_In_ const PEPROCESS&] -- Process to read data from.
-* @sourceAddress [_In_ PVOID]			 -- Address to read data from.
-* @targetAddress [_Inout_ PVOID]		 -- Address to read data to.
-* @dataSize		 [_In_ SIZE_T]			 -- Size of data to read.
-* @mode			 [_In_ MODE]			 -- Mode of the request (UserMode or KernelMode allowed).
-*
-* Returns:
-* @status		 [NTSTATUS]				 -- Whether successfuly read or not.
-*/
-_IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ReadProcessMemory(_In_ const PEPROCESS& process, _In_ PVOID sourceAddress, _Inout_ PVOID targetAddress, _In_ SIZE_T dataSize,
-	_In_ MODE mode) {
-	SIZE_T bytesRead;
-
-	if (mode != KernelMode && mode != UserMode)
-		return STATUS_UNSUCCESSFUL;
-
-	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && !VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)))
-		return STATUS_UNSUCCESSFUL;
-	else if (mode == UserMode && !NT_SUCCESS(ProbeAddress(sourceAddress, dataSize, static_cast<ULONG>(dataSize))))
-		return STATUS_UNSUCCESSFUL;
-	return MmCopyVirtualMemory(process, sourceAddress, PsGetCurrentProcess(), targetAddress, dataSize, KernelMode, &bytesRead);
-}
-
-/*
-* Description:
 * GetModuleBase is responsible for getting the base address of given module inside a given process.
 *
 * Parameters:
