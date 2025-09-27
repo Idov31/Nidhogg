@@ -176,12 +176,30 @@ public:
 
 class MemoryGuard {
 private:
+	FastMutex lock;
 	PMDL mdl;
 	bool valid;
 
 public:
 	_IRQL_requires_max_(APC_LEVEL)
+	MemoryGuard() {
+		this->mdl = nullptr;
+		this->valid = false;
+		lock.Init();
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
 	MemoryGuard(_In_ PVOID address, _In_ ULONG length, _In_ KPROCESSOR_MODE mode) noexcept {
+		this->mdl = nullptr;
+		this->valid = false;
+		lock.Init();
+		GuardMemory(address, length, mode);
+	}
+
+	bool GuardMemory(_In_ PVOID address, _In_ ULONG length, _In_ KPROCESSOR_MODE mode) {
+		UnguardMemory();
+
+		AutoLock locker(lock);
 		this->mdl = nullptr;
 		this->valid = false;
 
@@ -199,18 +217,31 @@ public:
 				}
 			}
 		}
+
+		return this->valid;
+	}
+
+	void UnguardMemory() {
+		AutoLock locker(this->lock);
+
+		if (this->mdl) {
+			if (this->valid) {
+				MmUnlockPages(this->mdl);
+				this->valid = false;
+			}
+			IoFreeMdl(this->mdl);
+			this->mdl = nullptr;
+		}
 	}
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool IsValid() const {
+	bool IsValid() {
+		AutoLock locker(this->lock);
 		return this->valid;
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
 	~MemoryGuard() noexcept {
-		if (this->mdl) {
-			MmUnlockPages(this->mdl);
-			IoFreeMdl(this->mdl);
-		}
+		UnguardMemory();
 	}
 };
