@@ -18,7 +18,10 @@ char* GetMainDriveLetter() {
     UNICODE_STRING keyPath = { 0 };
     UNICODE_STRING valueName = { 0 };
     OBJECT_ATTRIBUTES objAttrs = { 0 };
-    char systemDrive[DRIVE_LETTER_SIZE] = { 0 };
+    char* systemDrive = AllocateMemory<char*>(DRIVE_LETTER_SIZE);
+
+    if (!systemDrive)
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
     RtlInitUnicodeString(&keyPath, CURRENT_VERSION_REGISTRY_KEY);
     RtlInitUnicodeString(&valueName, PROGRAM_FILES_VALUE);
@@ -37,6 +40,7 @@ char* GetMainDriveLetter() {
             if (resultLength < DRIVE_LETTER_SIZE) {
 				status = STATUS_BUFFER_TOO_SMALL;
 				ZwClose(keyHandle);
+				FreeVirtualMemory(systemDrive);
 				ExRaiseStatus(status);
             }
             PCHAR systemRoot = reinterpret_cast<PCHAR>(valueInfo->Data);
@@ -50,6 +54,7 @@ char* GetMainDriveLetter() {
 
             if (!NT_SUCCESS(status)) {
                 ZwClose(keyHandle);
+                FreeVirtualMemory(systemDrive);
                 ExRaiseStatus(status);
 			}
         }
