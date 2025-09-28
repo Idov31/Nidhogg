@@ -52,6 +52,15 @@ private:
 	_IRQL_requires_max_(APC_LEVEL)
 	bool AddHiddenThread(_In_ HiddenThreadEntry thread);
 
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetThreadListEntryOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetThreadLockOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetThreadListHeadOffset() const;
+
 public:
 	void* operator new(size_t size) noexcept {
 		return AllocateMemory<PVOID>(size, false);

@@ -1517,3 +1517,93 @@ VOID PrepareApcCallback(PKAPC Apc, PKNORMAL_ROUTINE* NormalRoutine, PVOID* Norma
 	KeTestAlertThread(UserMode);
 	ExFreePoolWithTag(Apc, DRIVER_TAG);
 }
+
+/*
+* Description:
+* GetVadRootOffset is responsible for getting the VadRoot offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @vadRootOffset [ULONG] -- Offset of VAD root.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG MemoryHandler::GetVadRootOffset() const {
+	ULONG vadRootOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return vadRootOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+		vadRootOffset = 0x608;
+		break;
+	case WIN_1511:
+		vadRootOffset = 0x610;
+		break;
+	case WIN_1607:
+		vadRootOffset = 0x620;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		vadRootOffset = 0x628;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		vadRootOffset = 0x658;
+		break;
+	case WIN_11_24H2:
+		vadRootOffset = 0x558;
+		break;
+	default:
+		vadRootOffset = 0x7d8;
+		break;
+	}
+
+	return vadRootOffset;
+}
+
+/*
+* Description:
+* GetPageCommitmentLockOffset is responsible for getting the PageCommitmentLock offset depends on the windows version.
+* 
+* Parameters:
+* There are no parameters.
+* 
+* Returns:
+* @pageCommitmentLockOffset [ULONG] -- Offset of PageCommitmentLock.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG MemoryHandler::GetPageCommitmentLockOffset() const {
+	ULONG pageCommitmentLockOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return pageCommitmentLockOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		pageCommitmentLockOffset = 0x370;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		pageCommitmentLockOffset = 0x378;
+		break;
+	case WIN_11_24H2:
+		pageCommitmentLockOffset = 0x260;
+		break;
+	default:
+		pageCommitmentLockOffset = 0x4d0;
+		break;
+	}
+
+	return pageCommitmentLockOffset;
+}

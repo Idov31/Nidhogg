@@ -12,6 +12,9 @@ constexpr SIZE_T PROCESS_VM_OPERATION = 0x8;
 _IRQL_requires_max_(APC_LEVEL)
 ULONG FindPidByName(_In_ const wchar_t* processName);
 
+_IRQL_requires_max_(APC_LEVEL)
+ULONG GetProcessLockOffset();
+
 constexpr auto IsValidPid = [](ULONG pid) -> bool {
 	return pid > SYSTEM_PROCESS_PID;
 };

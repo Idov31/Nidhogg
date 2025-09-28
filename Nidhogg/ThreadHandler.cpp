@@ -73,7 +73,7 @@ NTSTATUS ThreadHandler::HideThread(_In_ ULONG tid) {
 	ULONG threadListEntryOffset = GetThreadListEntryOffset();
 	ULONG lockOffset = GetThreadLockOffset();
 
-	if (threadListEntryOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
+	if (threadListEntryOffset == 0 || lockOffset == 0)
 		return STATUS_UNSUCCESSFUL;
 
 	status = PsLookupThreadByThreadId(UlongToHandle(tid), &targetThread);
@@ -145,7 +145,7 @@ NTSTATUS ThreadHandler::UnhideThread(_In_ ULONG tid) {
 	ULONG lockOffset = GetProcessLockOffset();
 	ULONG threadListHeadOffset = GetThreadListHeadOffset();
 
-	if (threadListHeadOffset == (ULONG)STATUS_UNSUCCESSFUL || lockOffset == (ULONG)STATUS_UNSUCCESSFUL)
+	if (threadListHeadOffset == 0 || lockOffset == 0)
 		return STATUS_NOT_FOUND;
 
 	status = PsLookupProcessByProcessId(UlongToHandle(thread->Tid), &owningProcess);
@@ -453,4 +453,156 @@ void ThreadHandler::ClearThreadList(_In_ ThreadType type) {
 		ClearList<ThreadList, HiddenThreadEntry>(&this->hiddenThreads);
 		break;
 	}
+}
+
+/*
+* Description:
+* GetThreadListEntryOffset is responsible for getting the thread list entry offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadListEntry [ULONG] -- Offset of thread list entry.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG ThreadHandler::GetThreadListEntryOffset() const {
+	ULONG threadListEntry = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return threadListEntry;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+		threadListEntry = 0x690;
+		break;
+	case WIN_1607:
+		threadListEntry = 0x698;
+		break;
+	case WIN_1703:
+		threadListEntry = 0x6a0;
+		break;
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		threadListEntry = 0x6a8;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		threadListEntry = 0x6b8;
+		break;
+	case WIN_2004:
+	case WIN_20H2:
+	case WIN_21H1:
+	case WIN_21H2:
+	case WIN_22H2:
+		threadListEntry = 0x4e8;
+		break;
+	case WIN_11_24H2:
+		threadListEntry = 0x578;
+		break;
+	default:
+		threadListEntry = 0x538;
+		break;
+	}
+
+	return threadListEntry;
+}
+
+/*
+* Description:
+* GetThreadListHeadOffset is responsible for getting the thread list head offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadListHead [ULONG] -- Offset of thread list head.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG ThreadHandler::GetThreadListHeadOffset() const {
+	ULONG threadListHead = 0;
+	
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return threadListHead;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+		threadListHead = 0x480;
+		break;
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		threadListHead = 0x488;
+		break;
+	case WIN_11_24H2:
+		threadListHead = 0x370;
+		break;
+	default:
+		threadListHead = 0x5e0;
+		break;
+	}
+
+	return threadListHead;
+}
+
+/*
+* Description:
+* GetThreadLockOffset is responsible for getting the ThreadLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @threadLockOffset [ULONG] -- Offset of ProcessLock.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG ThreadHandler::GetThreadLockOffset() const {
+	ULONG threadLockOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return threadLockOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+		threadLockOffset = 0x6a8;
+		break;
+	case WIN_1607:
+		threadLockOffset = 0x6b0;
+		break;
+	case WIN_1703:
+		threadLockOffset = 0x6b8;
+		break;
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		threadLockOffset = 0x6c0;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		threadLockOffset = 0x6d0;
+		break;
+	case WIN_2004:
+	case WIN_20H2:
+	case WIN_21H1:
+	case WIN_21H2:
+	case WIN_22H2:
+		threadLockOffset = 0x500;
+		break;
+	case WIN_11_24H2:
+		threadLockOffset = 0x590;
+		break;
+	default:
+		threadLockOffset = 0x550;
+		break;
+	}
+
+	return threadLockOffset;
 }

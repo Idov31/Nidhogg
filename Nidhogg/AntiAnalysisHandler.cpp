@@ -68,14 +68,14 @@ NTSTATUS AntiAnalysisHandler::EnableDisableEtwTI(_In_ bool enable) {
 		EtwThreatIntProvRegHandleOffset;
 	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
 
-	if (enableProviderInfoOffset == (ULONG)STATUS_UNSUCCESSFUL)
+	if (enableProviderInfoOffset == 0)
 		return STATUS_UNSUCCESSFUL;
 
 	PTRACE_ENABLE_INFO enableProviderInfo = reinterpret_cast<PTRACE_ENABLE_INFO>(etwThreatIntProvRegHandle +
 		EtwGuidEntryOffset + enableProviderInfoOffset);
 	ULONG lockOffset = GetEtwGuidLockOffset();
 
-	if (lockOffset != (ULONG)STATUS_UNSUCCESSFUL) {
+	if (lockOffset != 0) {
 		etwThreatIntLock = reinterpret_cast<EX_PUSH_LOCK>(etwThreatIntProvRegHandle + EtwGuidEntryOffset + lockOffset);
 		ExAcquirePushLockExclusiveEx(&etwThreatIntLock, 0);
 	}
@@ -1063,4 +1063,77 @@ NTSTATUS RegistryCallbackDummyFunction(PVOID CallbackContext, PVOID Argument1, P
 	UNREFERENCED_PARAMETER(Argument1);
 	UNREFERENCED_PARAMETER(Argument2);
 	return STATUS_SUCCESS;
+}
+
+/*
+* Description:
+* GetEtwProviderEnableInfoOffset is responsible for getting the ProviderEnableInfo offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @providerEnableInfo [ULONG] -- Offset of ProviderEnableInfo.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG AntiAnalysisHandler::GetEtwProviderEnableInfoOffset() const {
+	ULONG providerEnableInfo = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return providerEnableInfo;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		providerEnableInfo = 0x50;
+		break;
+	default:
+		providerEnableInfo = 0x60;
+		break;
+	}
+
+	return providerEnableInfo;
+}
+
+/*
+* Description:
+* GetEtwGuidLockOffset is responsible for getting the GuidLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @etwGuidLockOffset [ULONG] -- Offset of guid lock.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG AntiAnalysisHandler::GetEtwGuidLockOffset() const {
+	ULONG etwGuidLockOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return etwGuidLockOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+	case WIN_1903:
+	case WIN_1909:
+		etwGuidLockOffset = 0x180;
+		break;
+	default:
+		etwGuidLockOffset = 0x198;
+		break;
+	}
+
+	return etwGuidLockOffset;
 }

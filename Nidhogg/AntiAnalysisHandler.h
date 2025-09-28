@@ -187,6 +187,12 @@ private:
 	ULONG prevEtwTiValue;
 
 	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetEtwProviderEnableInfoOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	ULONG GetEtwGuidLockOffset() const;
+
+	_IRQL_requires_max_(APC_LEVEL)
 	char* MatchCallback(_In_ PVOID callack);
 
 	_IRQL_requires_max_(APC_LEVEL)

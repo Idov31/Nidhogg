@@ -58,3 +58,45 @@ ULONG FindPidByName(_In_ const wchar_t* processName) {
 	FreeVirtualMemory(originalInfo);
 	return status;
 }
+
+/*
+* Description:
+* GetProcessLockOffset is responsible for getting the ProcessLock offset depends on the windows version.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @processLockOffset [ULONG] -- Offset of ProcessLock.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+ULONG GetProcessLockOffset() {
+	ULONG processLockOffset = 0;
+
+	if (WindowsBuildNumber > LATEST_VERSION)
+		return processLockOffset;
+
+	switch (WindowsBuildNumber) {
+	case WIN_1507:
+	case WIN_1511:
+	case WIN_1607:
+	case WIN_1703:
+	case WIN_1709:
+	case WIN_1803:
+	case WIN_1809:
+		processLockOffset = 0x2d8;
+		break;
+	case WIN_1903:
+	case WIN_1909:
+		processLockOffset = 0x2e0;
+		break;
+	case WIN_11_24H2:
+		processLockOffset = 0x1c8;
+		break;
+	default:
+		processLockOffset = 0x438;
+		break;
+	}
+
+	return processLockOffset;
+}
