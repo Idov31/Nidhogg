@@ -877,6 +877,12 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	ULONG foundIndex = 0;
 	PVOID lsasrvMain = nullptr;
 	PVOID lsaIGetNbAndDnsDomainNames = nullptr;
+
+	auto AlignAddress = [](ULONGLONG Address) -> ULONGLONG {
+		ULONG remain = Address % 8;
+		return remain != 0 ? Address + 8 - remain : Address;
+	};
+
 	AutoLock locker(lsassMetadata.Lock);
 
 	if (lsassMetadata.Collected)
