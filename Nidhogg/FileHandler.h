@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "IoctlShared.h"
 #include "MemoryHelper.h"
 #include "MemoryAllocator.hpp"
 
@@ -14,26 +15,10 @@ extern "C" {
 // Definitions.
 constexpr SIZE_T SUPPORTED_HOOKED_NTFS_CALLBACKS = IRP_MJ_MAXIMUM_FUNCTION;
 
-enum class FileType {
-	Protected,
-	All
-};
-
-struct ProtectedFile {
-	WCHAR* FilePath;
-	bool Protect;
-};
-
 struct FileItem {
 	LIST_ENTRY Entry;
 	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];
-};
-
-struct IoctlFileList {
-	FileType Type;
-	SIZE_T Count;
-	FileItem* Files;
 };
 
 struct FilesList {

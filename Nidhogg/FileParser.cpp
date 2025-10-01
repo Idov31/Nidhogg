@@ -27,7 +27,7 @@ FileParser::FileParser() {
 */
 NTSTATUS FileParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	UNICODE_STRING wFileName = { 0 };
-	ProtectedFile protectedFile{};
+	IoctlFileItem protectedFile{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	if (args[0]) {

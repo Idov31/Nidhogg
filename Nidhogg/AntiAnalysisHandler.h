@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "IoctlShared.h"
 
 extern "C" {
 	#include "WindowsTypes.h"
@@ -111,28 +112,11 @@ constexpr SIZE_T MAX_DRIVER_PATH = 256;
 constexpr ULONG MAX_ROUTINES = 64;
 constexpr SIZE_T ROUTINE_MASK = ~(1ULL << 3) + 1;
 
-enum CallbackType {
-	ObProcessType,
-	ObThreadType,
-	PsCreateProcessTypeEx,
-	PsCreateProcessType,
-	PsCreateThreadType,
-	PsCreateThreadTypeNonSystemThread,
-	PsImageLoadType,
-	CmRegistryType
-};
-
 template<typename CallbackListType>
 struct IoctlCallbackList {
 	CallbackType Type;
 	SIZE_T Count;
 	CallbackListType* Callbacks;
-};
-
-struct IoctlKernelCallback {
-	CallbackType Type;
-	ULONG64 CallbackAddress;
-	bool Remove;
 };
 
 struct DisabledKernelCallback {

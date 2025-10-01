@@ -44,7 +44,7 @@ ShellcodeInjectionParser::~ShellcodeInjectionParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	ShellcodeInformation shellcodeInfo{};
+	IoctlShellcodeInfo shellcodeInfo{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	shellcodeInfo.Pid = *(ULONG*)args[0];

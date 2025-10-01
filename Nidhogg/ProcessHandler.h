@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "IoctlShared.h"
 #include "ListHelper.hpp"
 #include "MemoryHelper.h"
 #include "ProcessHelper.h"
@@ -11,23 +12,6 @@ extern "C" {
 #include "MemoryHandler.h"
 
 // Structs
-enum class ProcessType {
-	Protected,
-	Hidden,
-	All
-};
-
-struct IoctlProcessEntry {
-	ULONG Pid;
-	bool Remove;
-};
-
-struct IoctlProcessList {
-	ProcessType Type;
-	SIZE_T Count;
-	ULONG* Processes;
-};
-
 struct ProtectedProcessEntry {
 	LIST_ENTRY Entry;
 	ULONG Pid;

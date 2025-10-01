@@ -217,6 +217,7 @@
     <ClInclude Include="FileHelper.h" />
     <ClInclude Include="FileParser.h" />
     <ClInclude Include="InitialOperation.h" />
+    <ClInclude Include="IoctlShared.h" />
     <ClInclude Include="IrpHandlers.h" />
     <ClInclude Include="ListHelper.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />

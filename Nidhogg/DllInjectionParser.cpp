@@ -26,7 +26,7 @@ DllInjectionParser::DllInjectionParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	DllInformation dllInfo{};
+	IoctlDllInfo dllInfo{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	dllInfo.Pid = *(ULONG*)args[0];

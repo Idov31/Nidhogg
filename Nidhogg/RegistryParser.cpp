@@ -28,7 +28,7 @@ RegistryParser::RegistryParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS RegistryParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	RegItem regItem = { 0 };
+	IoctlRegItem regItem{};
 	UNICODE_STRING wKeyName = { 0 };
 	UNICODE_STRING wValueName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;

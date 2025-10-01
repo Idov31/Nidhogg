@@ -17,7 +17,7 @@
 NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	UNREFERENCED_PARAMETER(commandId);
 
-	PatchedModule patchedModule{};
+	IoctlPatchedModule patchedModule{};
 	ANSI_STRING aModuleName = { 0 };
 	UNICODE_STRING wModuleName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;

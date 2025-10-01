@@ -25,7 +25,7 @@ ModuleParser::ModuleParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	HiddenModuleInformation hiddenModule{};
+	IoctlHiddenModuleInfo hiddenModule{};
 	UNICODE_STRING wModuleName = { 0 };
 	ANSI_STRING aModuleName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;

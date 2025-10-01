@@ -338,12 +338,15 @@ NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		FileItem* item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
+			status = MmCopyVirtualMemory(
+				PsGetCurrentProcess(),
 				&item->FilePath,
 				PsGetCurrentProcess(),
-				filesList->Files + count,
+				&filesList->Files[count],
 				wcslen(item->FilePath) * sizeof(WCHAR),
-				UserMode);
+				UserMode,
+				nullptr
+			);
 
 			if (!NT_SUCCESS(status)) {
 				filesList->Count = count;

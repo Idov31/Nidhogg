@@ -67,13 +67,13 @@ MemoryHandler::~MemoryHandler() {
 * InjectDllAPC is responsible to inject a dll in a certain usermode process with APC.
 *
 * Parameters:
-* @dllInfo [_In_ DllInformation*] -- All the information regarding the injected dll.
+* @dllInfo [_In_ IoctlDllInfo*] -- All the information regarding the injected dll.
 *
 * Returns:
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
-NTSTATUS MemoryHandler::InjectDllAPC(_In_ DllInformation* dllInfo) {
-	ShellcodeInformation shellcodeInfo{};
+NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo* dllInfo) {
+	IoctlShellcodeInfo shellcodeInfo{};
 	SIZE_T dllPathSize = strlen(dllInfo->DllPath) + 1;
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
@@ -110,13 +110,13 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ DllInformation* dllInfo) {
 * InjectDllThread is responsible to inject a dll in a certain usermode process with NtCreateThreadEx.
 *
 * Parameters:
-* @dllInfo [_In_ DllInformation*] -- All the information regarding the injected dll.
+* @dllInfo [_In_ IoctlDllInfo*] -- All the information regarding the injected dll.
 *
 * Returns:
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectDllThread(_In_ DllInformation* dllInfo) {
+NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo* dllInfo) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -194,14 +194,14 @@ NTSTATUS MemoryHandler::InjectDllThread(_In_ DllInformation* dllInfo) {
 * InjectShellcodeAPC is responsible to inject a shellcode in a certain usermode process.
 *
 * Parameters:
-* @ShellcodeInfo [_In_ ShellcodeInformation*] -- All the information regarding the injected shellcode.
+* @ShellcodeInfo [_In_ IoctlShellcodeInfo*] -- All the information regarding the injected shellcode.
 * @isInjectedDll [_In_ bool]				  -- Whether the shellcode is injected from InjectDllAPC or not.
 *
 * Returns:
 * @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ ShellcodeInformation* shellcodeInformation, _In_ bool isInjectedDll) {
+NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ IoctlShellcodeInfo* shellcodeInformation, _In_ bool isInjectedDll) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -315,13 +315,13 @@ NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ ShellcodeInformation* shellcodeI
 * InjectShellcodeThread is responsible to inject a shellcode in a certain usermode process with NtCreateThreadEx.
 *
 * Parameters:
-* @ShellcodeInfo [_In_ ShellcodeInformation*] -- All the information regarding the injected shellcode.
+* @ShellcodeInfo [_In_ IoctlShellcodeInfo*] -- All the information regarding the injected shellcode.
 *
 * Returns:
 * @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ ShellcodeInformation* shellcodeInfo) {
+NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo* shellcodeInfo) {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -384,13 +384,13 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ ShellcodeInformation* shellco
 * PatchModule is responsible for patching a certain moudle in a certain process.
 *
 * Parameters:
-* @ModuleInformation [_In_ PatchedModule*] -- All the information regarding the module that needs to be patched.
+* @ModuleInformation [_In_ IoctlPatchedModule*] -- All the information regarding the module that needs to be patched.
 *
 * Returns:
 * @status			 [NTSTATUS]			   -- Whether successfuly patched or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::PatchModule(_In_ PatchedModule* moduleInformation) {
+NTSTATUS MemoryHandler::PatchModule(_In_ IoctlPatchedModule* moduleInformation) {
 	PEPROCESS targetProcess = nullptr;
 	PVOID functionAddress = NULL;
 	WCHAR* moduleName = NULL;
@@ -435,13 +435,13 @@ NTSTATUS MemoryHandler::PatchModule(_In_ PatchedModule* moduleInformation) {
 * HideModule is responsible for hiding user mode module that is loaded in a process.
 *
 * Parameters:
-* @moduleInformation [_In_ HiddenModuleInformation*] -- Required information, contains PID and module's name.
+* @moduleInformation [_In_ IoctlHiddenModuleInfo*] -- Required information, contains PID and module's name.
 *
 * Returns:
 * @status			 [NTSTATUS]						 -- Whether successfuly hidden or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformation) {
+NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo* moduleInformation) {
 	PLDR_DATA_TABLE_ENTRY pebEntry;
 	KAPC_STATE state;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -527,13 +527,13 @@ NTSTATUS MemoryHandler::HideModule(_In_ HiddenModuleInformation* moduleInformati
 * RestoreModule is responsible for restoring a hidden user mode module that is loaded in a process.
 * 
 * Parameters:
-* @moduleInformation [_In_ HiddenModuleInformation*] -- Required information, contains PID and module's name.
+* @moduleInformation [_In_ IoctlHiddenModuleInfo*] -- Required information, contains PID and module's name.
 * 
 * Returns:
 * @status			 [NTSTATUS]						 -- Whether successfuly restored or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleInformation* moduleInformation) {
+NTSTATUS MemoryHandler::RestoreModule(_In_ IoctlHiddenModuleInfo* moduleInformation) {
 	HiddenModuleEntry* entry = nullptr;
 
 	__try {
@@ -1350,16 +1350,16 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 /*
 */
 _IRQL_requires_max_(APC_LEVEL)
-HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleInformation* info) const {
+HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ IoctlHiddenModuleInfo* info) const {
 	if (!info->ModuleName || !IsValidPath(info->ModuleName) || info->Pid <= SYSTEM_PROCESS_PID)
 		ExRaiseStatus(STATUS_INVALID_PARAMETER);
 
-	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ HiddenModuleInformation* infoToSearch) {
+	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ IoctlHiddenModuleInfo* infoToSearch) {
 		if (wcslen(item->ModuleName) != wcslen(infoToSearch->ModuleName) || item->Pid != infoToSearch->Pid)
 			return false;
 		return _wcsicmp(item->ModuleName, infoToSearch->ModuleName) == 0;
 	};
-	HiddenModuleEntry* item = FindListEntry<HiddenItemsList, HiddenModuleEntry, HiddenModuleInformation*>(hiddenModules, info, finder);
+	HiddenModuleEntry* item = FindListEntry<HiddenItemsList, HiddenModuleEntry, IoctlHiddenModuleInfo*>(hiddenModules, info, finder);
 
 	if (!item)
 		ExRaiseStatus(STATUS_NOT_FOUND);
@@ -1411,7 +1411,7 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 		return false;
 
 	__try {
-		entry = FindHiddenModule(reinterpret_cast<HiddenModuleInformation*>(&item));
+		entry = FindHiddenModule(reinterpret_cast<IoctlHiddenModuleInfo*>(&item));
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		if (GetExceptionCode() != STATUS_NOT_FOUND)

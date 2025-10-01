@@ -99,7 +99,7 @@ NTSTATUS OnRegistryNotify(_In_ PVOID context, _In_opt_ PVOID arg1, _In_opt_ PVOI
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreDeleteKeyHandler(_Inout_ REG_DELETE_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -142,7 +142,7 @@ NTSTATUS RegistryHandler::RegNtPreDeleteKeyHandler(_Inout_ REG_DELETE_KEY_INFORM
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreDeleteValueKeyHandler(_Inout_ REG_DELETE_VALUE_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -189,7 +189,7 @@ NTSTATUS RegistryHandler::RegNtPreDeleteValueKeyHandler(_Inout_ REG_DELETE_VALUE
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryKeyHandler(_Inout_ REG_QUERY_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -233,7 +233,7 @@ NTSTATUS RegistryHandler::RegNtPreQueryKeyHandler(_Inout_ REG_QUERY_KEY_INFORMAT
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryValueKeyHandler(_Inout_ REG_QUERY_VALUE_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -280,7 +280,7 @@ NTSTATUS RegistryHandler::RegNtPreQueryValueKeyHandler(_Inout_ REG_QUERY_VALUE_K
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryMultipleValueKeyHandler(_Inout_ REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -333,7 +333,7 @@ NTSTATUS RegistryHandler::RegNtPreQueryMultipleValueKeyHandler(_Inout_ REG_QUERY
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreSetValueKeyHandler(_Inout_ REG_SET_VALUE_KEY_INFORMATION* info) {
-	RegItem regItem{};
+	IoctlRegItem regItem{};
 	PCUNICODE_STRING regPath;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -384,8 +384,8 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 	HANDLE key = NULL;
 	PVOID tempKeyInformation = NULL;
 	ULONG resultLength = 0;
-	RegItem item = { 0 };
-	RegItem regPathItem = { 0 };
+	IoctlRegItem item{};
+	IoctlRegItem regPathItem{};
 	UNICODE_STRING keyName;
 	ULONG counter = 0;
 
@@ -513,8 +513,8 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 	PCUNICODE_STRING regPath;
 	UNICODE_STRING valueName;
 	ULONG resultLength = 0;
-	RegItem item = { 0 };
-	RegItem regPathitem = { 0 };
+	IoctlRegItem item{};
+	IoctlRegItem regPathitem{};
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG counter = 0;
 
@@ -619,7 +619,7 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 * Returns:
 * @bool											  -- Whether the operation was successful or not.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_max_(APC_LEVEL)
 bool RegistryHandler::GetNameFromValueEnumPreInfo(_In_ KEY_VALUE_INFORMATION_CLASS infoClass, _In_ PVOID information, _Inout_ PUNICODE_STRING valueName) {
 	switch (infoClass) {
 	case KeyValueBasicInformation:
@@ -657,7 +657,7 @@ bool RegistryHandler::GetNameFromValueEnumPreInfo(_In_ KEY_VALUE_INFORMATION_CLA
 * Returns:
 * @bool											  -- Whether the operation was successful or not.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_max_(APC_LEVEL)
 bool RegistryHandler::GetNameFromKeyEnumPreInfo(_In_ KEY_INFORMATION_CLASS infoClass, _In_ PVOID information, _Inout_ PUNICODE_STRING keyName) {
 	switch (infoClass) {
 	case KeyBasicInformation:
@@ -701,8 +701,8 @@ bool RegistryHandler::GetNameFromKeyEnumPreInfo(_In_ KEY_INFORMATION_CLASS infoC
 * Returns:
 * @status [bool]	 -- Whether found or not.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
-bool RegistryHandler::FindRegItem(_In_ RegItem item, _In_ bool partial) const {
+_IRQL_requires_max_(APC_LEVEL)
+bool RegistryHandler::FindRegItem(_In_ const IoctlRegItem& item, _In_ bool partial) const {
 	RegistryEntryList entriesList = { 0 };
 
 	if (!IsValidKey(item.KeyPath))
@@ -734,17 +734,17 @@ bool RegistryHandler::FindRegItem(_In_ RegItem item, _In_ bool partial) const {
 	}
 
 	if (partial) {
-		auto partialFinder = [](_In_ const RegItem* entry, _In_ RegItem currentItem) -> bool {
+		auto partialFinder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) -> bool {
 			if (entry->Type != currentItem.Type)
 				return false;
 			if (wcslen(entry->KeyPath) > wcslen(currentItem.KeyPath))
 				return false;
 			return _wcsnicmp(entry->KeyPath, currentItem.KeyPath, wcslen(currentItem.KeyPath)) == 0;
-			};
-		return FindListEntry<RegistryEntryList, RegItem, RegItem>(entriesList, item, partialFinder);
+		};
+		return FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(entriesList, item, partialFinder);
 	}
 
-	auto finder = [](_In_ const RegItem* entry, _In_ RegItem currentItem) -> bool {
+	auto finder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) -> bool {
 		if (entry->Type != currentItem.Type)
 			return false;
 		bool isSameKey = _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0;
@@ -752,9 +752,9 @@ bool RegistryHandler::FindRegItem(_In_ RegItem item, _In_ bool partial) const {
 		if (entry->Type == RegItemType::ProtectedKey || entry->Type == RegItemType::HiddenKey)
 			return isSameKey;
 		return isSameKey && _wcsicmp(entry->ValueName, currentItem.ValueName) == 0;
-		};
+	};
 
-	return FindListEntry<RegistryEntryList, RegItem, RegItem>(entriesList, item, finder);
+	return FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(entriesList, item, finder);
 }
 
 /*
@@ -762,13 +762,13 @@ bool RegistryHandler::FindRegItem(_In_ RegItem item, _In_ bool partial) const {
 * AddRegItem is responsible for adding a registry item to the list of protected registry items.
 *
 * Parameters:
-* @item	  [const RegItem&] -- Registry item to add.
+* @item	  [const IoctlRegItem&] -- Registry item to add.
 *
 * Returns:
-* @status [bool]		   -- Whether successfully added or not.
+* @status [bool]				-- Whether successfully added or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool RegistryHandler::AddRegItem(_In_ const RegItem& item) {
+bool RegistryHandler::AddRegItem(_In_ const IoctlRegItem& item) {
 	RegistryEntryList* list = nullptr;
 
 	switch (item.Type) {
@@ -820,50 +820,50 @@ bool RegistryHandler::AddRegItem(_In_ const RegItem& item) {
 * RemoveRegItem is responsible for remove a registry item from the list of protected registry items.
 *
 * Parameters:
-* @item	  [RegItem*] -- Registry item to remove.
+* @item	  [IoctlRegItem*] -- Registry item to remove.
 *
 * Returns:
-* @status [bool]	 -- Whether successfully removed or not.
+* @status [bool]		  -- Whether successfully removed or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-bool RegistryHandler::RemoveRegItem(_In_ const RegItem& item) {
+bool RegistryHandler::RemoveRegItem(_In_ const IoctlRegItem& item) {
 	if (!IsValidKey(item.KeyPath))
 		return false;
 
 	switch (item.Type) {
 	case RegItemType::ProtectedKey: {
-		auto finder = [](_In_ const RegItem* entry, _In_ const RegItem& currentItem) {
+		auto finder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0;
 			};
-		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const RegItem&>(keysList.Protected, item, finder);
+		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(keysList.Protected, item, finder);
 		return RemoveListEntry<RegistryEntryList, RegItem>(&keysList.Protected, entry);
 	}
 
 	case RegItemType::HiddenKey: {
-		auto finder = [](_In_ const RegItem* entry, _In_ const RegItem& currentItem) {
+		auto finder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0;
 		};
-		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const RegItem&>(keysList.Hidden, item, finder);
+		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(keysList.Hidden, item, finder);
 		return RemoveListEntry<RegistryEntryList, RegItem>(&keysList.Hidden, entry);
 	}
 	case RegItemType::ProtectedValue: {
 		if (!IsValidValue(item.ValueName))
 			return false;
-		auto finder = [](_In_ const RegItem* entry, _In_ const RegItem& currentItem) {
+		auto finder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0 &&
 				_wcsicmp(entry->ValueName, currentItem.ValueName) == 0;
 			};
-		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const RegItem&>(valuesList.Protected, item, finder);
+		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(valuesList.Protected, item, finder);
 		return RemoveListEntry<RegistryEntryList, RegItem>(&valuesList.Protected, entry);
 	}
 	case RegItemType::HiddenValue: {
 		if (!IsValidValue(item.ValueName))
 			return false;
-		auto finder = [](_In_ const RegItem* entry, _In_ const RegItem& currentItem) {
+		auto finder = [](_In_ const RegItem* entry, _In_ const IoctlRegItem& currentItem) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0 &&
 				_wcsicmp(entry->ValueName, currentItem.ValueName) == 0;
 			};
-		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const RegItem&>(valuesList.Hidden, item, finder);
+		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(valuesList.Hidden, item, finder);
 		return RemoveListEntry<RegistryEntryList, RegItem>(&valuesList.Hidden, entry);
 	}
 	default:
@@ -920,7 +920,6 @@ void RegistryHandler::ClearRegistryList(_In_ RegItemType registryItemType) {
 bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	RegItem* currentTargetItem = nullptr;
 	RegItem* item = nullptr;
 	RegistryEntryList* registryList = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -962,26 +961,30 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 		item = CONTAINING_RECORD(currentEntry, RegItem, Entry);
 
 		if (item) {
-			currentTargetItem = list->Items + count;
-			currentTargetItem->Type = item->Type;
+			list->Items[count].Type = item->Type;
 
-			status = WriteProcessMemory(
-				item->KeyPath,
+			status = MmCopyVirtualMemory(
 				PsGetCurrentProcess(),
-				currentTargetItem->KeyPath,
-				sizeof(item->KeyPath),
-				UserMode);
+				&item->KeyPath,
+				PsGetCurrentProcess(),
+				&list->Items[count].KeyPath,
+				wcslen(item->KeyPath) * sizeof(WCHAR),
+				UserMode,
+				nullptr);
 
 			if (!NT_SUCCESS(status)) {
 				list->Count = count;
 				return false;
 			}
-			status = WriteProcessMemory(
-				item->ValueName,
+
+			status = MmCopyVirtualMemory(
 				PsGetCurrentProcess(),
-				currentTargetItem->ValueName,
-				sizeof(item->ValueName),
-				UserMode);
+				&item->ValueName,
+				PsGetCurrentProcess(),
+				&list->Items[count].ValueName,
+				wcslen(item->ValueName) * sizeof(WCHAR),
+				UserMode,
+				nullptr);
 
 			if (!NT_SUCCESS(status)) {
 				list->Count = count;

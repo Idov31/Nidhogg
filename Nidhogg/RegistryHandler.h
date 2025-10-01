@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "IoctlShared.h"
 #include "MemoryHelper.h"
 
 extern "C" {
@@ -9,30 +10,12 @@ extern "C" {
 #include "MemoryAllocator.hpp"
 #include "ListHelper.hpp"
 
-// Definitions.
-constexpr SIZE_T REG_VALUE_LEN = 260;
-constexpr SIZE_T REG_KEY_LEN = 255;
-
-enum class RegItemType {
-	ProtectedKey = 0,
-	ProtectedValue = 1,
-	HiddenKey = 2,
-	HiddenValue = 3,
-	All
-};
-
 // Structs
 struct RegItem {
 	LIST_ENTRY Entry;
 	RegItemType Type;
 	WCHAR KeyPath[REG_KEY_LEN];
 	WCHAR ValueName[REG_VALUE_LEN];
-};
-
-struct IoctlRegistryList {
-	RegItemType Type;
-	SIZE_T Count;
-	RegItem* Items;
 };
 
 struct RegistryEntryList {
@@ -51,10 +34,10 @@ private:
 	RegistryItemsList keysList;
 	RegistryItemsList valuesList;
 
-	_IRQL_requires_max_(DISPATCH_LEVEL)
+	_IRQL_requires_max_(APC_LEVEL)
 	bool GetNameFromKeyEnumPreInfo(_In_ KEY_INFORMATION_CLASS infoClass, _In_ PVOID information, _Inout_ PUNICODE_STRING keyName);
 
-	_IRQL_requires_max_(DISPATCH_LEVEL)
+	_IRQL_requires_max_(APC_LEVEL)
 	bool GetNameFromValueEnumPreInfo(_In_ KEY_VALUE_INFORMATION_CLASS infoClass, _In_ PVOID information, _Inout_ PUNICODE_STRING keyName);
 
 	constexpr auto IsValidRegType(_In_ RegItemType regType) const {
@@ -68,6 +51,9 @@ private:
 	constexpr auto IsValidValueLen(_In_ USHORT valueLen) const {
 		return valueLen > 0 && valueLen < REG_VALUE_LEN;
 	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool FindRegItem(_In_ const IoctlRegItem& item, _In_ bool partial = false) const;
 
 public:
 	LARGE_INTEGER regCookie;
@@ -99,14 +85,11 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	~RegistryHandler();
 
-	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FindRegItem(_In_ RegItem item, _In_ bool partial = false) const;
+	_IRQL_requires_max_(APC_LEVEL)
+	bool AddRegItem(_In_ const IoctlRegItem& item);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	bool AddRegItem(_In_ const RegItem& item);
-
-	_IRQL_requires_max_(APC_LEVEL)
-	bool RemoveRegItem(_In_ const RegItem& item);
+	bool RemoveRegItem(_In_ const IoctlRegItem& item);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	void ClearRegistryList(_In_ RegItemType registryItemType);

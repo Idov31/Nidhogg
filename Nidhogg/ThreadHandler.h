@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "IoctlShared.h"
 #include "ListHelper.hpp"
 #include "MemoryHelper.h"
 #include "ProcessHelper.h"
@@ -10,23 +11,6 @@ extern "C" {
 #include "NidhoggCommon.h"
 
 // Structs
-enum class ThreadType {
-	Protected,
-	Hidden,
-	All
-};
-
-struct IoctlThreadEntry {
-	ULONG Tid;
-	bool Remove;
-};
-
-struct IoctlThreadList {
-	ThreadType Type;
-	SIZE_T Count;
-	ULONG* Threads;
-};
-
 struct ProtectedThreadEntry {
 	LIST_ENTRY Entry;
 	ULONG Tid;
