@@ -356,13 +356,16 @@ bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 		ProtectedThreadEntry* item = CONTAINING_RECORD(currentEntry, ProtectedThreadEntry, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
+			status = MmCopyVirtualMemory(
+				PsGetCurrentProcess(),
 				&item->Tid,
 				PsGetCurrentProcess(),
-				threadList->Threads + count,
+				&threadList->Threads[count],
 				sizeof(ULONG),
-				UserMode
+				UserMode,
+				nullptr
 			);
+
 			if (!NT_SUCCESS(status)) {
 				threadList->Count = count;
 				return false;
@@ -410,13 +413,16 @@ bool ThreadHandler::ListHiddenThreads(_Inout_ IoctlThreadList* threadList) {
 		HiddenThreadEntry* item = CONTAINING_RECORD(currentEntry, HiddenThreadEntry, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
+			status = MmCopyVirtualMemory(
+				PsGetCurrentProcess(),
 				&item->Tid,
 				PsGetCurrentProcess(),
-				threadList->Threads + count,
+				&threadList->Threads[count],
 				sizeof(ULONG),
-				UserMode
+				UserMode,
+				nullptr
 			);
+
 			if (!NT_SUCCESS(status)) {
 				threadList->Count = count;
 				return false;
