@@ -93,7 +93,7 @@ public:
 	NTSTATUS ElevateProcess(_In_ ULONG pid);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS SetProcessSignature(_In_ ProcessSignature* ProcessSignature);
+	NTSTATUS SetProcessSignature(_In_ ProcessSignature* processSignature);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS UnhideProcess(_In_ ULONG pid);

