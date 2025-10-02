@@ -671,10 +671,10 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 
 	switch (callbacks->Type) {
 	case ObProcessType:
-		objectType = (PFULL_OBJECT_TYPE)*PsProcessType;
+		objectType = reinterpret_cast<PFULL_OBJECT_TYPE>(*PsProcessType);
 		break;
 	case ObThreadType:
-		objectType = (PFULL_OBJECT_TYPE)*PsThreadType;
+		objectType = reinterpret_cast<PFULL_OBJECT_TYPE>(*PsThreadType);
 		break;
 	default:
 		status = STATUS_INVALID_PARAMETER;
