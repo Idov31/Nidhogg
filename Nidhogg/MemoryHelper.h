@@ -37,10 +37,6 @@ constexpr Pattern SsdtPattern = {
 	false
 };
 
-constexpr auto IsValidSize = [](_In_ size_t dataSize, _In_ size_t structSize) -> bool {
-	return dataSize != 0 && dataSize % structSize == 0;
-};
-
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment);
 
