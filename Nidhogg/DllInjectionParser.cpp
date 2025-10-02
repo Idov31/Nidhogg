@@ -50,7 +50,7 @@ NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		status = NidhoggMemoryHandler->InjectDllAPC(&dllInfo);
+		status = NidhoggMemoryHandler->InjectDllAPC(dllInfo);
 		break;
 	}
 	case Options::Thread:
@@ -62,7 +62,7 @@ NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		status = NidhoggMemoryHandler->InjectDllThread(&dllInfo);
+		status = NidhoggMemoryHandler->InjectDllThread(dllInfo);
 		break;
 	}
 	default:

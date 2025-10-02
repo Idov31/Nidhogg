@@ -171,31 +171,34 @@ public:
 	~MemoryHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS PatchModule(_In_ IoctlPatchedModule* moduleInformation);
+	NTSTATUS PatchModule(_In_ IoctlPatchedModule& moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectShellcodeAPC(_In_ IoctlShellcodeInfo* shellcodeInformation, _In_ bool isInjectedDll = false);
+	NTSTATUS InjectShellcodeAPC(_In_ IoctlShellcodeInfo& shellcodeInformation, _In_ bool isInjectedDll = false);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectShellcodeThread(_In_ IoctlShellcodeInfo* shellcodeInfo);
+	NTSTATUS InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectDllThread(_In_ IoctlDllInfo* dllInfo);
+	NTSTATUS InjectDllThread(_In_ IoctlDllInfo& dllInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectDllAPC(_In_ IoctlDllInfo* dllInfo);
+	NTSTATUS InjectDllAPC(_In_ IoctlDllInfo& dllInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS HideModule(_In_ IoctlHiddenModuleInfo* moduleInformation);
+	NTSTATUS HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS RestoreModule(_In_ IoctlHiddenModuleInfo* moduleInformation);
+	NTSTATUS RestoreModule(_In_ IoctlHiddenModuleInfo& moduleInformation);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	void RestoreModules(_In_ ULONG pid);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	HiddenModuleEntry* FindHiddenModule(_In_ IoctlHiddenModuleInfo* info) const;
+	HiddenModuleEntry* FindHiddenModule(_In_ IoctlHiddenModuleInfo& info) const;
+
+	_IRQL_requires_max_(APC_LEVEL)
+	HiddenModuleEntry* FindHiddenModule(_In_ HiddenModuleEntry& info) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS HideDriver(_In_ wchar_t* driverPath);

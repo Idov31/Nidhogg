@@ -50,7 +50,7 @@ NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	switch (commandId) {
 	case Options::Hide:
 	{
-		status = NidhoggMemoryHandler->HideModule(&hiddenModule);
+		status = NidhoggMemoryHandler->HideModule(hiddenModule);
 		break;
 	}
 	default:
