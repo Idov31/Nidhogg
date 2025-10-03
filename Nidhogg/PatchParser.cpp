@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "PatchParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryHandler.h"
+#include "ProcessHandler.h"
 
 /*
 * Description:
@@ -17,7 +17,7 @@
 NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	UNREFERENCED_PARAMETER(commandId);
 
-	PatchedModule patchedModule{};
+	IoctlPatchedModule patchedModule{};
 	ANSI_STRING aModuleName = { 0 };
 	UNICODE_STRING wModuleName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
@@ -42,7 +42,7 @@ NTSTATUS PatchParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	patchedModule.Patch = (PVOID)args[3];
 	patchedModule.PatchLength = *(ULONG*)args[4];
 
-	status = NidhoggMemoryUtils->PatchModule(&patchedModule);
+	status = NidhoggMemoryHandler->PatchModule(patchedModule);
 
 	RtlFreeUnicodeString(&wModuleName);
 	return status;

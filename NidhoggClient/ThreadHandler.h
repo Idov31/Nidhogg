@@ -2,12 +2,23 @@
 #include "pch.h"
 #include "CommandHandler.h"
 
+class ThreadHandlerException : public std::runtime_error {
+private:
+	std::string msg;
+public:
+	ThreadHandlerException(_In_ const std::string& message)
+		: std::runtime_error(message), msg(message) {}
+	const char* what() const override {
+		return msg.c_str();
+	}
+};
+
 class ThreadHandler : public CommandHandler {
 private:
 	bool Protect(_In_ DWORD tid, _In_ bool protect);
 	bool Hide(_In_ DWORD tid, _In_ bool hide);
-	std::vector<DWORD> ListProtectedThreads();
-	bool ClearProtectedThreads();
+	std::vector<DWORD> ListThreads(_In_ ThreadType type);
+	bool ClearThreads(_In_ ThreadType type);
 	bool CheckInput(_In_ const std::vector<std::string>& params);
 
 public:
@@ -21,8 +32,8 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[remove | unprotect] [tid] - Removing protection from a thread" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide [tid] - Hide a thread" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide | restore] [tid] - Revealing a process after hiding it" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list - Listing the currently protected threads" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all protected threads" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list [hidden | protected] - Listing the currently hidden or protected threads" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear [all | hidden | protected] - Clear all hidden or protected threads" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

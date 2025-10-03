@@ -50,12 +50,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="NidhoggIoctls.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="NidhoggStructs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -99,6 +93,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="NidhoggClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowsTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

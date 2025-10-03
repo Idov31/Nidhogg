@@ -32,9 +32,9 @@ private:
 
 	bool EnableDisableEtwTi(_In_ bool enable);
 	bool RemoveCallback(_In_ ULONG64 callbackAddress, _In_ CallbackType callbackType, _In_ bool remove);
-	CmCallbacksList ListRegistryCallbacks();
-	ObCallbacksList ListObCallbacks(_In_ CallbackType callbackType);
-	PsRoutinesList ListPsRoutines(_In_ CallbackType callbackType);
+	IoctlCallbackList<CmCallback> ListRegistryCallbacks();
+	IoctlCallbackList<ObCallback> ListObCallbacks(_In_ CallbackType callbackType);
+	IoctlCallbackList<PsRoutine> ListPsRoutines(_In_ CallbackType callbackType);
 public:
 	AntiAnalysisHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("AntiAnalysis", hNidhogg) {};
 

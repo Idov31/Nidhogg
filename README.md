@@ -16,6 +16,8 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 
 ## Current Features
 
+> [!CAUTION]  
+> This version is in testing and development phase, do not use it and use the master branch instead.
 > [!IMPORTANT]  
 > All the features have been fully tested up to Windows 11 22H2 and are gradually tested against 24H2.
 > If you encounter a problem, please open an issue after checking there isn't already an open issue.
@@ -23,13 +25,13 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Process hiding and unhiding
 - Process elevation
 - Process protection (anti-kill and dumping)
-- Bypass pe-sieve
+- Bypass memory scanners (e.g. [pe-sieve](https://github.com/hasherezade/pe-sieve))
 - Thread hiding and unhiding
 - Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Querying currently protected processes, threads, files, hidden ports, registry keys and values
+- Listing currently protected or hidden processes, threads, files, ports, registry keys and values
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
@@ -41,21 +43,25 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - DLL Injection
   - APC
   - NtCreateThreadEx
-- Querying kernel callbacks
+- Listing kernel callbacks
   - ObCallbacks
   - Process and thread creation routines
   - Image loading routines
   - Registry callbacks
 - Removing and restoring kernel callbacks
-- ETWTI tampering
-- Module hiding
+- Disabling / Enabling ETW providers (e.g. ETW-TI)
+- Module hiding and unhiding
 - Driver hiding and unhiding
 - Credential Dumping
-- Port hiding/unhiding
+- Port hiding and unhiding
 - Script execution
 - Initial operations
 
 ## Reflective loading
+
+> [!WARNING]  
+> When doing reflective loading, there are features that will be disabled by default and the automatic graceful unload of hidden modules and unhooking callbacks will not work as well.
+> It is the user's responsibility to ensure to manually unload any hidden modules upon process termination and unhook any callbacks if the target driver is unloading. Failing to do so may lead to system instability or crashes.
 
 Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://github.com/TheCruZ/kdmapper) but because [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) will be automatically triggered if the driver registers callbacks, Nidhogg will not register any callback. Meaning, that if you are loading the driver reflectively these features will be disabled by default:
 
@@ -73,10 +79,12 @@ Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov
 
 ## PatchGuard triggering features
 
-These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
+> [!CAUTION]  
+> The following features are known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
 - File protecting
+- Driver hiding
 
 ## Basic Usage
 
@@ -150,5 +158,4 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 
 Thanks a lot to those people who contributed to this project:
 
-- [BlackOfWorld](https://github.com/BlackOfWorld)
-- [0nlyDev](https://github.com/0nlyDev)
+[![BlackOfWorld](https://avatars.githubusercontent.com/BlackOfWorld?s=60&v=4)](https://github.com/BlackOfWorld)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://avatars.githubusercontent.com/0nlyDev?s=40&v=4" width="60" height="60" alt="0nlyDev">](https://github.com/0nlyDev)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://pbs.twimg.com/profile_images/1047696480327409664/tGLAvq8d_400x400.jpg" width="60" height="60" alt="SLiNv">](https://x.com/_____vic______)
