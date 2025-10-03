@@ -16,6 +16,8 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 
 ## Current Features
 
+> [!CAUTION]  
+> This version is in testing and development phase, do not use it and use the master branch instead.
 > [!IMPORTANT]  
 > All the features have been fully tested up to Windows 11 22H2 and are gradually tested against 24H2.
 > If you encounter a problem, please open an issue after checking there isn't already an open issue.
