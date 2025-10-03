@@ -4,10 +4,16 @@
 #include "..\Nidhogg\IoctlShared.h"
 #include "Helper.h"
 
+struct Test {
+	bool Safe;
+	std::function<bool(const PVOID& tester, std::string command)> Func;
+};
+
 class CommandHandler {
 protected:
 	std::string contextName;
 	std::shared_ptr<HANDLE> hNidhogg;
+	std::unordered_map<std::string, Test> tests;
 
 public:
 	CommandHandler(_In_ std::string contextName, _In_ std::shared_ptr<HANDLE> hNidhogg) {
@@ -43,10 +49,42 @@ public:
 			PrintHelp();
 			return;
 		}
+		if (command.starts_with("test") == 0) {
+			if (command.compare("test_safe") == 0) {
+				if (TestSafe())
+					std::cout << termcolor::green << "[+] All safe tests passed!" << termcolor::reset << std::endl;
+				else
+					std::cout << termcolor::red << "[-] Some safe tests failed!" << termcolor::reset << std::endl;
+				return;
+			}
+			else if (command.compare("test_all") == 0) {
+				if (TestAll())
+					std::cout << termcolor::green << "[+] All tests passed!" << termcolor::reset << std::endl;
+				else
+					std::cout << termcolor::red << "[-] Some tests failed!" << termcolor::reset << std::endl;
+				return;
+			}
+
+			if (command.length() <= 5) {
+				std::cout << termcolor::red << "[-] Invalid test command!" << termcolor::reset << std::endl;
+				return;
+			}
+			TestFeature(command.substr(5));
+			return;
+		}
 		if (command.compare("back") == 0 || command.compare("exit") == 0)
 			return;
 		HandleCommand(command);
 	};
+
 	virtual void PrintHelp() {};
 	virtual void HandleCommand(_In_ std::string command) {};
+
+	virtual bool TestSafe() { return true; };
+	virtual bool TestUnsafe() { return true; };
+	virtual bool TestFeature(_In_ std::string featureName) { return true; };
+
+	bool TestAll() {
+		return TestSafe() && TestUnsafe();
+	}
 };
