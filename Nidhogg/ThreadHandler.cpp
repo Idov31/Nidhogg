@@ -349,7 +349,7 @@ bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 		threadList->Count = protectedThreads.Count;
 		return true;
 	}
-	MemoryGuard guard(threadList->Threads, sizeof(ULONG) * protectedThreads.Count, UserMode);
+	MemoryGuard guard(threadList->Threads, static_cast<ULONG>(sizeof(ULONG) * protectedThreads.Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;
@@ -397,7 +397,6 @@ _IRQL_requires_max_(APC_LEVEL)
 bool ThreadHandler::ListHiddenThreads(_Inout_ IoctlThreadList* threadList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!threadList)
 		return false;
@@ -411,7 +410,7 @@ bool ThreadHandler::ListHiddenThreads(_Inout_ IoctlThreadList* threadList) {
 		threadList->Count = hiddenThreads.Count;
 		return true;
 	}
-	MemoryGuard guard(threadList->Threads, sizeof(ULONG) * hiddenThreads.Count, UserMode);
+	MemoryGuard guard(threadList->Threads, static_cast<ULONG>(sizeof(ULONG) * hiddenThreads.Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;

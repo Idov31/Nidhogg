@@ -954,7 +954,7 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 		list->Count = registryList->Count;
 		return true;
 	}
-	MemoryGuard guard(list->Items, sizeof(IoctlRegItem) * registryList->Count, UserMode);
+	MemoryGuard guard(list->Items, static_cast<ULONG>(sizeof(IoctlRegItem) * registryList->Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;

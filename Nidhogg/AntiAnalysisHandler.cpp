@@ -697,7 +697,7 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 		} while (static_cast<PVOID>(currentObjectCallback) != static_cast<PVOID>(&objectType->CallbackList));
 	}
 	else {
-		MemoryGuard guard(callbacks->Callbacks, callbacks->Count * sizeof(ObCallback), UserMode);
+		MemoryGuard guard(callbacks->Callbacks, static_cast<ULONG>(callbacks->Count * sizeof(ObCallback)), UserMode);
 
 		if (!guard.IsValid()) {
 			ExReleasePushLockExclusive(reinterpret_cast<PULONG_PTR>(&objectType->TypeLock));

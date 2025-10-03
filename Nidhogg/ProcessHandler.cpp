@@ -228,13 +228,13 @@ NTSTATUS ProcessHandler::ElevateProcess(_In_ ULONG pid) {
 * SetProcessSignature is responsible for removing or adding process protection to a certain process.
 *
 * Parameters:
-* @processSignature [ProcessSignature*] -- Contains the process PID, signer type and signature signer.
+* @processSignature [IoctlProcessSignature*] -- Contains the process PID, signer type and signature signer.
 *
 * Returns:
-* @status  			[NTSTATUS] 			-- Whether the operation was successful or not.
+* @status  			[NTSTATUS] 				 -- Whether the operation was successful or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS ProcessHandler::SetProcessSignature(_In_ ProcessSignature* processSignature) {
+NTSTATUS ProcessHandler::SetProcessSignature(_In_ IoctlProcessSignature* processSignature) {
 	PEPROCESS process;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -436,7 +436,6 @@ _IRQL_requires_max_(APC_LEVEL)
 bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!processList)
 		return false;
@@ -451,7 +450,7 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		processList->Count = protectedProcesses.Count;
 		return true;
 	}
-	MemoryGuard guard(processList->Processes, sizeof(ULONG) * protectedProcesses.Count, UserMode);
+	MemoryGuard guard(processList->Processes, static_cast<ULONG>(sizeof(ULONG) * protectedProcesses.Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;
@@ -485,7 +484,6 @@ _IRQL_requires_max_(APC_LEVEL)
 bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!processList)
 		return false;
@@ -500,7 +498,7 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 		processList->Count = hiddenProcesses.Count;
 		return true;
 	}
-	MemoryGuard guard(processList->Processes, sizeof(ULONG) * hiddenProcesses.Count, UserMode);
+	MemoryGuard guard(processList->Processes, static_cast<ULONG>(sizeof(ULONG) * hiddenProcesses.Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;

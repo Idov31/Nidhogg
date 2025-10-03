@@ -332,7 +332,7 @@ NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		return true;
 	}
 	currentEntry = protectedFiles.Items;
-	MemoryGuard guard(filesList->Files, sizeof(WCHAR) * protectedFiles.Count, UserMode);
+	MemoryGuard guard(filesList->Files, static_cast<ULONG>(sizeof(WCHAR) * protectedFiles.Count), UserMode);
 
 	if (!guard.IsValid())
 		return false;
