@@ -447,32 +447,22 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		processList->Count = 0;
 		return true;
 	}
-	if (processList->Count == 0)  {
+	if (processList->Count != protectedProcesses.Count)  {
 		processList->Count = protectedProcesses.Count;
 		return true;
 	}
+	MemoryGuard guard(processList->Processes, sizeof(ULONG) * protectedProcesses.Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
 	currentEntry = protectedProcesses.Items;
 
-	while (currentEntry->Flink != protectedProcesses.Items && count < processList->Count) {
+	while (currentEntry->Flink != protectedProcesses.Items && count < protectedProcesses.Count) {
 		currentEntry = currentEntry->Flink;
 		ProtectedProcessEntry* item = CONTAINING_RECORD(currentEntry, ProtectedProcessEntry, Entry);
 
-		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->Pid,
-				PsGetCurrentProcess(),
-				&processList->Processes[count],
-				sizeof(ULONG),
-				UserMode,
-				nullptr
-			);
-
-			if (!NT_SUCCESS(status)) {
-				processList->Count = count;
-				return false;
-			}
-		}
+		if (item)
+			processList->Processes[count] = item->Pid;
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
@@ -506,32 +496,22 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 		processList->Count = 0;
 		return true;
 	}
-	if (processList->Count == 0) {
+	if (processList->Count != hiddenProcesses.Count) {
 		processList->Count = hiddenProcesses.Count;
 		return true;
 	}
+	MemoryGuard guard(processList->Processes, sizeof(ULONG) * hiddenProcesses.Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
 	currentEntry = hiddenProcesses.Items;
 
-	while (currentEntry->Flink != hiddenProcesses.Items && count < processList->Count) {
+	while (currentEntry->Flink != hiddenProcesses.Items && count < hiddenProcesses.Count) {
 		currentEntry = currentEntry->Flink;
 		HiddenProcessEntry* item = CONTAINING_RECORD(currentEntry, HiddenProcessEntry, Entry);
 
-		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->Pid,
-				PsGetCurrentProcess(),
-				&processList->Processes[count],
-				sizeof(ULONG),
-				UserMode,
-				nullptr
-			);
-
-			if (!NT_SUCCESS(status)) {
-				processList->Count = count;
-				return false;
-			}
-		}
+		if (item)
+			processList->Processes[count] = item->Pid;
 		count++;
 		currentEntry = currentEntry->Flink;
 	}

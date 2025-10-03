@@ -597,7 +597,7 @@ NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCa
 			return status;
 		}
 		if (!guard.GuardMemory(callbacks->Callbacks,
-			routinesCount * sizeof(CmCallback), UserMode)) {
+			routinesCount * sizeof(PsRoutine), UserMode)) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
 	}
@@ -667,7 +667,7 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 		if (err != 0)
 			status = STATUS_ABANDONED;
 		return status;
-		};
+	};
 
 	switch (callbacks->Type) {
 	case ObProcessType:
@@ -697,6 +697,12 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 		} while (static_cast<PVOID>(currentObjectCallback) != static_cast<PVOID>(&objectType->CallbackList));
 	}
 	else {
+		MemoryGuard guard(callbacks->Callbacks, callbacks->Count * sizeof(ObCallback), UserMode);
+
+		if (!guard.IsValid()) {
+			ExReleasePushLockExclusive(reinterpret_cast<PULONG_PTR>(&objectType->TypeLock));
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
 		do {
 			if (currentObjectCallback->Enabled) {
 				if (currentObjectCallback->PostOperation) {

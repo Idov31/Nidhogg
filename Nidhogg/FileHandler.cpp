@@ -327,13 +327,17 @@ NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		filesList->Count = 0;
 		return true;
 	}
-	if (filesList->Count == 0) {
+	if (filesList->Count != protectedFiles.Count) {
 		filesList->Count = protectedFiles.Count;
 		return true;
 	}
 	currentEntry = protectedFiles.Items;
+	MemoryGuard guard(filesList->Files, sizeof(WCHAR) * protectedFiles.Count, UserMode);
 
-	while (currentEntry->Flink != protectedFiles.Items && count < filesList->Count) {
+	if (!guard.IsValid())
+		return false;
+
+	while (currentEntry->Flink != protectedFiles.Items && count < protectedFiles.Count) {
 		currentEntry = currentEntry->Flink;
 		FileItem* item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 

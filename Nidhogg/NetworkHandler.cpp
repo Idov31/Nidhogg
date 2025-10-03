@@ -221,6 +221,11 @@ bool NetworkHandler::ListHiddenPorts(_Inout_ IoctlHiddenPorts* hiddenPorts) cons
 		hiddenPorts->Count = hiddenPortsList.Count;
 		return true;
 	}
+	MemoryGuard guard(hiddenPorts->Ports, sizeof(ULONG) * hiddenPortsList.Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
+
 	currentEntry = hiddenPortsList.Items;
 
 	while (currentEntry->Flink != hiddenPortsList.Items && count < hiddenPortsList.Count) {

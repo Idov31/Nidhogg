@@ -950,13 +950,17 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 		list->Count = 0;
 		return true;
 	}
-	if (list->Count == 0) {
+	if (list->Count != registryList->Count) {
 		list->Count = registryList->Count;
 		return true;
 	}
+	MemoryGuard guard(list->Items, sizeof(IoctlRegItem) * registryList->Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
 	currentEntry = registryList->Items;
 
-	while (currentEntry->Flink != registryList->Items && count < list->Count) {
+	while (currentEntry->Flink != registryList->Items && count < registryList->Count) {
 		currentEntry = currentEntry->Flink;
 		item = CONTAINING_RECORD(currentEntry, RegItem, Entry);
 

@@ -345,13 +345,18 @@ bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 		threadList->Count = 0;
 		return true;
 	}
-	if (threadList->Count == 0) {
+	if (threadList->Count != protectedThreads.Count) {
 		threadList->Count = protectedThreads.Count;
 		return true;
 	}
+	MemoryGuard guard(threadList->Threads, sizeof(ULONG) * protectedThreads.Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
+
 	currentEntry = protectedThreads.Items;
 
-	while (currentEntry->Flink != protectedThreads.Items && count < threadList->Count) {
+	while (currentEntry->Flink != protectedThreads.Items && count < protectedThreads.Count) {
 		currentEntry = currentEntry->Flink;
 		ProtectedThreadEntry* item = CONTAINING_RECORD(currentEntry, ProtectedThreadEntry, Entry);
 
@@ -402,32 +407,22 @@ bool ThreadHandler::ListHiddenThreads(_Inout_ IoctlThreadList* threadList) {
 		threadList->Count = 0;
 		return true;
 	}
-	if (threadList->Count == 0) {
+	if (threadList->Count != hiddenThreads.Count) {
 		threadList->Count = hiddenThreads.Count;
 		return true;
 	}
+	MemoryGuard guard(threadList->Threads, sizeof(ULONG) * hiddenThreads.Count, UserMode);
+
+	if (!guard.IsValid())
+		return false;
 	currentEntry = hiddenThreads.Items;
 
-	while (currentEntry->Flink != hiddenThreads.Items && count < threadList->Count) {
+	while (currentEntry->Flink != hiddenThreads.Items && count < hiddenThreads.Count) {
 		currentEntry = currentEntry->Flink;
 		HiddenThreadEntry* item = CONTAINING_RECORD(currentEntry, HiddenThreadEntry, Entry);
 
-		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->Tid,
-				PsGetCurrentProcess(),
-				&threadList->Threads[count],
-				sizeof(ULONG),
-				UserMode,
-				nullptr
-			);
-
-			if (!NT_SUCCESS(status)) {
-				threadList->Count = count;
-				return false;
-			}
-		}
+		if (item)
+			threadList->Threads[count] = item->Tid;
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
