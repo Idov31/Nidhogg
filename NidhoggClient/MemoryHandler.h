@@ -21,9 +21,9 @@ public:
 
 class MemoryHandler : public CommandHandler {
 private:
-	std::vector<Credentials> DumpCredentials(_Inout_ std::shared_ptr<DesKeyInformation> desKey);
+	IoctlCredentials DumpCredentials();
 	bool HideDriver(_In_ std::wstring driverPath, _In_ bool hide);
-	bool HideModule(_In_ DWORD pid, _In_ std::wstring modulePath);
+	bool HideModule(_In_ DWORD pid, _In_ std::wstring modulePath, _In_ bool hide);
 	bool InjectDll(_In_ DWORD pid, _In_ std::string dllPath, _In_ InjectionType injectionType);
 	bool InjectShellcode(_In_ DWORD pid, _In_ std::vector<byte> shellcode, std::vector<std::string> parameters, _In_ InjectionType injectionType);
 	bool PatchModule(_In_ DWORD pid, _In_ std::wstring moduleName, _In_ std::string functionName, _In_ std::vector<byte> patch);
@@ -40,6 +40,7 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "dump_creds - Dumping credentials from LSASS" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide_module [pid] [module path] - Hiding a module inside a process" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide_module | restore_module] [pid] [module path] - Restoring a module inside a process" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "hide_driver [driver path] - Hiding a driver" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[unhide_driver | restore_driver] [driver path] - Revealing a driver after hiding it" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "inject_dll [apc | thread] [pid] [dll path] - Injecting a DLL into a process" << std::endl;

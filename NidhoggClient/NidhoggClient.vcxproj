@@ -158,14 +158,13 @@
     <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggClient.h" />
     <ClInclude Include="NidhoggInterface.h" />
-    <ClInclude Include="NidhoggIoctls.h" />
-    <ClInclude Include="NidhoggStructs.h" />
     <ClInclude Include="PathHelper.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHandler.h" />
     <ClInclude Include="RegistryHandler.h" />
     <ClInclude Include="SafeMemory.hpp" />
     <ClInclude Include="ThreadHandler.h" />
+    <ClInclude Include="WindowsTypes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

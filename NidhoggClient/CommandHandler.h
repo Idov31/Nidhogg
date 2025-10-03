@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
-#include "NidhoggStructs.h"
-#include "NidhoggIoctls.h"
+#include "WindowsTypes.h"
+#include "..\Nidhogg\IoctlShared.h"
 #include "Helper.h"
 
 class CommandHandler {

@@ -16,8 +16,8 @@ public:
 class FileHandler : public CommandHandler {
 private:
 	bool Protect(_In_ std::wstring filePath, _In_ bool protect);
-	std::vector<std::wstring> ListProtectedFiles();
-	bool ClearProtectedFiles();
+	std::vector<std::wstring> ListFiles(_In_ FileType type);
+	bool ClearFiles(_In_ FileType type);
 
 public:
 	FileHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("File", hNidhogg) {};
@@ -27,8 +27,8 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "back - Go back to the main menu" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[add | protect] [file path] - Protecting a file path from being deleted" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "[remove | unprotect] [file path] - Removing protection from a file path from being deleted" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list - Listing the currently protected files" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear - Clear all protected files" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list [protected] - Listing the currently protected files" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "clear [all | protected] - Clear all protected files" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;
