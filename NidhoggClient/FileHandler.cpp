@@ -140,7 +140,7 @@ std::vector<std::wstring> FileHandler::ListFiles(_In_ FileType type) {
 		try {
 			result.Files = SafeAlloc<wchar_t**>(result.Count * sizeof(wchar_t*));
 		}
-		catch (SafeMemoryException& e) {
+		catch (SafeMemoryException&) {
 			throw FileHandlerException("Failed to allocate memory for file list.");
 		}
 

@@ -228,7 +228,7 @@ std::vector<IoctlHiddenPortEntry> NetworkHandler::ListHiddenPorts(_In_ PortType 
 		try {
 			rawHiddenPorts.Ports = SafeAlloc<IoctlHiddenPortEntry*>(rawHiddenPorts.Count * sizeof(IoctlHiddenPortEntry));
 		}
-		catch (SafeMemoryException& e) {
+		catch (SafeMemoryException&) {
 			throw NetworkHandlerException("Failed to allocate memory for hidden ports list");
 		}
 		if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_HIDDEN_PORTS, &rawHiddenPorts, sizeof(rawHiddenPorts),

@@ -474,7 +474,7 @@ std::vector<std::wstring> RegistryHandler::ListKeys(_In_ RegItemType type) {
 		try {
 			result.Items = SafeAlloc<IoctlRegItem*>(result.Count * sizeof(IoctlRegItem));
 		}
-		catch (SafeMemoryException& e) {
+		catch (SafeMemoryException&) {
 			throw RegistryHandlerException("Failed to allocate memory for registry keys list");
 		}
 
@@ -512,7 +512,7 @@ RegValueList RegistryHandler::ListValues(_In_ RegItemType type) {
 		try {
 			result.Items = SafeAlloc<IoctlRegItem*>(result.Count * sizeof(IoctlRegItem));
 		}
-		catch (SafeMemoryException& e) {
+		catch (SafeMemoryException&) {
 			throw RegistryHandlerException("Failed to allocate memory for registry values list");
 		}
 		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
