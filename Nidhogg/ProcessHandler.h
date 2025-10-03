@@ -29,12 +29,6 @@ struct ProcessList {
 	PLIST_ENTRY Items;
 };
 
-struct ProcessSignature {
-	ULONG Pid;
-	UCHAR SignerType;
-	UCHAR SignatureSigner;
-};
-
 class ProcessHandler {
 private:
 	ProcessList protectedProcesses;
@@ -93,7 +87,7 @@ public:
 	NTSTATUS ElevateProcess(_In_ ULONG pid);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS SetProcessSignature(_In_ ProcessSignature* processSignature);
+	NTSTATUS SetProcessSignature(_In_ IoctlProcessSignature* processSignature);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS UnhideProcess(_In_ ULONG pid);

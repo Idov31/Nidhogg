@@ -31,7 +31,7 @@ ProcessParser::ProcessParser() {
 * @status	 [NTSTATUS] -- Result of the command.
 */
 NTSTATUS ProcessParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
-	ProcessSignature signature{};
+	IoctlProcessSignature signature{};
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG pid = 0;
 

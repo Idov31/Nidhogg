@@ -14,13 +14,6 @@ constexpr ULONG IOCTL_NSI_ENUMERATE_OBJECTS_ALL_PARAMETERS = 0x12001B;
 constexpr WCHAR NSI_DRIVER_NAME[] = L"\\Driver\\Nsiproxy";
 constexpr USHORT htohs(USHORT port) { return (((port >> 8) & 0x00FF) | ((port << 8) & 0xFF00)); }
 
-struct InputHiddenPort {
-	bool Hide;
-	bool Remote;
-	PortType Type;
-	USHORT Port;
-};
-
 struct HiddenPort {
 	LIST_ENTRY Entry;
 	bool Remote;

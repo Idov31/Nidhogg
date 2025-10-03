@@ -108,39 +108,14 @@ constexpr SIZE_T CmpCallbackListLockOffset = 7;
 constexpr SIZE_T CallbacksListCountOffset = 7;
 constexpr SIZE_T RoutinesListOffset = 7;
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
-constexpr SIZE_T MAX_DRIVER_PATH = 256;
 constexpr ULONG MAX_ROUTINES = 64;
 constexpr SIZE_T ROUTINE_MASK = ~(1ULL << 3) + 1;
-
-template<typename CallbackListType>
-struct IoctlCallbackList {
-	CallbackType Type;
-	SIZE_T Count;
-	CallbackListType* Callbacks;
-};
 
 struct DisabledKernelCallback {
 	LIST_ENTRY Entry;
 	CallbackType Type;
 	ULONG64 CallbackAddress;
 	ULONG64 CallbackEntry;
-};
-
-struct ObCallback {
-	PVOID PreOperation;
-	PVOID PostOperation;
-	CHAR DriverName[MAX_DRIVER_PATH];
-};
-
-struct PsRoutine {
-	ULONG64 CallbackAddress;
-	CHAR DriverName[MAX_DRIVER_PATH];
-};
-
-struct CmCallback {
-	ULONG64 CallbackAddress;
-	ULONG64 Context;
-	CHAR DriverName[MAX_DRIVER_PATH];
 };
 
 struct CallbackList {
