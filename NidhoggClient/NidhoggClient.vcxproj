@@ -145,6 +145,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="ProcessHandler.cpp" />
+    <ClCompile Include="ProcessHelper.cpp" />
     <ClCompile Include="RegistryHandler.cpp" />
     <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
@@ -161,6 +162,7 @@
     <ClInclude Include="PathHelper.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHandler.h" />
+    <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="RegistryHandler.h" />
     <ClInclude Include="SafeMemory.hpp" />
     <ClInclude Include="ThreadHandler.h" />
