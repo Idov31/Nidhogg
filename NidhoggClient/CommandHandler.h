@@ -6,7 +6,7 @@
 
 struct Test {
 	bool Safe;
-	std::function<bool(const PVOID& tester, std::string command)> Func;
+	std::function<bool(PVOID tester)> Func;
 };
 
 class CommandHandler {
@@ -80,9 +80,54 @@ public:
 	virtual void PrintHelp() {};
 	virtual void HandleCommand(_In_ std::string command) {};
 
-	virtual bool TestSafe() { return true; };
-	virtual bool TestUnsafe() { return true; };
-	virtual bool TestFeature(_In_ std::string featureName) { return true; };
+	bool TestSafe() { 
+		bool result = true;
+		for (const auto& [name, test] : tests) {
+			if (test.Safe) {
+				std::cout << termcolor::bright_magenta << "[*] " << termcolor::reset << "Running safe test: " << name << "..." << std::endl;
+				if (!test.Func(this)) {
+					std::cout << termcolor::red << "[-] Test " << name << " failed!" << termcolor::reset << std::endl;
+					result = false;
+				}
+				else
+					std::cout << termcolor::green << "[+] Test " << name << " passed!" << termcolor::reset << std::endl;
+			}
+		}
+		return result;
+	};
+	bool TestUnsafe() {
+		bool result = true;
+		for (const auto& [name, test] : tests) {
+			if (!test.Safe) {
+				std::cout << termcolor::bright_magenta << "[*] " << termcolor::reset << "Running unsafe test: " << name << "..." << std::endl;
+				if (!test.Func(this)) {
+					std::cout << termcolor::red << "[-] Test " << name << " failed!" << termcolor::reset << std::endl;
+					result = false;
+				}
+				else
+					std::cout << termcolor::green << "[+] Test " << name << " passed!" << termcolor::reset << std::endl;
+			}
+		}
+		return result;
+	};
+	bool TestFeature(_In_ std::string featureName) { 
+		auto it = tests.find(featureName);
+
+		if (it == tests.end()) {
+			std::cout << termcolor::red << "[-] Test " << featureName << " not found!" << termcolor::reset << std::endl;
+			return false;
+		}
+		std::cout << termcolor::bright_magenta << "[*] " << termcolor::reset << "Running test: " << featureName << "..." << std::endl;
+
+		if (!it->second.Func(this)) {
+			std::cout << termcolor::red << "[-] Test " << featureName << " failed!" << termcolor::reset << std::endl;
+			return false;
+		}
+		else {
+			std::cout << termcolor::green << "[+] Test " << featureName << " passed!" << termcolor::reset << std::endl;
+			return true;
+		}
+	};
 
 	bool TestAll() {
 		return TestSafe() && TestUnsafe();
