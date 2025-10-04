@@ -1,6 +1,128 @@
 #include "pch.h"
 #include "ProcessHandler.h"
 
+ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Process", hNidhogg) {
+	testHiddenProcessPid = 0;
+
+	this->tests = {
+		{"protect", { true, [](PVOID tester) {
+			DWORD pid = 0;
+			try {
+				pid = FindPidByName("explorer.exe");
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			return static_cast<ProcessHandler*>(tester)->Protect(pid, true);
+			} } },
+		{"list_protected", { true, [](PVOID tester) {
+			try {
+				std::vector<DWORD> result = static_cast<ProcessHandler*>(tester)->ListProcesses(ProcessType::Protected);
+				std::cout << "[+] Protected processes:" << std::endl;
+				for (int i = 0; i < result.size(); i++) {
+					std::cout << "\t" << result[i] << std::endl;
+				}
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			return true;
+			} } },
+		{"unprotect", { true, [](PVOID tester) {
+			DWORD pid = 0;
+			try {
+				pid = FindPidByName("explorer.exe");
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			return static_cast<ProcessHandler*>(tester)->Protect(pid, false);
+			} } },
+		{"hide", { false, [](PVOID tester) {
+			DWORD pid = 0;
+			try {
+				pid = CreateProcessByName("notepad.exe");
+			}
+			catch (const ProcessHelperException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			static_cast<ProcessHandler*>(tester)->testHiddenProcessPid = pid;
+			return static_cast<ProcessHandler*>(tester)->Hide(pid, true);
+			} } },
+		{"list_hidden", { false, [](PVOID tester) {
+			try {
+				std::vector<DWORD> result = static_cast<ProcessHandler*>(tester)->ListProcesses(ProcessType::Hidden);
+				std::cout << "[+] Hidden processes:" << std::endl;
+				for (int i = 0; i < result.size(); i++) {
+					std::cout << "\t" << result[i] << std::endl;
+				}
+			}
+			catch (const ProcessHandlerException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			return true;
+			} } },
+		{"unhide", { false, [](PVOID tester) {
+			if (static_cast<ProcessHandler*>(tester)->testHiddenProcessPid == 0) {
+				std::cerr << "No hidden process to unhide" << std::endl;
+				return false;
+			}
+			bool success = static_cast<ProcessHandler*>(tester)->Hide(static_cast<ProcessHandler*>(tester)->testHiddenProcessPid, false);
+			static_cast<ProcessHandler*>(tester)->testHiddenProcessPid = 0;
+			KillProcessByName("notepad.exe");
+			return success;
+			} } },
+		{"elevate", { false, [](PVOID tester) {
+			DWORD pid = 0;
+			try {
+				pid = CreateProcessByName("notepad.exe");
+			}
+			catch (const ProcessHelperException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			bool success = static_cast<ProcessHandler*>(tester)->Elevate(pid);
+			KillProcessByName("notepad.exe");
+			return success;
+			} } },
+		{"set_protection", { false, [](PVOID tester) {
+			DWORD pid = 0;
+			try {
+				pid = CreateProcessByName("notepad.exe");
+			}
+			catch (const ProcessHelperException& e) {
+				std::cerr << e.what() << std::endl;
+				return false;
+			}
+			UCHAR signerType = PsProtectedTypeProtected;
+			UCHAR signatureSigner = PsProtectedSignerWindows;
+			bool success = static_cast<ProcessHandler*>(tester)->SetProtection(pid, signerType, signatureSigner);
+
+			if (success) {
+				signerType = PsProtectedTypeNone;
+				signatureSigner = PsProtectedSignerNone;
+				success = static_cast<ProcessHandler*>(tester)->SetProtection(pid, signerType, signatureSigner);
+			}
+			KillProcessByName("notepad.exe");
+			return success;
+			} } },
+		{"clear_hidden", { true, [](PVOID tester) {
+			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::Hidden);
+			} } },
+		{"clear_protected", { true, [](PVOID tester) {
+			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::Protected);
+			} } },
+		{"clear_all", { true, [](PVOID tester) {
+			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::All);
+			} } }
+	};
+}
+
 /*
 * Description:
 * HandleCommand is responsible for handling a process related command.
