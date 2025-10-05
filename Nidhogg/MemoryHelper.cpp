@@ -263,6 +263,10 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 	PVOID moduleBase = NULL;
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = ONE_SECOND;
+	SIZE_T moduleLen = wcslen(moduleName);
+
+	if (!process || moduleLen == 0)
+		ExRaiseStatus(STATUS_INVALID_PARAMETER);
 
 	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
 
@@ -283,9 +287,8 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (pEntry->FullDllName.Length > 0) {
-			if (RtlCompareUnicodeStrings(pEntry->FullDllName.Buffer, static_cast<SIZE_T>(pEntry->FullDllName.Length), 
-				moduleName, wcslen(moduleName), TRUE) == 0) {
+		if (pEntry->FullDllName.Length == static_cast<USHORT>(moduleLen * 2)) {
+			if (RtlCompareUnicodeStrings(pEntry->FullDllName.Buffer, moduleLen, moduleName, moduleLen, TRUE) == 0) {
 				moduleBase = pEntry->DllBase;
 				break;
 			}
@@ -339,34 +342,34 @@ _IRQL_requires_max_(APC_LEVEL)
 PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ ULONG pid) {
 	KAPC_STATE state;
 	PVOID moduleBase = nullptr;
-	PEPROCESS csrssProcess = nullptr;
+	PEPROCESS process = nullptr;
 	PVOID functionAddress = nullptr;
-	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(pid), &csrssProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(pid), &process);
 
 	if (!NT_SUCCESS(status))
 		ExRaiseStatus(status);
 
 	// Attaching to the process's stack to be able to walk the PEB.
-	KeStackAttachProcess(csrssProcess, &state);
+	KeStackAttachProcess(process, &state);
 
 	__try {
-		moduleBase = GetModuleBase(csrssProcess, moduleName);
+		moduleBase = GetModuleBase(process, moduleName);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(csrssProcess);
+		ObDereferenceObject(process);
 		ExRaiseStatus(GetExceptionCode());
 	}
 
 	if (!moduleBase) {
 		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(csrssProcess);
+		ObDereferenceObject(process);
 		ExRaiseStatus(STATUS_NOT_FOUND);
 	}
 	functionAddress = RtlFindExportedRoutineByName(moduleBase, functionName);
 
 	KeUnstackDetachProcess(&state);
-	ObDereferenceObject(csrssProcess);
+	ObDereferenceObject(process);
 
 	if (!functionAddress)
 		ExRaiseStatus(STATUS_NOT_FOUND);
@@ -393,6 +396,10 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	SIZE_T index = 0;
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
+	WCHAR* fullPath = nullptr;
+	const WCHAR ntdllPath[] = L"\\Windows\\System32\\ntdll.dll";
+	WCHAR* mainDriveLetter = nullptr;
+	errno_t err = 0;
 
 	__try {
 		csrssPid = FindPidByName(L"csrss.exe");
@@ -406,13 +413,32 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 		ExRaiseStatus(status);
 
 	// Attaching to the process's stack to be able to walk the PEB.
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, L"\\Windows\\System32\\ntdll.dll", csrssPid);
+		mainDriveLetter = GetMainDriveLetter();
+		fullPath = AllocateMemory<WCHAR*>((DRIVE_LETTER_SIZE + wcslen(ntdllPath)) * sizeof(WCHAR));
+
+		if (!fullPath)
+			ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+		err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath, wcslen(ntdllPath) * sizeof(WCHAR), ntdllPath);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, fullPath, csrssPid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ObDereferenceObject(csrssProcess);
+		FreeVirtualMemory(mainDriveLetter);
+		FreeVirtualMemory(fullPath);
 		ExRaiseStatus(GetExceptionCode());
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	FreeVirtualMemory(fullPath);
+	irqlGuard.UnsetIrql();
 
 	KeStackAttachProcess(csrssProcess, &state);
 
@@ -431,8 +457,7 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	}
 
 	if (syscall != 0)
-		functionAddress = reinterpret_cast<PUCHAR>(ssdt->ServiceTableBase) + 
-		((reinterpret_cast<PLONG>(ssdt->ServiceTableBase))[syscall] >> SYSCALL_SHIFT);
+		functionAddress = ssdt->ServiceTableBase + (ssdt->ServiceTableBase[syscall] >> SYSCALL_SHIFT);
 
 	ObDereferenceObject(csrssProcess);
 	return functionAddress;

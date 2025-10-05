@@ -4,7 +4,9 @@
 extern "C" {
 	#include "WindowsTypes.h"
 }
+#include "IrqlGuard.h"
 #include "ProcessHelper.h"
+#include "FileHelper.h"
 #include "MemoryAllocator.hpp"
 #include "NidhoggCommon.h"
 
