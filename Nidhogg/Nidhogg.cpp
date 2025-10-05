@@ -234,13 +234,21 @@ void ExecuteInitialOperations() {
 * There is no return value.
 */
 void ClearAll() {
-	delete NidhoggProcessHandler;
-	delete NidhoggThreadHandler;
-	delete NidhoggFileHandler;
-	delete NidhoggMemoryHandler;
-	delete NidhoggAntiAnalysisHandler;
-	delete NidhoggRegistryHandler;
-	delete NidhoggNetworkHandler;
+	if (NidhoggProcessHandler)
+		delete NidhoggProcessHandler;
+
+	if (NidhoggThreadHandler)
+		delete NidhoggThreadHandler;
+	if (NidhoggFileHandler)
+		delete NidhoggFileHandler;
+	if (NidhoggMemoryHandler)
+		delete NidhoggMemoryHandler;
+	if (NidhoggAntiAnalysisHandler)
+		delete NidhoggAntiAnalysisHandler;
+	if (NidhoggRegistryHandler)
+		delete NidhoggRegistryHandler;
+	if (NidhoggNetworkHandler)
+		delete NidhoggNetworkHandler;
 }
 
 /*
@@ -270,40 +278,46 @@ bool InitializeFeatures() {
 	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
 
 	// Initialize utils.
-	NidhoggProcessHandler = new ProcessHandler();
+	__try {
+		NidhoggProcessHandler = new ProcessHandler();
 
-	if (!NidhoggProcessHandler)
+		if (!NidhoggProcessHandler)
+			return false;
+
+		NidhoggThreadHandler = new ThreadHandler();
+
+		if (!NidhoggThreadHandler)
+			return false;
+
+		NidhoggFileHandler = new FileHandler();
+
+		if (!NidhoggFileHandler)
+			return false;
+
+		NidhoggMemoryHandler = new MemoryHandler();
+
+		if (!NidhoggMemoryHandler)
+			return false;
+
+		NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
+
+		if (!NidhoggAntiAnalysisHandler)
+			return false;
+
+		NidhoggRegistryHandler = new RegistryHandler();
+
+		if (!NidhoggRegistryHandler)
+			return false;
+
+		NidhoggNetworkHandler = new NetworkHandler();
+
+		if (!NidhoggNetworkHandler)
+			return false;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ClearAll();
 		return false;
-
-	NidhoggThreadHandler = new ThreadHandler();
-
-	if (!NidhoggThreadHandler)
-		return false;
-
-	NidhoggFileHandler = new FileHandler();
-
-	if (!NidhoggFileHandler)
-		return false;
-
-	NidhoggMemoryHandler = new MemoryHandler();
-
-	if (!NidhoggMemoryHandler)
-		return false;
-
-	NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
-
-	if (!NidhoggAntiAnalysisHandler)
-		return false;
-
-	NidhoggRegistryHandler = new RegistryHandler();
-
-	if (!NidhoggRegistryHandler)
-		return false;
-
-	NidhoggNetworkHandler = new NetworkHandler();
-
-	if (!NidhoggNetworkHandler)
-		return false;
+	}
 
 	// Initialize functions.
 	if (!reinterpret_cast<PULONG>(MmCopyVirtualMemory))
