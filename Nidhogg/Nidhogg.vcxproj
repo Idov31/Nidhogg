@@ -219,6 +219,7 @@
     <ClInclude Include="InitialOperation.h" />
     <ClInclude Include="IoctlShared.h" />
     <ClInclude Include="IrpHandlers.h" />
+    <ClInclude Include="IrqlGuard.h" />
     <ClInclude Include="ListHelper.hpp" />
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysisHandler.h" />
