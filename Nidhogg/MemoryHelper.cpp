@@ -522,12 +522,9 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 			}
 		}
 	}
-
-	if (!NT_SUCCESS(status)) {
-		FreeVirtualMemory(info);
-		ExRaiseStatus(status);
-	}
-
 	FreeVirtualMemory(info);
+
+	if (!NT_SUCCESS(status))
+		ExRaiseStatus(status);
 	return ssdt;
 }
