@@ -12,24 +12,20 @@
 * @systemDrive [char*] -- Pointer to a string containing the main drive letter.
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
-char* GetMainDriveLetter() {
-    NTSTATUS status = STATUS_SUCCESS;
+WCHAR* GetMainDriveLetter() {
     HANDLE keyHandle = NULL;
     UNICODE_STRING keyPath = { 0 };
     UNICODE_STRING valueName = { 0 };
     OBJECT_ATTRIBUTES objAttrs = { 0 };
-    char* systemDrive = AllocateMemory<char*>(DRIVE_LETTER_SIZE);
-
-    if (!systemDrive)
-		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+    WCHAR* systemDrive = nullptr;
 
     RtlInitUnicodeString(&keyPath, CURRENT_VERSION_REGISTRY_KEY);
     RtlInitUnicodeString(&valueName, PROGRAM_FILES_VALUE);
     InitializeObjectAttributes(&objAttrs, &keyPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-    status = ZwOpenKey(&keyHandle, KEY_READ, &objAttrs);
+    NTSTATUS status = ZwOpenKey(&keyHandle, KEY_READ, &objAttrs);
 
     if (NT_SUCCESS(status)) {
-        char keyBuffer[MAX_REG_VALUE_SIZE] = { 0 };
+        WCHAR keyBuffer[MAX_REG_VALUE_SIZE] = { 0 };
         ULONG resultLength = 0;
         PKEY_VALUE_PARTIAL_INFORMATION valueInfo = reinterpret_cast<PKEY_VALUE_PARTIAL_INFORMATION>(keyBuffer);
 
@@ -40,27 +36,30 @@ char* GetMainDriveLetter() {
             if (resultLength < DRIVE_LETTER_SIZE) {
 				status = STATUS_BUFFER_TOO_SMALL;
 				ZwClose(keyHandle);
-				FreeVirtualMemory(systemDrive);
 				ExRaiseStatus(status);
             }
-            PCHAR systemRoot = reinterpret_cast<PCHAR>(valueInfo->Data);
-            status = WriteProcessMemory(
-                systemRoot, 
-                PsGetCurrentProcess(), 
-                systemDrive, 
-                sizeof(systemDrive), 
-                KernelMode
-			);
+            WCHAR* programFilesValue = reinterpret_cast<WCHAR*>(valueInfo->Data);
+            systemDrive = AllocateMemory<WCHAR*>((DRIVE_LETTER_SIZE + 1) * sizeof(WCHAR));
 
-            if (!NT_SUCCESS(status)) {
+            if (!systemDrive) {
                 ZwClose(keyHandle);
-                FreeVirtualMemory(systemDrive);
                 ExRaiseStatus(status);
-			}
+            }
+            errno_t err = wcsncpy_s(systemDrive, DRIVE_LETTER_SIZE + 1, programFilesValue, DRIVE_LETTER_SIZE);
+
+            if (err != 0) {
+                FreeVirtualMemory(systemDrive);
+                ZwClose(keyHandle);
+                ExRaiseStatus(status);
+            }
         }
         ZwClose(keyHandle);
     }
 
+    if (!NT_SUCCESS(status)) {
+        FreeVirtualMemory(systemDrive);
+        ExRaiseStatus(status);
+	}
     return systemDrive;
 }
 
