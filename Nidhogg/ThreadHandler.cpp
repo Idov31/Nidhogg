@@ -311,12 +311,15 @@ bool ThreadHandler::AddHiddenThread(_In_ HiddenThreadEntry thread) {
 	if (thread.Tid == 0 || !thread.OriginalEntry)
 		return false;
 
-	if (FindThread(thread.Tid, ThreadType::Protected))
+	if (FindThread(thread.Tid, ThreadType::Hidden))
 		return false;
 	HiddenThreadEntry* newEntry = AllocateMemory<HiddenThreadEntry*>(sizeof(HiddenThreadEntry));
 
 	if (!newEntry)
 		return false;
+	newEntry->Tid = thread.Tid;
+	newEntry->OriginalEntry = thread.OriginalEntry;
+	
 	AddEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, newEntry);
 	return true;
 }
