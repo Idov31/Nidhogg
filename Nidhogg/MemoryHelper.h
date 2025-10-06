@@ -32,7 +32,7 @@ constexpr UCHAR SsdtSignature[] = { 0x4C, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0xCC, 0x
 
 constexpr Pattern SsdtPattern = {
 	{WIN_1507, WIN_11_24H2},
-	15,
+	sizeof(SsdtSignature),
 	SsdtSignature,
 	0xCC,
 	3,

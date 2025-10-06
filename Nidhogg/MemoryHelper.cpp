@@ -396,10 +396,14 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	SIZE_T index = 0;
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
-	WCHAR* fullPath = nullptr;
-	const WCHAR ntdllPath[] = L"\\Windows\\System32\\ntdll.dll";
-	WCHAR* mainDriveLetter = nullptr;
 	errno_t err = 0;
+	WCHAR* fullPath = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
+	const WCHAR ntdllPath[] = L"\\Windows\\System32\\ntdll.dll";
+	MemoryAllocator<WCHAR*> fullPathAllocator(&fullPath, (DRIVE_LETTER_SIZE + wcslen(ntdllPath)) * sizeof(WCHAR));
+
+	if (!fullPathAllocator.IsValid())
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
 	__try {
 		csrssPid = FindPidByName(L"csrss.exe");
@@ -416,10 +420,6 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
 		mainDriveLetter = GetMainDriveLetter();
-		fullPath = AllocateMemory<WCHAR*>((DRIVE_LETTER_SIZE + wcslen(ntdllPath)) * sizeof(WCHAR));
-
-		if (!fullPath)
-			ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 		err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
 
 		if (err != 0)
@@ -433,11 +433,9 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ObDereferenceObject(csrssProcess);
 		FreeVirtualMemory(mainDriveLetter);
-		FreeVirtualMemory(fullPath);
 		ExRaiseStatus(GetExceptionCode());
 	}
 	FreeVirtualMemory(mainDriveLetter);
-	FreeVirtualMemory(fullPath);
 	irqlGuard.UnsetIrql();
 
 	KeStackAttachProcess(csrssProcess, &state);
@@ -455,11 +453,19 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 		ObDereferenceObject(csrssProcess);
 		ExRaiseStatus(STATUS_NOT_FOUND);
 	}
-
-	if (syscall != 0)
-		functionAddress = ssdt->ServiceTableBase + (ssdt->ServiceTableBase[syscall] >> SYSCALL_SHIFT);
-
 	ObDereferenceObject(csrssProcess);
+
+	__try {
+		if (syscall != 0)
+			functionAddress = ssdt->ServiceTableBase + (ssdt->ServiceTableBase[syscall] >> SYSCALL_SHIFT);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ExRaiseStatus(GetExceptionCode());
+	}
+
+	if (functionAddress == nullptr)
+		ExRaiseStatus(STATUS_NOT_FOUND);
+
 	return functionAddress;
 }
 
@@ -537,12 +543,12 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 	for (PIMAGE_SECTION_HEADER section = firstSection; section < firstSection + ntHeaders->FileHeader.NumberOfSections; section++) {
 		if (strcmp(reinterpret_cast<const char*>(section->Name), ".text") == 0) {
 			ssdtRelativeLocation = FindPattern(SsdtPattern, static_cast<PUCHAR>(ntoskrnlBase) + section->VirtualAddress, 
-				section->Misc.VirtualSize, NULL);
+				section->Misc.VirtualSize, nullptr, KernelMode);
 
 			if (ssdtRelativeLocation) {
 				status = STATUS_SUCCESS;
 				ssdt = reinterpret_cast<PSYSTEM_SERVICE_DESCRIPTOR_TABLE>(static_cast<PUCHAR>(ssdtRelativeLocation) + 
-					*static_cast<PULONG>(ssdtRelativeLocation) + 7);
+					*static_cast<PULONG>(ssdtRelativeLocation) + 4);
 				break;
 			}
 		}
