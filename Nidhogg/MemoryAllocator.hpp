@@ -78,38 +78,75 @@ private:
 
 public:
 	_IRQL_requires_max_(APC_LEVEL)
+	MemoryAllocator() noexcept {
+		this->allocatedData = nullptr;
+		this->allocatedSize = 0;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
 	MemoryAllocator(_Inout_ DataType data, _In_ SIZE_T size) noexcept {
 		this->allocatedData = nullptr;
-		this->allocatedSize = size;
-
-		if (size != 0) {
-			data = AllocateMemory<DataType>(size);
-
-			if (data) {
-				RtlSecureZeroMemory(data, size);
-				this->allocatedData = data;
-			}
-		}
+		this->allocatedSize = 0;
+		Alloc(data, size);
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
 	MemoryAllocator(_Inout_ DataType* data, _In_ SIZE_T size) noexcept {
 		this->allocatedData = nullptr;
-		this->allocatedSize = size;
+		this->allocatedSize = 0;
+		Alloc(data, size);
+	}
 
-		if (size != 0) {
-			*data = AllocateMemory<DataType>(size);
+	_IRQL_requires_max_(APC_LEVEL)
+	bool IsValid() {
+		return allocatedSize > 0 && allocatedData;
+	}
 
-			if (*data) {
-				RtlSecureZeroMemory(*data, size);
-				this->allocatedData = *data;
-			}
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Alloc(_Inout_ DataType data, _In_ SIZE_T size) {
+		if (size == 0 || !data) {
+			return false;
 		}
+		if (allocatedData)
+			return false;
+		data = AllocateMemory<DataType>(size);
+
+		if (data) {
+			RtlSecureZeroMemory(data, size);
+			this->allocatedData = data;
+			this->allocatedSize = size;
+			return true;
+		}
+		return false;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Alloc(_Inout_ DataType* data, _In_ SIZE_T size) {
+		return Alloc(*data, size);
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Realloc(_Inout_ DataType data, _In_ SIZE_T size) {
+		if (allocatedData)
+			Free();
+		return Alloc(data, size);
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Realloc(_Inout_ DataType* data, _In_ SIZE_T size) {
+		return Realloc(*data, size);
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	void Free() {
+		FreeVirtualMemory<DataType>(this->allocatedData);
+		this->allocatedData = nullptr;
+		this->allocatedSize = 0;
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
 	~MemoryAllocator() {
-		FreeVirtualMemory<DataType>(this->allocatedData);
+		Free();
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
