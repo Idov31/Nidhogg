@@ -70,7 +70,7 @@ void FreeVirtualMemory(_Inout_ Pointer& address) {
 	address = NULL;
 }
 
-template<typename DataType>
+template<PointerType DataType>
 class MemoryAllocator {
 private:
 	DataType allocatedData;
@@ -79,41 +79,36 @@ private:
 public:
 	_IRQL_requires_max_(APC_LEVEL)
 	MemoryAllocator() noexcept {
-		this->allocatedData = nullptr;
-		this->allocatedSize = 0;
+		allocatedData = nullptr;
+		allocatedSize = 0;
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	MemoryAllocator(_Inout_ DataType data, _In_ SIZE_T size) noexcept {
-		this->allocatedData = nullptr;
-		this->allocatedSize = 0;
-		Alloc(data, size);
+	MemoryAllocator(_In_ SIZE_T size) noexcept {
+		allocatedData = nullptr;
+		allocatedSize = 0;
+		Alloc(size);
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	MemoryAllocator(_Inout_ DataType* data, _In_ SIZE_T size) noexcept {
-		this->allocatedData = nullptr;
-		this->allocatedSize = 0;
-		Alloc(data, size);
-	}
-
-	_IRQL_requires_max_(APC_LEVEL)
-	bool IsValid() {
+	bool IsValid() const {
 		return allocatedSize > 0 && allocatedData;
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	bool Alloc(_Inout_ DataType data, _In_ SIZE_T size) {
-		if (size == 0 || !data) {
+	DataType Get() const {
+		return allocatedData;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Alloc(_In_ SIZE_T size) {
+		if (size == 0 || allocatedData) {
 			return false;
 		}
-		if (allocatedData)
-			return false;
-		data = AllocateMemory<DataType>(size);
+		allocatedData = AllocateMemory<DataType>(size);
 
-		if (data) {
-			RtlSecureZeroMemory(data, size);
-			this->allocatedData = data;
+		if (allocatedData) {
+			RtlSecureZeroMemory(allocatedData, size);
 			this->allocatedSize = size;
 			return true;
 		}
@@ -121,25 +116,15 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	bool Alloc(_Inout_ DataType* data, _In_ SIZE_T size) {
-		return Alloc(*data, size);
-	}
-
-	_IRQL_requires_max_(APC_LEVEL)
 	bool Realloc(_Inout_ DataType data, _In_ SIZE_T size) {
 		if (allocatedData)
 			Free();
-		return Alloc(data, size);
-	}
-
-	_IRQL_requires_max_(APC_LEVEL)
-	bool Realloc(_Inout_ DataType* data, _In_ SIZE_T size) {
-		return Realloc(*data, size);
+		return Alloc(size);
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
 	void Free() {
-		FreeVirtualMemory<DataType>(this->allocatedData);
+		FreeVirtualMemory<DataType>(allocatedData);
 		this->allocatedData = nullptr;
 		this->allocatedSize = 0;
 	}
@@ -150,7 +135,7 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size) {
+	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size, _In_ KPROCESSOR_MODE mode = KernelMode) {
 		SIZE_T bytesWritten = 0;
 		NTSTATUS status = STATUS_INVALID_PARAMETER;
 
@@ -161,7 +146,7 @@ public:
 			return status;
 
 		status = MmCopyVirtualMemory(PsGetCurrentProcess(), data, PsGetCurrentProcess(), this->allocatedData, size,
-			KernelMode, &bytesWritten);
+			mode, &bytesWritten);
 
 		if (NT_SUCCESS(status))
 			status = bytesWritten == size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;

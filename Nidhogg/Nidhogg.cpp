@@ -197,11 +197,12 @@ void ExecuteInitialOperations() {
 #pragma warning(push)
 #pragma warning(disable : 4702)
 	scriptInfo.ScriptSize = InitialOperationsSize;
-	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
-	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
+	MemoryAllocator<PVOID> script(scriptInfo.ScriptSize);
+	NTSTATUS status = script.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
 
 	if (!NT_SUCCESS(status))
 		return;
+	scriptInfo.Script = script.Get();
 
 	__try {
 		scriptManager = new ScriptManager();

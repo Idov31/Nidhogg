@@ -397,12 +397,11 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
 	errno_t err = 0;
-	WCHAR* fullPath = nullptr;
 	WCHAR* mainDriveLetter = nullptr;
 	const WCHAR ntdllPath[] = L"\\Windows\\System32\\ntdll.dll";
-	MemoryAllocator<WCHAR*> fullPathAllocator(&fullPath, (DRIVE_LETTER_SIZE + wcslen(ntdllPath)) * sizeof(WCHAR));
+	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(ntdllPath) + 1) * sizeof(WCHAR));
 
-	if (!fullPathAllocator.IsValid())
+	if (!fullPath.IsValid())
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
 	__try {
@@ -420,15 +419,15 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
 		mainDriveLetter = GetMainDriveLetter();
-		err = wcscpy_s(fullPath, DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+		err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
 
 		if (err != 0)
 			ExRaiseStatus(STATUS_INVALID_PARAMETER);
-		err = wcscat_s(fullPath, wcslen(ntdllPath) * sizeof(WCHAR), ntdllPath);
+		err = wcscat_s(fullPath.Get(), wcslen(ntdllPath) * sizeof(WCHAR), ntdllPath);
 
 		if (err != 0)
 			ExRaiseStatus(STATUS_INVALID_PARAMETER);
-		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, fullPath, csrssPid);
+		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, fullPath.Get(), csrssPid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ObDereferenceObject(csrssProcess);
