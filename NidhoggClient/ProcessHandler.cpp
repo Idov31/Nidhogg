@@ -19,8 +19,14 @@ ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandH
 		{"list_protected", { true, [](PVOID tester) {
 			try {
 				std::vector<DWORD> result = static_cast<ProcessHandler*>(tester)->ListProcesses(ProcessType::Protected);
+
+				if (result.size() == 0) {
+					std::cout << "\t[+] No protected processes found" << std::endl;
+					return true;
+				}
 				std::cout << "[+] Protected processes:" << std::endl;
-				for (int i = 0; i < result.size(); i++) {
+
+				for (size_t i = 0; i < result.size(); i++) {
 					std::cout << "\t" << result[i] << std::endl;
 				}
 			}
@@ -56,8 +62,13 @@ ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandH
 		{"list_hidden", { false, [](PVOID tester) {
 			try {
 				std::vector<DWORD> result = static_cast<ProcessHandler*>(tester)->ListProcesses(ProcessType::Hidden);
+				if (result.size() == 0) {
+					std::cout << "\t[+] No hidden processes found" << std::endl;
+					return true;
+				}
 				std::cout << "[+] Hidden processes:" << std::endl;
-				for (int i = 0; i < result.size(); i++) {
+
+				for (size_t i = 0; i < result.size(); i++) {
 					std::cout << "\t" << result[i] << std::endl;
 				}
 			}
@@ -77,7 +88,7 @@ ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandH
 			KillProcessByName("notepad.exe");
 			return success;
 			} } },
-		{"elevate", { false, [](PVOID tester) {
+		{"elevate", { true, [](PVOID tester) {
 			DWORD pid = 0;
 			try {
 				pid = CreateProcessByName("notepad.exe");
@@ -90,7 +101,7 @@ ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandH
 			KillProcessByName("notepad.exe");
 			return success;
 			} } },
-		{"set_protection", { false, [](PVOID tester) {
+		{"set_protection", { true, [](PVOID tester) {
 			DWORD pid = 0;
 			try {
 				pid = CreateProcessByName("notepad.exe");
@@ -111,13 +122,13 @@ ProcessHandler::ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandH
 			KillProcessByName("notepad.exe");
 			return success;
 			} } },
-		{"clear_hidden", { true, [](PVOID tester) {
+		{"clear_hidden", { false, [](PVOID tester) {
 			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::Hidden);
 			} } },
 		{"clear_protected", { true, [](PVOID tester) {
 			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::Protected);
 			} } },
-		{"clear_all", { true, [](PVOID tester) {
+		{"clear_all", { false, [](PVOID tester) {
 			return static_cast<ProcessHandler*>(tester)->ClearProcesses(ProcessType::All);
 			} } }
 	};
@@ -143,9 +154,9 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		DWORD pid = static_cast<DWORD>(atoi(params.at(1).c_str()));
+		DWORD pid = static_cast<DWORD>(atoi(params.at(0).c_str()));
 		Protect(pid, true) ? std::cout << "Process " << pid << " protected" << std::endl :
-			std::cerr << "Failed to protect process " << pid << std::endl;
+			std::cerr << "Failed to protect process " << pid << ": " << GetLastError() << std::endl;
 	}
 	else if (commandName.compare("remove") == 0 || commandName.compare("unprotect") == 0) {
 		if (!CheckInput(params)) {
@@ -163,7 +174,7 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 		}
 		DWORD pid = static_cast<DWORD>(atoi(params.at(0).c_str()));
 		Hide(pid, true) ? std::cout << "Process " << pid << " is now hidden" << std::endl :
-			std::cerr << "Failed to hide process " << pid << std::endl;
+			std::cerr << "Failed to hide process " << pid << ": " << GetLastError() << std::endl;
 	}
 	else if (commandName.compare("unhide") == 0 || commandName.compare("restore") == 0) {
 		if (!CheckInput(params)) {
@@ -184,12 +195,12 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 			std::cerr << "Failed to elevate process " << pid << std::endl;
 	}
 	else if (commandName.compare("list") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
-		std::string processType = params.at(1);
+		std::string processType = params.at(0);
 
 		if (processType.compare("hidden") == 0) {
 			std::vector<DWORD> result;
@@ -202,9 +213,13 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 				return;
 			}
 
+			if (result.size() == 0) {
+				std::cout << "\t[+] No hidden processes found" << std::endl;
+				return;
+			}
 			std::cout << "[+] Hidden processes:" << std::endl;
 
-			for (int i = 0; i < result.size(); i++) {
+			for (size_t i = 0; i < result.size(); i++) {
 				std::cout << "\t" << result[i] << std::endl;
 			}
 		}
@@ -219,9 +234,13 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 				return;
 			}
 
+			if (result.size() == 0) {
+				std::cout << "\t[+] No protected processes found" << std::endl;
+				return;
+			}
 			std::cout << "[+] Protected processes:" << std::endl;
 
-			for (int i = 0; i < result.size(); i++) {
+			for (size_t i = 0; i < result.size(); i++) {
 				std::cout << "\t" << result[i] << std::endl;
 			}
 		}
@@ -231,18 +250,18 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 		}
 	}
 	else if (commandName.compare("set_protection") == 0) {
-		if (params.size() != 4) {
+		if (params.size() != 3) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
-		if (!IsValidPid(params.at(1))) {
+		if (!IsValidPid(params.at(0))) {
 			PrintHelp();
 			return;
 		}
-		DWORD pid = static_cast<DWORD>(atoi(params.at(1).c_str()));
-		UCHAR signerType = static_cast<UCHAR>(atoi(params.at(2).c_str()));
-		UCHAR signatureSigner = static_cast<UCHAR>(atoi(params.at(3).c_str()));
+		DWORD pid = static_cast<DWORD>(atoi(params.at(0).c_str()));
+		UCHAR signerType = static_cast<UCHAR>(atoi(params.at(1).c_str()));
+		UCHAR signatureSigner = static_cast<UCHAR>(atoi(params.at(2).c_str()));
 
 		if ((signerType < PsProtectedTypeNone || signerType > PsProtectedTypeProtected) ||
 			(signatureSigner < PsProtectedSignerNone || signatureSigner > PsProtectedSignerMax)) {
@@ -252,11 +271,11 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 		}
 
 		SetProtection(pid, signerType, signatureSigner) ? std::cout << "Process " << pid << " signature level changed (type: " 
-			<< signerType << ", signer: " << signatureSigner << ")" << std::endl :
+			<< static_cast<DWORD>(signerType) << ", signer: " << static_cast<DWORD>(signatureSigner) << ")" << std::endl :
 			std::cerr << "Failed to change process " << pid << " signature level" << std::endl;
 	}
 	else if (commandName.compare("clear") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -302,7 +321,7 @@ bool ProcessHandler::CheckInput(_In_ const std::vector<std::string>& params) {
 		std::cerr << "Invalid parameter count: " << params.size() << ", expected 1." << std::endl;
 		return false;
 	}
-	return IsValidPid(params.at(1));
+	return IsValidPid(params.at(0));
 }
 
 /*
@@ -320,7 +339,7 @@ bool ProcessHandler::Protect(_In_ DWORD pid, _In_ bool protect) {
 	DWORD returned;
 	IoctlProcessEntry protectedProcess = { pid, protect };
 
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_PROCESS, &protectedProcess, sizeof(protectedProcess),
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_PROCESS, &protectedProcess, sizeof(protectedProcess),
 		nullptr, 0, &returned, nullptr);
 }
 
@@ -339,7 +358,7 @@ bool ProcessHandler::Hide(_In_ DWORD pid, _In_ bool hide) {
 	DWORD returned;
 	IoctlProcessEntry hiddenProcess = { pid, hide };
 
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_HIDE_UNHIDE_PROCESS, &hiddenProcess, sizeof(hiddenProcess), nullptr, 0,
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_HIDE_UNHIDE_PROCESS, &hiddenProcess, sizeof(hiddenProcess), nullptr, 0,
 		&returned, nullptr);
 }
 
@@ -355,7 +374,7 @@ bool ProcessHandler::Hide(_In_ DWORD pid, _In_ bool hide) {
 */
 bool ProcessHandler::Elevate(_In_ DWORD pid) {
 	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_ELEVATE_PROCESS, &pid, sizeof(pid), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_ELEVATE_PROCESS, &pid, sizeof(pid), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -378,7 +397,7 @@ bool ProcessHandler::SetProtection(_In_ DWORD pid, _In_ UCHAR signerType, _In_ U
 	processSignature.SignerType = signerType;
 	processSignature.SignatureSigner = signatureSigner;
 
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_SET_PROCESS_SIGNATURE_LEVEL, &processSignature, sizeof(processSignature),
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_SET_PROCESS_SIGNATURE_LEVEL, &processSignature, sizeof(processSignature),
 		nullptr, 0, &returned, nullptr);
 }
 
@@ -394,7 +413,7 @@ bool ProcessHandler::SetProtection(_In_ DWORD pid, _In_ UCHAR signerType, _In_ U
 */
 bool ProcessHandler::ClearProcesses(_In_ ProcessType type) {
 	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROCESSES, &type, sizeof(type), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_CLEAR_PROCESSES, &type, sizeof(type), nullptr, 0, &returned, nullptr);
 }
 
 
@@ -414,9 +433,9 @@ std::vector<DWORD> ProcessHandler::ListProcesses(_In_ ProcessType type) {
 	IoctlProcessList result{};
 	result.Type = type;
 
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_PROCESSES, nullptr, 0, &result, sizeof(result), &returned,
-		nullptr)) {
-		return pids;
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_PROCESSES, &result, sizeof(result), &result, sizeof(result), 
+		&returned, nullptr)) {
+		throw ProcessHandlerException("Failed to get process list count");
 	}
 
 	if (result.Count > 0) {
@@ -425,6 +444,12 @@ std::vector<DWORD> ProcessHandler::ListProcesses(_In_ ProcessType type) {
 		}
 		catch (SafeMemoryException&) {
 			throw ProcessHandlerException("Failed to allocate memory for process list");
+		}
+
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_PROCESSES, &result, sizeof(result), &result, sizeof(result), 
+			&returned, nullptr)) {
+			SafeFree(result.Processes);
+			throw ProcessHandlerException("Failed to get process list");
 		}
 
 		for (ULONG i = 0; i < result.Count; i++)
