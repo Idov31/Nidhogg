@@ -208,7 +208,7 @@ enum class ProcessType {
 
 struct IoctlProcessEntry {
 	unsigned long Pid;
-	bool Remove;
+	bool Protect;
 };
 
 struct IoctlProcessSignature {
@@ -251,7 +251,7 @@ enum class ThreadType {
 
 struct IoctlThreadEntry {
 	unsigned long Tid;
-	bool Remove;
+	bool Protect;
 };
 
 struct IoctlThreadList {
