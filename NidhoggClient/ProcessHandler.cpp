@@ -298,8 +298,8 @@ void ProcessHandler::HandleCommand(_In_ std::string command) {
 * @bool											 -- Whether the input parameters are valid or not.
 */
 bool ProcessHandler::CheckInput(_In_ const std::vector<std::string>& params) {
-	if (params.size() != 2) {
-		std::cerr << "Invalid usage" << std::endl;
+	if (params.size() != 1) {
+		std::cerr << "Invalid parameter count: " << params.size() << ", expected 1." << std::endl;
 		return false;
 	}
 	return IsValidPid(params.at(1));
