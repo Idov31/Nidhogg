@@ -37,7 +37,13 @@ public:
 				break;
 			else if (command.compare("exit") == 0)
 				return true;
-			HandleCommand(command);
+
+			try {
+				HandleCommand(command);
+			}
+			catch (const std::exception& e) {
+				std::cerr << termcolor::red << "\tException: " << e.what() << termcolor::reset << std::endl;
+			}
 			command = "";
 		} while (true);
 
