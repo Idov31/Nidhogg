@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "AutoLock.h"
 #include "MemoryHelper.h"
 
 template<typename List>
@@ -84,7 +85,7 @@ inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 * Returns:
 * @ListItem*						   -- Pointer to the found list item, or NULL if not found.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
 inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
 	AutoLock locker(list.Lock);
@@ -93,14 +94,13 @@ inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ 
 		return NULL;
 	PLIST_ENTRY currentEntry = list.Items;
 
-	while (currentEntry->Flink != list.Items) {
-		currentEntry = currentEntry->Flink;
+	do {
 		ListItem* item = CONTAINING_RECORD(currentEntry, ListItem, Entry);
 
 		if (function(item, searchable))
 			return item;
 		currentEntry = currentEntry->Flink;
-	}
+	} while (currentEntry != list.Items);
 	return NULL;
 }
 
