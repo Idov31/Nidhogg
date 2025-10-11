@@ -255,6 +255,9 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		ProtectedThreadEntry* entry = FindListEntry<ThreadList, ProtectedThreadEntry, ULONG>(protectedThreads, tid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ThreadList, ProtectedThreadEntry>(&protectedThreads, entry);
 	}
 
@@ -263,6 +266,9 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		HiddenThreadEntry* entry = FindListEntry<ThreadList, HiddenThreadEntry, ULONG>(hiddenThreads, tid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, entry);
 	}
 	default:

@@ -276,6 +276,9 @@ bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
 			return _wcsicmp(item->FilePath, path) == 0;
 		};
 		FileItem* entry = FindListEntry<FilesList, FileItem, WCHAR*>(protectedFiles, path, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<FilesList, FileItem>(&protectedFiles, entry);
 	}
 	default:

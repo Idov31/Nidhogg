@@ -886,6 +886,9 @@ bool AntiAnalysisHandler::RemoveCallback(_In_ DisabledKernelCallback* callback) 
 	}
 	DisabledKernelCallback* entry = FindListEntry<CallbackList, DisabledKernelCallback, DisabledKernelCallback*>(*list, 
 		callback, finder);
+
+	if (!entry)
+		return false;
 	return RemoveListEntry<CallbackList, DisabledKernelCallback>(list, entry);
 }
 

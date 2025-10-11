@@ -379,8 +379,11 @@ bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 	case ProcessType::Protected: {
 		auto finder = [](_In_ const ProtectedProcessEntry* item, _In_ ULONG pid) {
 			return item->Pid == pid;
-			};
+		};
 		ProtectedProcessEntry* entry = FindListEntry<ProcessList, ProtectedProcessEntry, ULONG>(protectedProcesses, pid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ProcessList, ProtectedProcessEntry>(&protectedProcesses, entry);
 	}
 	
@@ -389,6 +392,9 @@ bool ProcessHandler::RemoveProcess(_In_ ULONG pid, _In_ ProcessType type) {
 			return item->Pid == pid;
 			};
 		HiddenProcessEntry* entry = FindListEntry<ProcessList, HiddenProcessEntry, ULONG>(hiddenProcesses, pid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ProcessList, HiddenProcessEntry>(&hiddenProcesses, entry);
 	}
 	default:

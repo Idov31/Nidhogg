@@ -37,6 +37,8 @@ using CleanupFunction = void(*)(_In_ ListItem* item);
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List>
 inline bool InitializeList(_Inout_ List* list) {
+	if (!list)
+		return false;
 	list->Count = 0;
 	list->Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 
@@ -61,6 +63,8 @@ inline bool InitializeList(_Inout_ List* list) {
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
+	if (!entryToAdd)
+		return;
 	InitializeListHead(&entryToAdd->Entry);
 
 	AutoLock locker(list->Lock);
@@ -114,6 +118,9 @@ inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ 
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline bool RemoveListEntry(_Inout_ List* list, _In_ ListItem* entry) {
+	if (!list || !entry)
+		return false;
+
 	AutoLock locker(list->Lock);
 	
 	if (!RemoveEntryList(&entry->Entry))
@@ -136,6 +143,9 @@ inline bool RemoveListEntry(_Inout_ List* list, _In_ ListItem* entry) {
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list) {
+	if (!list)
+		return;
+
 	ListItem* entry = nullptr;
 	AutoLock locker(list->Lock);
 
@@ -166,6 +176,9 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> function) {
 	ListItem* entry = nullptr;
+
+	if (!list || !function)
+		return;
 	list->Lock.Lock();
 
 	if (list->Count == 0 || !list->Items)

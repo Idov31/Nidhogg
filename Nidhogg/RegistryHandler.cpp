@@ -833,6 +833,9 @@ bool RegistryHandler::RemoveRegItem(_In_ const IoctlRegItem& item) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0;
 			};
 		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(keysList.Protected, item, finder);
+		
+		if (!entry)
+			return false;
 		return RemoveListEntry<RegistryEntryList, RegItem>(&keysList.Protected, entry);
 	}
 
@@ -841,6 +844,9 @@ bool RegistryHandler::RemoveRegItem(_In_ const IoctlRegItem& item) {
 			return _wcsicmp(entry->KeyPath, currentItem.KeyPath) == 0;
 		};
 		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(keysList.Hidden, item, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<RegistryEntryList, RegItem>(&keysList.Hidden, entry);
 	}
 	case RegItemType::ProtectedValue: {
@@ -851,6 +857,9 @@ bool RegistryHandler::RemoveRegItem(_In_ const IoctlRegItem& item) {
 				_wcsicmp(entry->ValueName, currentItem.ValueName) == 0;
 			};
 		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(valuesList.Protected, item, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<RegistryEntryList, RegItem>(&valuesList.Protected, entry);
 	}
 	case RegItemType::HiddenValue: {
@@ -861,6 +870,9 @@ bool RegistryHandler::RemoveRegItem(_In_ const IoctlRegItem& item) {
 				_wcsicmp(entry->ValueName, currentItem.ValueName) == 0;
 			};
 		RegItem* entry = FindListEntry<RegistryEntryList, RegItem, const IoctlRegItem&>(valuesList.Hidden, item, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<RegistryEntryList, RegItem>(&valuesList.Hidden, entry);
 	}
 	default:
