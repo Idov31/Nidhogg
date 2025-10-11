@@ -34,7 +34,6 @@ private:
 	ProcessList protectedProcesses;
 	ProcessList hiddenProcesses;
 
-	void RemoveListLinks(PLIST_ENTRY current);
 	void AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target);
 
 	_IRQL_requires_max_(APC_LEVEL)
