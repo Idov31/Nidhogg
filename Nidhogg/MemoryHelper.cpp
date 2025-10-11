@@ -456,7 +456,8 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 
 	__try {
 		if (syscall != 0)
-			functionAddress = ssdt->ServiceTableBase + (ssdt->ServiceTableBase[syscall] >> SYSCALL_SHIFT);
+			functionAddress = reinterpret_cast<PUCHAR>(ssdt->ServiceTableBase) + 
+			(reinterpret_cast<PLONG>(ssdt->ServiceTableBase)[syscall] >> SYSCALL_SHIFT);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ExRaiseStatus(GetExceptionCode());
