@@ -27,7 +27,7 @@ public:
 
 		do {
 			std::cout << termcolor::magenta << "[Nidhogg :: " << contextName << "]>> " << termcolor::reset;
-			std::cin >> command;
+			std::getline(std::cin, command);
 
 			if (command.empty() || command.compare("help") == 0) {
 				PrintHelp();
