@@ -1,10 +1,6 @@
 #pragma once
 #include "pch.h"
 
-// Globals
-inline ULONG WindowsBuildNumber = 0;
-inline PVOID AllocatePool2 = NULL;
-
 // Documented.
 constexpr ULONG64 WIN_1507 = 10240;
 constexpr ULONG64 WIN_1511 = 10586;
