@@ -16,8 +16,10 @@ constexpr VOID Print(...) {};
 // Globals.
 inline PVOID RegistrationHandle = NULL;
 
-inline ULONG WindowsBuildNumber;
-inline PVOID AllocatePool2;
+extern "C" {
+    extern ULONG WindowsBuildNumber;
+    extern PVOID AllocatePool2;
+}
 
 struct EnabledFeatures {
 	bool DriverReflectivelyLoaded = false;

