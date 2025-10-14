@@ -14,6 +14,8 @@ ThreadHandler::ThreadHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::~ThreadHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearThreadList(ThreadType::All);
 	FreeVirtualMemory(this->protectedThreads.Items);
 	FreeVirtualMemory(this->hiddenThreads.Items);

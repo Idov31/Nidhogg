@@ -28,6 +28,9 @@ MemoryHandler::MemoryHandler() {
 }
 
 MemoryHandler::~MemoryHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
+
 	auto driverCleaner = [](_In_ HiddenDriverEntry* item) -> void {
 		NidhoggMemoryHandler->UnhideDriver(item->DriverPath);
 	};

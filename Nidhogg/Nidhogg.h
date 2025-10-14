@@ -32,6 +32,13 @@ extern "C" {
 // Prototypes.
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
 DRIVER_UNLOAD NidhoggUnload;
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 void ClearAll();
+
+_IRQL_requires_max_(APC_LEVEL)
 bool InitializeFeatures();
+
+_IRQL_requires_max_(APC_LEVEL)
 void ExecuteInitialOperations();

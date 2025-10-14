@@ -29,6 +29,8 @@ RegistryHandler::RegistryHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 RegistryHandler::~RegistryHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearRegistryList(RegItemType::All);
 	FreeVirtualMemory(this->keysList.Hidden.Items);
 	FreeVirtualMemory(this->keysList.Protected.Items);

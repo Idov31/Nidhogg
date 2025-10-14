@@ -13,6 +13,8 @@ ProcessHandler::ProcessHandler() {
 }
 
 ProcessHandler::~ProcessHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearProcessList(ProcessType::All);
 	FreeVirtualMemory(this->protectedProcesses.Items);
 	FreeVirtualMemory(this->hiddenProcesses.Items);

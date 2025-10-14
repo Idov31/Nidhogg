@@ -22,6 +22,8 @@ AntiAnalysisHandler::AntiAnalysisHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 AntiAnalysisHandler::~AntiAnalysisHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	auto callbackCleaner = [](_In_ DisabledKernelCallback* item) -> void {
 		NidhoggAntiAnalysisHandler->RestoreCallback(item);
 	};
