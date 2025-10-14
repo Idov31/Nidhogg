@@ -32,6 +32,12 @@ public:
 	}
 
 	_IRQL_requires_max_(HIGH_LEVEL)
+	void SetExitIrql(_In_ KIRQL newIrql) {
+		originalIrql = newIrql;
+		set = true;
+	}
+
+	_IRQL_requires_max_(HIGH_LEVEL)
 	void UnsetIrql() {
 		if (set) {
 			set = false;
