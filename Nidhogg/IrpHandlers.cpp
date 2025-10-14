@@ -18,6 +18,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	NTSTATUS status = STATUS_SUCCESS;
 	SIZE_T len = 0;
+	IrqlGuard guard(PASSIVE_LEVEL);
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
@@ -409,22 +410,14 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
 			Print(DRIVER_PREFIX "Protected file %ws.\n", filePath.Get());
-			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 		else {
 			if (!NidhoggFileHandler->RemoveFile(filePath.Get(), FileType::Protected)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
-
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
 			Print(DRIVER_PREFIX "Unprotected file %ws.\n", filePath.Get());
-			KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
 		len += size;
@@ -719,18 +712,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		status = NidhoggMemoryHandler->PatchModule(patchedModule);
 
 		if (!NT_SUCCESS(status)) {
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
 			Print(DRIVER_PREFIX "Failed to patch module %ws and function %s for process %d: (0x%08X).\n", 
 				patchedModule.ModuleName, patchedModule.FunctionName, patchedModule.Pid, status);
-			KeRaiseIrql(prevIrql, &prevIrql);
 			break;
 		}
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
 		Print(DRIVER_PREFIX "Patched module %ws and function %s for process %d.\n", patchedModule.ModuleName, patchedModule.FunctionName, patchedModule.Pid);
-		KeRaiseIrql(prevIrql, &prevIrql);
-
 		len += size;
 		break;
 	}
@@ -770,9 +756,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		status = hiddenModule.Hide ? NidhoggMemoryHandler->HideModule(hiddenModule) : 
 			NidhoggMemoryHandler->RestoreModule(hiddenModule);
 
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-
 		if (!NT_SUCCESS(status)) {
 			if (hiddenModule.Hide)
 				Print(DRIVER_PREFIX "Failed to hide module %ws for process %d: (0x%08X).\n", hiddenModule.ModuleName, 
@@ -780,14 +763,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			else
 				Print(DRIVER_PREFIX "Failed to restore module %ws for process %d: (0x%08X).\n", hiddenModule.ModuleName, 
 					hiddenModule.Pid, status);
-			KeRaiseIrql(prevIrql, &prevIrql);
 			break;
 		}
 		if (hiddenModule.Hide)
 			Print(DRIVER_PREFIX "Hid module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
 		else
 			Print(DRIVER_PREFIX "Restored module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
-		KeRaiseIrql(prevIrql, &prevIrql);
 
 		len += size;
 		break;
@@ -815,41 +796,21 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 		if (data->Hide) {
 			status = NidhoggMemoryHandler->HideDriver(driverName.Get());
-			auto prevIrql = KeGetCurrentIrql();
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeLowerIrql(PASSIVE_LEVEL);
 
 			if (!NT_SUCCESS(status)) {
 				Print(DRIVER_PREFIX "Failed to hide driver %ws: (0x%08X)\n", driverName.Get(), status);
-
-				if (prevIrql != PASSIVE_LEVEL)
-					KeRaiseIrql(prevIrql, &prevIrql);
 				break;
 			}
 			Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName.Get());
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeRaiseIrql(prevIrql, &prevIrql);
 		}
 		else {
 			status = NidhoggMemoryHandler->UnhideDriver(driverName.Get());
-			auto prevIrql = KeGetCurrentIrql();
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeLowerIrql(PASSIVE_LEVEL);
 
 			if (!NT_SUCCESS(status)) {
 				Print(DRIVER_PREFIX "Failed to restore driver %ws: (0x%08X)\n", driverName.Get(), status);
-
-				if (prevIrql != PASSIVE_LEVEL)
-					KeRaiseIrql(prevIrql, &prevIrql);
 				break;
 			}
 			Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName.Get());
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeRaiseIrql(prevIrql, &prevIrql);
 		}
 
 		len += size;
