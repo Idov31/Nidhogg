@@ -102,31 +102,24 @@ NTSTATUS OnRegistryNotify(_In_ PVOID context, _In_opt_ PVOID arg1, _In_opt_ PVOI
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreDeleteKeyHandler(_Inout_ REG_DELETE_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(info->Object)))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
+	do {
+		if (!IsValidKey(regPath))
+			break;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0)
+			break;
+		regItem.Type = RegItemType::ProtectedKey;
 
-	if (!IsValidKey(regPath)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::ProtectedKey;
-
-	if (FindRegItem(regItem))
-		status = STATUS_ACCESS_DENIED;
+		if (FindRegItem(regItem))
+			status = STATUS_NOT_FOUND;
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -145,35 +138,28 @@ NTSTATUS RegistryHandler::RegNtPreDeleteKeyHandler(_Inout_ REG_DELETE_KEY_INFORM
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreDeleteValueKeyHandler(_Inout_ REG_DELETE_VALUE_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!info->Object || !VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(info->Object)))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
+	do {
+		if (!IsValidKey(regPath) || !IsValidValue(info->ValueName))
+			break;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0)
+			break;
+		size_t valueLength = min(info->ValueName->Length / sizeof(WCHAR), REG_VALUE_LEN - 1);
 
-	if (!IsValidKey(regPath) || !IsValidValue(info->ValueName)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
+		if (wcsncpy_s(regItem.ValueName, REG_VALUE_LEN, info->ValueName->Buffer, valueLength) != 0)
+			break;
+		regItem.Type = RegItemType::ProtectedValue;
 
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	if (wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::ProtectedValue;
-
-	if (FindRegItem(regItem))
-		status = STATUS_ACCESS_DENIED;
+		if (FindRegItem(regItem))
+			status = STATUS_NOT_FOUND;
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -192,32 +178,25 @@ NTSTATUS RegistryHandler::RegNtPreDeleteValueKeyHandler(_Inout_ REG_DELETE_VALUE
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryKeyHandler(_Inout_ REG_QUERY_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!info->Object || !VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(info->Object)))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
+	do {
+		if (!IsValidKey(regPath))
+			break;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (!NT_SUCCESS(status)) {
-		return STATUS_SUCCESS;
-	}
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0)
+			break;
 
-	if (!IsValidKey(regPath)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
+		regItem.Type = RegItemType::HiddenKey;
 
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::HiddenKey;
-
-	if (FindRegItem(regItem))
-		status = STATUS_NOT_FOUND;
+		if (FindRegItem(regItem))
+			status = STATUS_NOT_FOUND;
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -236,35 +215,28 @@ NTSTATUS RegistryHandler::RegNtPreQueryKeyHandler(_Inout_ REG_QUERY_KEY_INFORMAT
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryValueKeyHandler(_Inout_ REG_QUERY_VALUE_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(info->Object)))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
+	do {
+		if (!IsValidKey(regPath) || !IsValidValue(info->ValueName))
+			break;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0)
+			break;
+		size_t valueLength = min(info->ValueName->Length / sizeof(WCHAR), REG_VALUE_LEN - 1);
 
-	if (!IsValidKey(regPath)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
+		if (wcsncpy_s(regItem.ValueName, REG_VALUE_LEN, info->ValueName->Buffer, valueLength) != 0)
+			break;
+		regItem.Type = RegItemType::HiddenValue;
 
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	if (wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::HiddenValue;
-
-	if (FindRegItem(regItem))
-		status = STATUS_NOT_FOUND;
+		if (FindRegItem(regItem))
+			status = STATUS_NOT_FOUND;
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -283,41 +255,43 @@ NTSTATUS RegistryHandler::RegNtPreQueryValueKeyHandler(_Inout_ REG_QUERY_VALUE_K
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreQueryMultipleValueKeyHandler(_Inout_ REG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(info->Object)))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
-
-	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
-
-	if (!IsValidKey(regPath)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::HiddenValue;
-
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-
-	for (ULONG index = 0; index < info->EntryCount; index++) {
-		if (wcsncpy_s(regItem.ValueName, info->ValueEntries[index].ValueName->Buffer,
-			info->ValueEntries[index].ValueName->Length / sizeof(WCHAR)) != 0) {
-			continue;
-		}
-
-		if (FindRegItem(regItem)) {
-			status = STATUS_NOT_FOUND;
+	do {
+		if (!IsValidKey(regPath))
 			break;
+		regItem.Type = RegItemType::HiddenValue;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
+
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0) {
+			CmCallbackReleaseKeyObjectIDEx(regPath);
+			return STATUS_SUCCESS;
 		}
-		regItem.ValueName[0] = L'\0';
-	}
+
+		if (!info->ValueEntries || info->EntryCount == 0) {
+			CmCallbackReleaseKeyObjectIDEx(regPath);
+			return STATUS_SUCCESS;
+		}
+
+		for (ULONG index = 0; index < info->EntryCount; index++) {
+			if (!IsValidValue(info->ValueEntries[index].ValueName))
+				continue;
+			size_t valueLength = min(info->ValueEntries[index].ValueName->Length / sizeof(WCHAR), REG_VALUE_LEN - 1);
+
+			if (wcsncpy_s(regItem.ValueName, REG_VALUE_LEN, info->ValueEntries[index].ValueName->Buffer, valueLength) != 0)
+				continue;
+
+			if (FindRegItem(regItem)) {
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+			regItem.ValueName[0] = L'\0';
+		}
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -336,35 +310,28 @@ NTSTATUS RegistryHandler::RegNtPreQueryMultipleValueKeyHandler(_Inout_ REG_QUERY
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPreSetValueKeyHandler(_Inout_ REG_SET_VALUE_KEY_INFORMATION* info) {
 	IoctlRegItem regItem{};
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// To avoid BSOD.
-	if (!VALID_KERNELMODE_MEMORY((DWORD64)info->Object))
+	if (!info || !GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
+	do {
+		if (!IsValidKey(regPath) || !IsValidValue(info->ValueName))
+			break;
+		size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (!NT_SUCCESS(status))
-		return STATUS_SUCCESS;
+		if (wcsncpy_s(regItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0)
+			break;
+		size_t valueLength = min(info->ValueName->Length / sizeof(WCHAR), REG_VALUE_LEN - 1);
 
-	if (!IsValidKey(regPath)) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
+		if (wcsncpy_s(regItem.ValueName, REG_VALUE_LEN, info->ValueName->Buffer, valueLength) != 0)
+			break;
+		regItem.Type = RegItemType::ProtectedValue;
 
-	if (wcsncpy_s(regItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	if (wcsncpy_s(regItem.ValueName, info->ValueName->Buffer, info->ValueName->Length / sizeof(WCHAR)) != 0) {
-		CmCallbackReleaseKeyObjectIDEx(regPath);
-		return STATUS_SUCCESS;
-	}
-	regItem.Type = RegItemType::ProtectedValue;
-
-	if (FindRegItem(regItem))
-		status = STATUS_ACCESS_DENIED;
+		if (FindRegItem(regItem))
+			status = STATUS_NOT_FOUND;
+	} while (false);
 
 	CmCallbackReleaseKeyObjectIDEx(regPath);
 	return status;
@@ -382,7 +349,7 @@ NTSTATUS RegistryHandler::RegNtPreSetValueKeyHandler(_Inout_ REG_SET_VALUE_KEY_I
 */
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATION_INFORMATION* info) {
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	HANDLE key = NULL;
 	ULONG resultLength = 0;
 	IoctlRegItem item{};
@@ -390,25 +357,27 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 	UNICODE_STRING keyName;
 	ULONG counter = 0;
 
+	if (!info)
+		return STATUS_SUCCESS;
+
 	if (!NT_SUCCESS(info->Status))
 		return info->Status;
-	NTSTATUS status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
 
-	if (!NT_SUCCESS(status))
-		return status;
+	if (!GetKeyObject(info->Object, &regPath))
+		return STATUS_SUCCESS;
 
 	if (!IsValidKey(regPath)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
 	regPathItem.Type = RegItemType::HiddenKey;
+	size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (wcsncpy_s(regPathItem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
+	if (wcsncpy_s(regPathItem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
 
-	// Checking if the registry key contains any hidden registry key.
 	if (!FindRegItem(regPathItem, true)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
@@ -416,14 +385,15 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 	RtlInitUnicodeString(&keyName, L"");
 	REG_ENUMERATE_KEY_INFORMATION* preInfo = static_cast<REG_ENUMERATE_KEY_INFORMATION*>(info->PreInformation);
 
-	if (!GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, preInfo->KeyInformation, &keyName)) {
+	if (!preInfo || !GetNameFromKeyEnumPreInfo(preInfo->KeyInformationClass, preInfo->KeyInformation, &keyName)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
 	keyName.Buffer[keyName.MaximumLength / sizeof(WCHAR)] = L'\0';
 
 	// Rebuilding the KeyInformation without the hidden keys.
-	status = ObOpenObjectByPointerWithTag(info->Object, OBJ_KERNEL_HANDLE, NULL, KEY_ALL_ACCESS, *CmKeyObjectType, KernelMode, DRIVER_TAG, &key);
+	NTSTATUS status = ObOpenObjectByPointerWithTag(info->Object, OBJ_KERNEL_HANDLE, NULL, KEY_ALL_ACCESS, *CmKeyObjectType, 
+		KernelMode, DRIVER_TAG, &key);
 
 	if (!NT_SUCCESS(status)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
@@ -434,7 +404,8 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 	if (tempKeyInfo.IsValid()) {
 		item.Type = RegItemType::HiddenKey;
 
-		if (wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
+		// Use safer string copy with proper length validation
+		if (wcsncpy_s(item.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0) {
 			info->ReturnStatus = status;
 			ZwClose(key);
 			CmCallbackReleaseKeyObjectIDEx(regPath);
@@ -483,7 +454,7 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateKeyHandler(_Inout_ REG_POST_OPERATIO
 			// To avoid concatenating bad item.
 			item.KeyPath[0] = L'\0';
 
-			wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+			wcsncpy_s(item.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength);
 			status = ZwEnumerateKey(key, preInfo->Index + counter, preInfo->KeyInformationClass, tempKeyInfo.Get(), preInfo->Length, &resultLength);
 		}
 	}
@@ -509,7 +480,7 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPERATION_INFORMATION* info) {
 	HANDLE key = NULL;
 	REG_ENUMERATE_VALUE_KEY_INFORMATION* preInfo = nullptr;
-	PCUNICODE_STRING regPath;
+	PCUNICODE_STRING regPath = nullptr;
 	UNICODE_STRING valueName;
 	ULONG resultLength = 0;
 	IoctlRegItem item{};
@@ -517,23 +488,23 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG counter = 0;
 
+	if (!info)
+		return STATUS_SUCCESS;
+
 	if (!NT_SUCCESS(info->Status))
 		return info->Status;
 
-	status = CmCallbackGetKeyObjectIDEx(&this->regCookie, info->Object, nullptr, &regPath, 0);
-
-	if (!NT_SUCCESS(status))
+	if (!GetKeyObject(info->Object, &regPath))
 		return STATUS_SUCCESS;
 
 	if (!IsValidKey(regPath)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
-
-	// Checking if the registry key contains any hidden registry value.
 	regPathitem.Type = RegItemType::HiddenValue;
+	size_t copyLength = min(regPath->Length / sizeof(WCHAR), REG_KEY_LEN - 1);
 
-	if (wcsncpy_s(regPathitem.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR)) != 0) {
+	if (wcsncpy_s(regPathitem.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength) != 0) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -544,7 +515,8 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 	}
 	preInfo = static_cast<REG_ENUMERATE_VALUE_KEY_INFORMATION*>(info->PreInformation);
 
-	if (!GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, &valueName)) {
+	if (!preInfo || !GetNameFromValueEnumPreInfo(preInfo->KeyValueInformationClass, preInfo->KeyValueInformation, 
+		&valueName)) {
 		CmCallbackReleaseKeyObjectIDEx(regPath);
 		return STATUS_SUCCESS;
 	}
@@ -566,7 +538,7 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 
 	if (tempValueInfo.IsValid()) {
 		item.Type = RegItemType::HiddenValue;
-		wcsncpy_s(item.KeyPath, regPath->Buffer, regPath->Length / sizeof(WCHAR));
+		wcsncpy_s(item.KeyPath, REG_KEY_LEN, regPath->Buffer, copyLength);
 		status = ZwEnumerateValueKey(key, preInfo->Index + counter, preInfo->KeyValueInformationClass, tempValueInfo.Get(),
 			preInfo->Length, &resultLength);
 
@@ -580,7 +552,10 @@ NTSTATUS RegistryHandler::RegNtPostEnumerateValueKeyHandler(_Inout_ REG_POST_OPE
 			}
 			valueName.Buffer[valueName.Length / sizeof(WCHAR)] = L'\0';
 			item.ValueName[0] = L'\0';
-			wcsncpy_s(item.ValueName, valueName.Buffer, valueName.Length / sizeof(WCHAR));
+			
+			// Safely copy value name with length validation
+			size_t valueLength = min(valueName.Length / sizeof(WCHAR), REG_VALUE_LEN - 1);
+			wcsncpy_s(item.ValueName, REG_VALUE_LEN, valueName.Buffer, valueLength);
 
 			if (!FindRegItem(item)) {
 				*preInfo->ResultLength = resultLength;
@@ -1014,10 +989,46 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 	return true;
 }
 
+/*
+* Description:
+* GetKeyObject is responsible for getting the key object from the info object.
+* 
+* Parameters:
+* @infoObject [_In_ PVOID]				  -- Info object from the registry operation.
+* @keyPath	  [_Inout_ PCUNICODE_STRING*] -- The key path will be written there.
+* 
+* Returns:
+* @bool									  -- Whether successfully got or not.
+*/
+_IRQL_requires_(PASSIVE_LEVEL)
+bool RegistryHandler::GetKeyObject(_In_ PVOID infoObject, _Inout_ PCUNICODE_STRING* keyPath) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (!infoObject || !VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(infoObject)))
+		return false;
+
+	if (regCookie.QuadPart == 0)
+		return false;
+
+	__try {
+		status = CmCallbackGetKeyObjectIDEx(&regCookie, infoObject, nullptr, keyPath, 0);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+
+	if (!NT_SUCCESS(status)) {
+		if (keyPath)
+			CmCallbackReleaseKeyObjectIDEx(*keyPath);
+		return false;
+	}
+	return true;
+}
+
 _IRQL_requires_max_(DISPATCH_LEVEL)
 bool RegistryHandler::IsValidKey(_In_ const UNICODE_STRING* key) const {
-	return key->Buffer && key->Length > 0 && key->Length / sizeof(wchar_t) < REG_KEY_LEN &&
-		VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(key->Buffer));
+	return key->Buffer && key->Length > 0 && key->Length <= key->MaximumLength && 
+		key->Length / sizeof(wchar_t) < REG_KEY_LEN && VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(key->Buffer));
 }
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -1028,7 +1039,8 @@ bool RegistryHandler::IsValidKey(_In_ const wchar_t* key) const {
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 bool RegistryHandler::IsValidValue(_In_ const UNICODE_STRING* value) const {
-	return value->Buffer && value->Length > 0 && value->Length / sizeof(wchar_t) < REG_VALUE_LEN &&
+	return value->Buffer && value->Length > 0 && value->Length <= value->MaximumLength && 
+		value->Length / sizeof(wchar_t) < REG_VALUE_LEN && 
 		VALID_KERNELMODE_MEMORY(reinterpret_cast<DWORD64>(value->Buffer));
 }
 

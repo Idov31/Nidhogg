@@ -55,6 +55,9 @@ private:
 	_IRQL_requires_max_(APC_LEVEL)
 	bool FindRegItem(_In_ const IoctlRegItem& item, _In_ bool partial = false) const;
 
+	_IRQL_requires_(PASSIVE_LEVEL)
+	bool GetKeyObject(_In_ PVOID infoObject, _Inout_ PCUNICODE_STRING* keyPath);
+
 public:
 	LARGE_INTEGER regCookie;
 
