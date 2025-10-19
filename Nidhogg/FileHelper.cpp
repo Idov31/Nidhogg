@@ -120,23 +120,25 @@ bool IsFileExists(_In_ WCHAR* filePath) {
         GENERIC_READ,
         &objAttrs,
         &ioStatusBlock,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        FILE_NON_DIRECTORY_FILE);
+        FILE_ANY_ACCESS,
+        FILE_DIRECTORY_FILE);
 
-    if (status == STATUS_FILE_IS_A_DIRECTORY) {
-        status = ZwOpenFile(&fileHandle,
-            GENERIC_READ,
-            &objAttrs,
-            &ioStatusBlock,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            FILE_DIRECTORY_FILE);
-    }
-
-    if (NT_SUCCESS(status) && fileHandle) {
+    if (fileHandle)
         ZwClose(fileHandle);
-        return true;
-    }
-    return false;
+
+    if (status == STATUS_FILE_IS_A_DIRECTORY || NT_SUCCESS(status))
+        return false;
+
+    status = ZwOpenFile(&fileHandle,
+        GENERIC_READ,
+        &objAttrs,
+        &ioStatusBlock,
+        FILE_ANY_ACCESS,
+        0);
+
+    if (fileHandle)
+        ZwClose(fileHandle);
+    return NT_SUCCESS(status);
 }
 
 /*
