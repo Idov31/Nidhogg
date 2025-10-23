@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "NidhoggCommon.h"
 #include "WindowsTypes.h"
+#include "IrqlGuard.h"
 
 template <typename Ptr>
 concept RegularPointerType = requires(Ptr ptr) {
@@ -31,9 +32,14 @@ concept PointerType = RegularPointerType<Ptr> || VoidPointerType<Ptr>;
 * Returns:
 * @ptr					[Pointer] -- Allocated pointer on success else NULL.
 */
+_IRQL_requires_max_(DISPATCH_LEVEL)
 template <PointerType Pointer>
 inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
 	PVOID allocatedMem = NULL;
+	IrqlGuard guard = IrqlGuard();
+
+	if (paged)
+		guard.SetIrql(PASSIVE_LEVEL);
 
 	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
 		allocatedMem = paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
@@ -62,6 +68,7 @@ inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecat
 * Returns:
 * There is no return value.
 */
+_IRQL_requires_max_(DISPATCH_LEVEL)
 template <PointerType Pointer>
 void FreeVirtualMemory(_Inout_ Pointer& address) {
 	if (!address)
