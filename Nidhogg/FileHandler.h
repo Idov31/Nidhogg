@@ -21,6 +21,11 @@ struct FileItem {
 	WCHAR FilePath[MAX_PATH];
 };
 
+struct SearchedFile {
+	WCHAR* Path;
+	bool Exact;
+};
+
 struct FilesList {
 	SIZE_T Count;
 	FastMutex Lock;
@@ -35,7 +40,7 @@ struct NtfsCallback {
 class FileHandler {
 private:
 	FilesList protectedFiles;
-	NtfsCallback Callbacks[SUPPORTED_HOOKED_NTFS_CALLBACKS];
+	NtfsCallback callbacks[SUPPORTED_HOOKED_NTFS_CALLBACKS];
 
 public:
 	void* operator new(size_t size) noexcept {
@@ -52,8 +57,8 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	~FileHandler();
 
-	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FindFile(_In_ WCHAR* path, _In_ FileType type) const;
+	_IRQL_requires_max_(APC_LEVEL)
+	bool FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact = true) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	bool ProtectFile(_In_ WCHAR* path);
@@ -65,7 +70,7 @@ public:
 	void ClearFilesList(_In_ FileType type);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS ListProtectedFiles(_Inout_ IoctlFileList* filesList);
+	bool ListProtectedFiles(_Inout_ IoctlFileList* filesList);
 
 	_IRQL_requires_max_(PASSIVE_LEVEL)
 	NTSTATUS InstallNtfsHook(_In_ ULONG irpMjFunction);

