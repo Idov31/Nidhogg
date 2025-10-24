@@ -64,7 +64,7 @@ inline bool InitializeList(_Inout_ List* list) {
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
-	if (!entryToAdd)
+	if (!list || !entryToAdd)
 		return;
 	InitializeListHead(&entryToAdd->Entry);
 
@@ -87,8 +87,10 @@ inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
-inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
-	AutoLock locker(list.Lock);
+inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
+	if (!function)
+		return NULL;
+	AutoLock locker(const_cast<FastMutex&>(list.Lock));
 
 	if (list.Count == 0)
 		return NULL;
