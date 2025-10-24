@@ -19,10 +19,12 @@ struct FileItem {
 	LIST_ENTRY Entry;
 	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];
+	ULONG FileLength;
 };
 
 struct SearchedFile {
 	WCHAR* Path;
+	SIZE_T Size;
 	bool Exact;
 };
 

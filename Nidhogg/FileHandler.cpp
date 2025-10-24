@@ -222,11 +222,18 @@ _IRQL_requires_max_(APC_LEVEL)
 bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact) const {
 	if (!IsValidPath(path))
 		return false;
-	SearchedFile searchedFile = { path, exact };
+	SIZE_T pathSize = wcslen(path);
+	SearchedFile searchedFile = { path, pathSize, exact };
 
 	auto finder = [](_In_ const FileItem* entry, _In_ SearchedFile searchedFile) -> bool {
-		if (!searchedFile.Exact) [[ likely ]]
-			return wcsstr(entry->FilePath, searchedFile.Path);
+		if (!searchedFile.Exact) [[ likely ]] {
+			SIZE_T prefixSize = (DRIVE_LETTER_SIZE + NT_PREFIX_SIZE);
+			SIZE_T sizeToSearch = entry->FileLength - prefixSize;
+
+			if (sizeToSearch != searchedFile.Size)
+				return false;
+			return _wcsnicmp(entry->FilePath + (prefixSize * sizeof(WCHAR)), searchedFile.Path, sizeToSearch);
+		}
 		return _wcsicmp(entry->FilePath, searchedFile.Path) == 0;
 	};
 	switch (type) {
@@ -271,6 +278,7 @@ bool FileHandler::ProtectFile(_In_ WCHAR* path) {
 		FreeVirtualMemory(newEntry);
 		return false;
 	}
+	newEntry->FileLength = static_cast<ULONG>(wcslen(newEntry->FilePath));
 	AddEntry<FilesList, FileItem>(&protectedFiles, newEntry);
 	NTSTATUS status = InstallNtfsHook(IRP_MJ_CREATE);
 
