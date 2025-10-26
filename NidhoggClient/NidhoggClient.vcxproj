@@ -159,7 +159,7 @@
     <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggClient.h" />
     <ClInclude Include="NidhoggInterface.h" />
-    <ClInclude Include="PathHelper.hpp" />
+    <ClInclude Include="FileHelper.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHandler.h" />
     <ClInclude Include="ProcessHelper.h" />

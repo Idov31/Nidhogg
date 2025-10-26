@@ -92,7 +92,7 @@
     <ClInclude Include="Convertor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PathHelper.hpp">
+    <ClInclude Include="FileHelper.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="NidhoggClient.h">

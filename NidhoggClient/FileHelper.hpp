@@ -30,16 +30,25 @@ public:
 */
 template<TString String>
 inline bool IsValidPath(_In_ const String& path) {
+	bool exists = false;
+
 	if (path.length() > MAX_PATH) {
 		std::cerr << "Path length exceeds MAX_PATH" << std::endl;
-		return false;
+		return exists;
 	}
 
-	if (!std::filesystem::exists(path)) {
-		std::cerr << "Path does not exist" << std::endl;
+	try {
+		if (std::filesystem::exists(path))
+			exists = true;
+	}
+	catch (const std::filesystem::filesystem_error& e) {
+		if (e.code().value() == ERROR_ACCESS_DENIED) {
+			return true;
+		}
+		std::cerr << "Filesystem error: " << e.what() << std::endl;
 		return false;
 	}
-	return true;
+	return exists;
 }
 
 /*
