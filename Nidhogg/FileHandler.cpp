@@ -49,7 +49,6 @@ NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP I
 	UNICODE_STRING fullPath = { 0 };
 	KIRQL prevIrql = PASSIVE_LEVEL;
 	tNtfsIrpFunction originalFunction = nullptr;
-	NTSTATUS status = STATUS_SUCCESS;
 	IrqlGuard irqlGuard = IrqlGuard();
 
 	auto ReleaseLock = [&]() {
@@ -220,7 +219,11 @@ NTSTATUS FileHandler::UninstallNtfsHook(_In_ ULONG irpMjFunction) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact) const {
-	if (!IsValidPath(path))
+	// Due to invalild memory access exceptions, we need to ensure the path is valid at least for reading one byte.
+	// Invalid path won't have even a single byte readable.
+	MemoryGuard guard(path, static_cast<ULONG>(sizeof(WCHAR)), KernelMode);
+
+	if (!guard.IsValid() || !IsValidPath(path))
 		return false;
 	SIZE_T pathSize = wcslen(path);
 	SearchedFile searchedFile = { path, pathSize, exact };
@@ -232,7 +235,7 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact
 
 			if (sizeToSearch != searchedFile.Size)
 				return false;
-			return _wcsnicmp(entry->FilePath + (prefixSize * sizeof(WCHAR)), searchedFile.Path, sizeToSearch);
+			return _wcsnicmp(entry->FilePath + (prefixSize * sizeof(WCHAR)), searchedFile.Path, sizeToSearch) == 0;
 		}
 		return _wcsicmp(entry->FilePath, searchedFile.Path) == 0;
 	};
@@ -251,7 +254,7 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact
 
 /*
 * Description:
-* AddFile is responsible for adding a file to the protected files list.
+* ProtectFile is responsible for adding a file to the protected files list.
 *
 * Parameters:
 * @path   [_In_ WCHAR*] -- File's path.
@@ -370,23 +373,22 @@ bool FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		return true;
 	}
 	currentEntry = protectedFiles.Items;
-	MemoryGuard guard(filesList->Files, static_cast<ULONG>(sizeof(WCHAR) * protectedFiles.Count), UserMode);
+	MemoryGuard guard(filesList->Files, static_cast<ULONG>(protectedFiles.Count * MAX_PATH * sizeof(WCHAR)), UserMode);
 
 	if (!guard.IsValid())
 		return false;
 
-	while (currentEntry->Flink != protectedFiles.Items && index < protectedFiles.Count) {
-		currentEntry = currentEntry->Flink;
+	do {
 		item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 
 		if (item) {
-			err = wcscpy_s(filesList->Files[index], wcslen(item->FilePath), item->FilePath);
+			err = wcscpy_s(filesList->Files[index], MAX_PATH, item->FilePath);
 
 			if (err != 0)
 				return false;
 		}
 		index++;
 		currentEntry = currentEntry->Flink;
-	}
+	} while (currentEntry != protectedFiles.Items && index < protectedFiles.Count);
 	return true;
 }

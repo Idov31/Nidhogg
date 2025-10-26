@@ -87,7 +87,8 @@ inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
-inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
+inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable, 
+	_In_ MatcherFunction<ListItem, Searchable> function) noexcept {
 	if (!function)
 		return NULL;
 	AutoLock locker(const_cast<FastMutex&>(list.Lock));
@@ -146,6 +147,7 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list) {
 	ListItem* entry = nullptr;
+	PLIST_ENTRY next = nullptr;
 
 	if (!list)
 		return;
@@ -157,12 +159,14 @@ inline void ClearList(_Inout_ List* list) {
 
 	do {
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
+		next = current->Flink;
 		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
-		current = current->Flink;
+		current = next;
 	} while (current != list->Items);
 
 	list->Count = 0;
+	InitializeListHead(list->Items);
 }
 
 /*
@@ -197,5 +201,6 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 	} while (current != list->Items);
 
 	list->Count = 0;
+	InitializeListHead(list->Items);
 	list->Lock.Unlock();
 }

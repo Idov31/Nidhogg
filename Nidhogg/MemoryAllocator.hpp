@@ -225,6 +225,7 @@ public:
 		GuardMemory(address, length, mode);
 	}
 
+	_IRQL_requires_max_(APC_LEVEL)
 	bool GuardMemory(_In_ PVOID address, _In_ ULONG length, _In_ KPROCESSOR_MODE mode) {
 		UnguardMemory();
 
@@ -250,6 +251,7 @@ public:
 		return this->valid;
 	}
 
+	_IRQL_requires_max_(APC_LEVEL)
 	void UnguardMemory() {
 		AutoLock locker(this->lock);
 
@@ -263,7 +265,7 @@ public:
 		}
 	}
 
-	_IRQL_requires_max_(DISPATCH_LEVEL)
+	_IRQL_requires_max_(APC_LEVEL)
 	bool IsValid() {
 		AutoLock locker(this->lock);
 		return this->valid;
