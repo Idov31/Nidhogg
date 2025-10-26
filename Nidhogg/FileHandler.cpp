@@ -310,7 +310,7 @@ bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
 
 	switch (type) {
 	case FileType::Protected: {
-		auto finder = [](_In_ const FileItem* item, _In_ wchar_t* path) {
+		auto finder = [](_In_ const FileItem* item, _In_ WCHAR* path) {
 			return _wcsicmp(item->FilePath, path) == 0;
 		};
 		FileItem* entry = FindListEntry<FilesList, FileItem, WCHAR*>(protectedFiles, path, finder);
@@ -362,6 +362,7 @@ bool FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 	SIZE_T index = 0;
 	FileItem* item = nullptr;
 	errno_t err = 0;
+	MemoryGuard fileGuard = MemoryGuard();
 	AutoLock locker(protectedFiles.Lock);
 
 	if (protectedFiles.Count == 0) {
@@ -373,22 +374,26 @@ bool FileHandler::ListProtectedFiles(_Inout_ IoctlFileList* filesList) {
 		return true;
 	}
 	currentEntry = protectedFiles.Items;
-	MemoryGuard guard(filesList->Files, static_cast<ULONG>(protectedFiles.Count * MAX_PATH * sizeof(WCHAR)), UserMode);
+	MemoryGuard listGuard(filesList->Files, static_cast<ULONG>(protectedFiles.Count * sizeof(WCHAR)), UserMode);
 
-	if (!guard.IsValid())
+	if (!listGuard.IsValid())
 		return false;
 
-	do {
+	while (currentEntry->Flink != protectedFiles.Items && index < protectedFiles.Count) {
+		currentEntry = currentEntry->Flink;
 		item = CONTAINING_RECORD(currentEntry, FileItem, Entry);
 
 		if (item) {
+			if (!fileGuard.GuardMemory(filesList->Files[index], static_cast<ULONG>(sizeof(WCHAR) * MAX_PATH), 
+				UserMode))
+				return false;
 			err = wcscpy_s(filesList->Files[index], MAX_PATH, item->FilePath);
+			fileGuard.UnguardMemory();
 
 			if (err != 0)
 				return false;
 		}
 		index++;
-		currentEntry = currentEntry->Flink;
-	} while (currentEntry != protectedFiles.Items && index < protectedFiles.Count);
+	}
 	return true;
 }
