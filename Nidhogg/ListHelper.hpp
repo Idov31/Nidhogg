@@ -161,7 +161,7 @@ inline void ClearList(_Inout_ List* list) {
 		current = current->Flink;
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		next = current->Flink;
-		RemoveEntryList(current->Flink);
+		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
 		current = next;
 	}
