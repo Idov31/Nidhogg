@@ -473,7 +473,6 @@ bool ProcessHandler::ListProtectedProcesses(_Inout_ IoctlProcessList* processLis
 		if (item)
 			processList->Processes[count] = item->Pid;
 		count++;
-		currentEntry = currentEntry->Flink;
 	}
 
 	processList->Count = count;
