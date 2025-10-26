@@ -157,13 +157,14 @@ inline void ClearList(_Inout_ List* list) {
 		return;
 	PLIST_ENTRY current = list->Items;
 
-	do {
+	while (current->Flink != list->Items) {
+		current = current->Flink;
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		next = current->Flink;
-		RemoveEntryList(current);
+		RemoveEntryList(current->Flink);
 		FreeVirtualMemory(entry);
 		current = next;
-	} while (current != list->Items);
+	}
 
 	list->Count = 0;
 	InitializeListHead(list->Items);
@@ -192,13 +193,14 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 		return;
 	PLIST_ENTRY current = list->Items;
 
-	do {
+	while (current->Flink != list->Items) {
+		current = current->Flink;
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		current = current->Flink;
 		list->Lock.Unlock();
 		function(entry);
 		list->Lock.Lock();
-	} while (current != list->Items);
+	}
 
 	list->Count = 0;
 	InitializeListHead(list->Items);
