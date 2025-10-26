@@ -17,7 +17,6 @@ constexpr SIZE_T SUPPORTED_HOOKED_NTFS_CALLBACKS = IRP_MJ_MAXIMUM_FUNCTION;
 
 struct FileItem {
 	LIST_ENTRY Entry;
-	ULONG FileIndex;
 	WCHAR FilePath[MAX_PATH];
 	ULONG FileLength;
 };
