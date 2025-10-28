@@ -84,30 +84,30 @@ private:
 	SIZE_T allocatedSize;
 
 public:
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	MemoryAllocator() noexcept {
 		allocatedData = nullptr;
 		allocatedSize = 0;
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	MemoryAllocator(_In_ SIZE_T size) noexcept {
 		allocatedData = nullptr;
 		allocatedSize = 0;
 		Alloc(size);
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	bool IsValid() const {
 		return allocatedSize > 0 && allocatedData;
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	DataType Get() const {
 		return allocatedData;
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	bool Alloc(_In_ SIZE_T size) {
 		if (size == 0 || allocatedData) {
 			return false;
@@ -122,21 +122,21 @@ public:
 		return false;
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	bool Realloc(_Inout_ DataType data, _In_ SIZE_T size) {
 		if (allocatedData)
 			Free();
 		return Alloc(size);
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	void Free() {
 		FreeVirtualMemory<DataType>(allocatedData);
 		this->allocatedData = nullptr;
 		this->allocatedSize = 0;
 	}
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	~MemoryAllocator() {
 		Free();
 	}
