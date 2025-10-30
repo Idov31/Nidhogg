@@ -305,6 +305,8 @@ bool FileHandler::ProtectFile(_In_ WCHAR* path) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
+	bool removed = false;
+
 	if (!IsValidPath(path))
 		return false;
 
@@ -317,7 +319,13 @@ bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
 
 		if (!entry)
 			return false;
-		return RemoveListEntry<FilesList, FileItem>(&protectedFiles, entry);
+		removed = RemoveListEntry<FilesList, FileItem>(&protectedFiles, entry);
+
+		if (removed) {
+			if (protectedFiles.Count == 0)
+				UninstallNtfsHook(IRP_MJ_CREATE);
+		}
+		return removed;
 	}
 	default:
 		return false;
