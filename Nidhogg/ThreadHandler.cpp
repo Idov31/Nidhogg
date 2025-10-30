@@ -371,22 +371,8 @@ bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 		currentEntry = currentEntry->Flink;
 		ProtectedThreadEntry* item = CONTAINING_RECORD(currentEntry, ProtectedThreadEntry, Entry);
 
-		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->Tid,
-				PsGetCurrentProcess(),
-				&threadList->Threads[count],
-				sizeof(ULONG),
-				UserMode,
-				nullptr
-			);
-
-			if (!NT_SUCCESS(status)) {
-				threadList->Count = count;
-				return false;
-			}
-		}
+		if (item)
+			threadList->Threads[count] = item->Tid;
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
