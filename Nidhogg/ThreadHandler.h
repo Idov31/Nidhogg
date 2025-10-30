@@ -19,6 +19,7 @@ struct ProtectedThreadEntry {
 struct HiddenThreadEntry {
 	LIST_ENTRY Entry;
 	ULONG Tid;
+	ULONG Pid;
 	PLIST_ENTRY OriginalEntry;
 };
 
