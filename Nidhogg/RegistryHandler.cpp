@@ -56,7 +56,7 @@ NTSTATUS OnRegistryNotify(_In_ PVOID context, _In_opt_ PVOID arg1, _In_opt_ PVOI
 	UNREFERENCED_PARAMETER(context);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (!arg1 || !arg2)
+	if (!arg2)
 		return status;
 
 	switch (static_cast<REG_NOTIFY_CLASS>(reinterpret_cast<ULONG_PTR>(arg1))) {
