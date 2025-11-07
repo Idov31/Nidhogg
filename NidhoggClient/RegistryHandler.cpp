@@ -130,10 +130,10 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 					std::wcout << L"No protected registry keys found." << std::endl;
 					return;
 				}
-				std::wcout << L"Protected registry keys:" << std::endl;
+				std::wcout << L"[+] Protected registry keys:" << std::endl;
 
 				for (const auto& key : protectedKeys) {
-					std::wcout << key << std::endl;
+					std::wcout << L"\t" << key << std::endl;
 				}
 				return;
 			}
@@ -152,10 +152,10 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 					std::wcout << L"No protected registry values found." << std::endl;
 					return;
 				}
-				std::wcout << L"Protected registry values:" << std::endl;
+				std::wcout << L"[+] Protected registry values:" << std::endl;
 
 				for (SIZE_T i = 0; i < protectedValues.size(); i++) {
-					std::wcout << L"Key: " << std::get<0>(protectedValues[i]) << L", Value: "
+					std::wcout << L"\tKey: " << std::get<0>(protectedValues[i]) << L", Value: "
 						<< std::get<1>(protectedValues[i]) << std::endl;
 				}
 				return;
@@ -472,10 +472,20 @@ std::vector<std::wstring> RegistryHandler::ListKeys(_In_ RegItemType type) {
 			throw RegistryHandlerException("Failed to allocate memory for registry keys list");
 		}
 
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGITEMS,
+			&result, sizeof(result),
+			&result, sizeof(result), &returned, nullptr)) {
+
+			SafeFree(result.Items);
+			throw RegistryHandlerException("Failed to list protected registry keys");
+		}
+
 		for (SIZE_T i = 0; i < result.Count; i++) {
 			keys.push_back(std::wstring(result.Items[i].KeyPath));
 		}
 	}
+
+	SafeFree(result.Items);
 	return keys;
 }
 
