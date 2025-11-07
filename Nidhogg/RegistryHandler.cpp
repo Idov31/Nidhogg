@@ -903,12 +903,14 @@ void RegistryHandler::ClearRegistryList(_In_ RegItemType registryItemType) {
 * Returns:
 * @bool								   -- Whether successfully got or not.
 */
+_IRQL_requires_max_(APC_LEVEL)
 bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
+	errno_t err = 0;
 	RegItem* item = nullptr;
 	RegistryEntryList* registryList = nullptr;
-	NTSTATUS status = STATUS_SUCCESS;
+	MemoryGuard regGuard = MemoryGuard();
 
 	if (!list)
 		return false;
@@ -940,9 +942,9 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 		list->Count = registryList->Count;
 		return true;
 	}
-	MemoryGuard guard(list->Items, static_cast<ULONG>(sizeof(IoctlRegItem) * registryList->Count), UserMode);
+	MemoryGuard listGuard(list->Items, static_cast<ULONG>(sizeof(IoctlRegItem) * registryList->Count), UserMode);
 
-	if (!guard.IsValid())
+	if (!listGuard.IsValid())
 		return false;
 	currentEntry = registryList->Items;
 
@@ -953,39 +955,28 @@ bool RegistryHandler::ListRegistryItems(_Inout_ IoctlRegistryList* list) {
 		if (item) {
 			list->Items[count].Type = item->Type;
 
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->KeyPath,
-				PsGetCurrentProcess(),
-				&list->Items[count].KeyPath,
-				wcslen(item->KeyPath) * sizeof(WCHAR),
-				UserMode,
-				nullptr);
-
-			if (!NT_SUCCESS(status)) {
-				list->Count = count;
+			if (!regGuard.GuardMemory(list->Items[count].KeyPath, REG_KEY_LEN, UserMode))
 				return false;
-			}
+			err = wcscpy_s(list->Items[count].KeyPath, REG_KEY_LEN, item->KeyPath);
+			regGuard.UnguardMemory();
 
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->ValueName,
-				PsGetCurrentProcess(),
-				&list->Items[count].ValueName,
-				wcslen(item->ValueName) * sizeof(WCHAR),
-				UserMode,
-				nullptr);
-
-			if (!NT_SUCCESS(status)) {
-				list->Count = count;
+			if (err != 0)
 				return false;
+
+			if (list->Type == RegItemType::ProtectedValue || list->Type == RegItemType::HiddenValue) {
+				if (!regGuard.GuardMemory(list->Items[count].ValueName, REG_VALUE_LEN, UserMode))
+					return false;
+				err = wcscpy_s(list->Items[count].ValueName, REG_VALUE_LEN, item->ValueName);
+				regGuard.UnguardMemory();
+
+				if (err != 0)
+					return false;
 			}
 		}
 		count++;
 		currentEntry = currentEntry->Flink;
 	}
 
-	list->Count = count;
 	return true;
 }
 
