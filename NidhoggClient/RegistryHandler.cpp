@@ -13,63 +13,61 @@
 */
 void RegistryHandler::HandleCommand(_In_ std::string command) {
 	std::vector<std::wstring> params = SplitStringBySpaceW(command);
+	std::wstring commandName = params.at(0);
+	params.erase(params.begin());
 
-	if (!params.empty()) {
-		PrintHelp();
-		return;
-	}
-	if (params.size() > 1 && !CheckInput(params)) {
+	if (!CheckInput(params)) {
 		PrintHelp();
 		return;
 	}
 
-	if (params.at(0) == L"add" || params.at(0) == L"protect") {
-		if (params.size() == 3) {
-			ProtectKey(params.at(1), true) ? std::wcout << L"Registry key " << params.at(1) << L" protected" << std::endl :
-				std::wcerr << L"Failed to protect registry key " << params.at(1) << std::endl;
+	if (commandName.compare(L"add") == 0 || commandName.compare(L"protect") == 0) {
+		if (params.size() == 1) {
+			ProtectKey(params.at(0), true) ? std::wcout << L"Registry key " << params.at(0) << L" protected" << std::endl :
+				std::wcerr << L"Failed to protect registry key " << params.at(0) << std::endl;
 			return;
 		}
-		ProtectValue(params.at(1), params.at(2), true) ? std::wcout << L"Registry value " << params.at(2) << L" in key " 
-			<< params.at(1) << L" protected" << std::endl :
-			std::wcerr << L"Failed to protect registry value " << params.at(2) << L" in key " << params.at(1) 
+		ProtectValue(params.at(0), params.at(1), true) ? std::wcout << L"Registry value " << params.at(1) << L" in key " 
+			<< params.at(0) << L" protected" << std::endl :
+			std::wcerr << L"Failed to protect registry value " << params.at(1) << L" in key " << params.at(0) 
 			<< std::endl;
 	} 
-	else if (params.at(0) == L"remove" || params.at(0) == L"unprotect") {
-		if (params.size() == 3) {
-			ProtectKey(params.at(1), false) ? std::wcout << L"Removed protection from registry key " << params.at(1) << std::endl :
-				std::wcerr << L"Failed to remove protection from registry key " << params.at(1) << std::endl;
+	else if (commandName.compare(L"remove") == 0 || commandName.compare(L"unprotect") == 0) {
+		if (params.size() == 1) {
+			ProtectKey(params.at(0), false) ? std::wcout << L"Removed protection from registry key " << params.at(0) << std::endl :
+				std::wcerr << L"Failed to remove protection from registry key " << params.at(0) << std::endl;
 			return;
 		}
-		ProtectValue(params.at(1), params.at(2), false) ? std::wcout << L"Removed protection from registry value " 
-			<< params.at(2) << L" in key " << params.at(1) << std::endl :
-			std::wcerr << L"Failed to remove protection from registry value " << params.at(2) << L" in key " 
-			<< params.at(1) << std::endl;
+		ProtectValue(params.at(0), params.at(1), false) ? std::wcout << L"Removed protection from registry value " 
+			<< params.at(1) << L" in key " << params.at(0) << std::endl :
+			std::wcerr << L"Failed to remove protection from registry value " << params.at(1) << L" in key " 
+			<< params.at(0) << std::endl;
 	} 
-	else if (params.at(0) == L"hide") {
-		if (params.size() == 3) {
-			HideKey(params.at(1), true) ? std::wcout << L"Registry key " << params.at(1) << L" hidden" << std::endl :
-				std::wcerr << L"Failed to hide registry key " << params.at(1) << std::endl;
+	else if (commandName.compare(L"hide") == 0) {
+		if (params.size() == 1) {
+			HideKey(params.at(0), true) ? std::wcout << L"Registry key " << params.at(0) << L" hidden" << std::endl :
+				std::wcerr << L"Failed to hide registry key " << params.at(0) << std::endl;
 			return;
 		}
-		HideValue(params.at(1), params.at(2), true) ? std::wcout << L"Registry value " << params.at(2) 
-			<< L" in key " << params.at(1) << L" hidden" << std::endl :
-			std::wcerr << L"Failed to hide registry value " << params.at(2) << L" in key " 
-		<< params.at(1) << std::endl;
+		HideValue(params.at(0), params.at(1), true) ? std::wcout << L"Registry value " << params.at(1) 
+			<< L" in key " << params.at(0) << L" hidden" << std::endl :
+			std::wcerr << L"Failed to hide registry value " << params.at(1) << L" in key " 
+		<< params.at(0) << std::endl;
 	} 
-	else if (params.at(0) == L"unhide" || params.at(0) == L"restore") {
-		if (params.size() == 3) {
-			HideKey(params.at(1), false) ? std::wcout << L"Registry key " << params.at(1) << L" revealed" << std::endl :
-				std::wcerr << L"Failed to reveal registry key " << params.at(1) << std::endl;
+	else if (commandName.compare(L"unhide") == 0 || commandName.compare(L"restore") == 0) {
+		if (params.size() == 1) {
+			HideKey(params.at(0), false) ? std::wcout << L"Registry key " << params.at(0) << L" revealed" << std::endl :
+				std::wcerr << L"Failed to reveal registry key " << params.at(0) << std::endl;
 			return;
 		}
-		HideValue(params.at(1), params.at(2), false) ? std::wcout << L"Registry value " << params.at(2) 
-			<< L" in key " << params.at(1) << L" revealed" << std::endl :
-			std::wcerr << L"Failed to reveal registry value " << params.at(2) << L" in key " 
-		<< params.at(1) << std::endl;
+		HideValue(params.at(0), params.at(1), false) ? std::wcout << L"Registry value " << params.at(1) 
+			<< L" in key " << params.at(0) << L" revealed" << std::endl :
+			std::wcerr << L"Failed to reveal registry value " << params.at(1) << L" in key " 
+		<< params.at(0) << std::endl;
 	}
-	else if (params.at(0) == L"list") {
-		if (params.at(1) == L"hidden") {
-			if (params.at(2) == L"keys") {
+	else if (commandName.compare(L"list") == 0) {
+		if (params.at(0).compare(L"hidden") == 0) {
+			if (params.at(1).compare(L"keys") == 0) {
 				std::vector<std::wstring> hiddenKeys;
 
 				try {
@@ -91,7 +89,7 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 				}
 				return;
 			}
-			else if (params.at(2) == L"values") {
+			else if (params.at(1).compare(L"values") == 0) {
 				RegValueList hiddenValues;
 
 				try {
@@ -116,8 +114,8 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 			}
 		}
 
-		else if (params.at(1) == L"protected") {
-			if (params.at(2) == L"keys") {
+		else if (params.at(0).compare(L"protected") == 0) {
+			if (params.at(1).compare(L"keys") == 0) {
 				std::vector<std::wstring> protectedKeys;
 				
 				try {
@@ -139,7 +137,7 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 				}
 				return;
 			}
-			else if (params.at(2) == L"values") {
+			else if (params.at(1).compare(L"values") == 0) {
 				RegValueList protectedValues;
 
 				try {
@@ -166,12 +164,8 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 
 		PrintHelp();
 	}
-	else if (params.at(1) == L"clear") {
-		if (params.size() != 2 && params.size() != 3) {
-			PrintHelp();
-			return;
-		}
-		std::wstring type = params.at(1);
+	else if (commandName.compare(L"clear") == 0) {
+		std::wstring type = params.at(0);
 
 		if (type.compare(L"all") == 0) {
 			ClearRegItem(RegItemType::All) ? std::wcout << L"Cleared all hidden and protected registry keys and values" 
@@ -180,15 +174,15 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 			return;
 		}
 		else if (type.compare(L"hidden") == 0) {
-			if (params.size() != 3) {
+			if (params.size() != 2) {
 				PrintHelp();
 				return;
 			}
-			if (params.at(2).compare(L"keys") == 0) {
+			if (params.at(1).compare(L"keys") == 0) {
 				ClearRegItem(RegItemType::HiddenKey) ? std::wcout << L"Cleared all hidden registry keys" << std::endl :
 					std::wcerr << L"Failed to clear hidden registry keys" << std::endl;
 			}
-			else if(params.at(2).compare(L"values") == 0) {
+			else if(params.at(1).compare(L"values") == 0) {
 				ClearRegItem(RegItemType::HiddenValue) ? std::wcout << L"Cleared all hidden registry values" << std::endl :
 					std::wcerr << L"Failed to clear hidden registry values" << std::endl;
 			}
@@ -197,15 +191,15 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 			}
 		}
 		else if (type.compare(L"protected") == 0) {
-			if (params.size() != 3) {
+			if (params.size() != 2) {
 				PrintHelp();
 				return;
 			}
-			if (params.at(2).compare(L"keys") == 0) {
+			if (params.at(1).compare(L"keys") == 0) {
 				ClearRegItem(RegItemType::ProtectedKey) ? std::wcout << L"Cleared all protected registry keys" << std::endl :
 					std::wcerr << L"Failed to clear protected registry keys" << std::endl;
 			}
-			else if (params.at(2).compare(L"values") == 0) {
+			else if (params.at(1).compare(L"values") == 0) {
 				ClearRegItem(RegItemType::ProtectedValue) ? std::wcout << L"Cleared all protected registry values" << std::endl :
 					std::wcerr << L"Failed to clear protected registry values" << std::endl;
 			}
@@ -233,7 +227,7 @@ void RegistryHandler::HandleCommand(_In_ std::string command) {
 * @bool											 -- Whether the input parameters are valid or not.
 */
 bool RegistryHandler::CheckInput(_In_ const std::vector<std::wstring>& params) {
-	if (params.size() != 3 && params.size() != 4) {
+	if (params.size() != 1 && params.size() != 2) {
 		std::cerr << "Invalid usage" << std::endl;
 		return false;
 	}
@@ -347,7 +341,7 @@ bool RegistryHandler::ProtectKey(_In_ const std::wstring& key, _In_ bool protect
 	DWORD ioctl = protect ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
 
-	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -378,7 +372,7 @@ bool RegistryHandler::HideKey(_In_ const std::wstring& key, _In_ bool hide) {
 		return false;
 	DWORD ioctl = hide ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
-	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -412,7 +406,7 @@ bool RegistryHandler::ProtectValue(_In_ const std::wstring& key, _In_ const std:
 	DWORD ioctl = protect ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
 	wcscpy_s(item.ValueName, valueName.length() + 1, valueName.data());
-	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -446,7 +440,7 @@ bool RegistryHandler::HideValue(_In_ const std::wstring& key, _In_ const std::ws
 	DWORD ioctl = hide ? IOCTL_PROTECT_HIDE_REGITEM : IOCTL_UNPROTECT_UNHIDE_REGITEM;
 	wcscpy_s(item.KeyPath, kernelSyntaxRegistryKey.length() + 1, kernelSyntaxRegistryKey.data());
 	wcscpy_s(item.ValueName, valueName.length() + 1, valueName.data());
-	return DeviceIoControl(hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), ioctl, &item, sizeof(item), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -465,7 +459,7 @@ std::vector<std::wstring> RegistryHandler::ListKeys(_In_ RegItemType type) {
 	IoctlRegistryList result{};
 	result.Type = type;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGITEMS,
 		&result, sizeof(result),
 		&result, sizeof(result), &returned, nullptr))
 		throw RegistryHandlerException("Failed to list protected registry keys");
@@ -502,7 +496,7 @@ RegValueList RegistryHandler::ListValues(_In_ RegItemType type) {
 	std::tuple<std::wstring, std::wstring> currentValue;
 	result.Type = type;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGITEMS,
 		&result, sizeof(result),
 		&result, sizeof(result), &returned, nullptr)) {
 		throw RegistryHandlerException("Failed to list registry values");
@@ -515,7 +509,7 @@ RegValueList RegistryHandler::ListValues(_In_ RegItemType type) {
 		catch (SafeMemoryException&) {
 			throw RegistryHandlerException("Failed to allocate memory for registry values list");
 		}
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGITEMS,
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGITEMS,
 			&result, sizeof(result),
 			&result, sizeof(result), &returned, nullptr)) {
 			SafeFree(result.Items);
@@ -543,5 +537,5 @@ RegValueList RegistryHandler::ListValues(_In_ RegItemType type) {
 */
 bool RegistryHandler::ClearRegItem(_In_ RegItemType type) {
 	DWORD returned;
-	return DeviceIoControl(hNidhogg.get(), IOCTL_CLEAR_REGITEMS, &type, sizeof(type), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_CLEAR_REGITEMS, &type, sizeof(type), nullptr, 0, &returned, nullptr);
 }
