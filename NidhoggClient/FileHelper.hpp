@@ -32,8 +32,8 @@ template<TString String>
 inline bool IsValidPath(_In_ const String& path) {
 	bool exists = false;
 
-	if (path.length() > MAX_PATH) {
-		std::cerr << "Path length exceeds MAX_PATH" << std::endl;
+	if (path.length() == 0 || path.length() > MAX_PATH) {
+		std::cerr << "Invalid path length" << std::endl;
 		return exists;
 	}
 
