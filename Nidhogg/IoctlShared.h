@@ -120,15 +120,15 @@ struct KeyInformation {
 	PVOID Data;
 };
 
-struct Credentials {
+struct IoctlCredentials {
 	UNICODE_STRING Username;
 	UNICODE_STRING Domain;
 	UNICODE_STRING EncryptedHash;
 };
 
-struct IoctlCredentials {
+struct IoctlCredentialsInformation {
 	SIZE_T Count;
-	Credentials* Creds;
+	IoctlCredentials* Creds;
 	KeyInformation DesKey;
 	KeyInformation Iv;
 };

