@@ -206,3 +206,18 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 	InitializeListHead(list->Items);
 	list->Lock.Unlock();
 }
+
+/*
+* Description:
+* IsInvalidListEntry is responsible for checking whether the entry is null or invalid (meaning empty or has no flink or blink).
+* 
+* Parameters:
+* @entry [_In_ PLIST_ENTRY] -- Entry to check
+* 
+* Returns:
+* @bool						-- True if invalid, else false
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+inline bool IsInvalidListEntry(_In_ PLIST_ENTRY entry) {
+	return !entry || (entry->Blink == NULL && entry->Flink == NULL) || IsListEmpty(entry);
+}
