@@ -348,7 +348,6 @@ _IRQL_requires_max_(APC_LEVEL)
 bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!threadList)
 		return false;
