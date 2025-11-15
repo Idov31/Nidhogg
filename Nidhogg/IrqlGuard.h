@@ -24,11 +24,16 @@ public:
 	}
 
 	_IRQL_requires_max_(HIGH_LEVEL)
-	void SetIrql(_In_ KIRQL newIrql) {
-		if (originalIrql != newIrql) {
+	void SetIrql(_In_ KIRQL newIrql, _In_ bool force = false) {
+		if (originalIrql != newIrql || force) {
 			__writecr8(newIrql);
 			set = true;
 		}
+	}
+
+	_IRQL_requires_max_(HIGH_LEVEL)
+	KIRQL GetOriginalIrql() const {
+		return originalIrql;
 	}
 
 	_IRQL_requires_max_(HIGH_LEVEL)
