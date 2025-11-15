@@ -211,7 +211,22 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 
 /*
 * Description:
-* IsInvalidListEntry is responsible for checking whether the entry is null or invalid (meaning empty or has no flink or blink).
+* IsValidListEntryUnsafe is responsible for checking whether the entry is null or valid (meaning not empty and has flink or blink).
+*
+* Parameters:
+* @entry [_In_ PLIST_ENTRY] -- Entry to check
+*
+* Returns:
+* @bool						-- True if invalid, else false
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+inline bool IsValidListEntryUnsafe(_In_ PLIST_ENTRY entry) {
+	return entry && (entry->Blink != NULL && entry->Flink != NULL) && !IsListEmpty(entry);
+}
+
+/*
+* Description:
+* IsValidListEntry is responsible for checking whether the entry is null or valid (meaning not empty and has flink or blink).
 * 
 * Parameters:
 * @entry [_In_ PLIST_ENTRY] -- Entry to check
@@ -219,7 +234,15 @@ inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> functio
 * Returns:
 * @bool						-- True if invalid, else false
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
-inline bool IsInvalidListEntry(_In_ PLIST_ENTRY entry) {
-	return !entry || (entry->Blink == NULL && entry->Flink == NULL) || IsListEmpty(entry);
+_IRQL_requires_max_(APC_LEVEL)
+inline bool IsValidListEntry(_In_ PLIST_ENTRY entry) {
+	bool invalid = false;
+
+	__try {
+		invalid = IsValidListEntryUnsafe(entry);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		invalid = true;
+	}
+	return invalid;
 }
