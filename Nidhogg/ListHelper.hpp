@@ -89,6 +89,8 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
 inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable, 
 	_In_ MatcherFunction<ListItem, Searchable> function) noexcept {
+	ListItem* currentItem = nullptr;
+
 	if (!function)
 		return NULL;
 	AutoLock locker(const_cast<FastMutex&>(list.Lock));
@@ -97,14 +99,14 @@ inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable
 		return NULL;
 	PLIST_ENTRY currentEntry = list.Items;
 
-	do {
-		ListItem* item = CONTAINING_RECORD(currentEntry, ListItem, Entry);
-
-		if (function(item, searchable))
-			return item;
+	while (currentEntry->Flink != list.Items) {
 		currentEntry = currentEntry->Flink;
-	} while (currentEntry != list.Items);
-	return NULL;
+		currentItem = CONTAINING_RECORD(currentEntry, ListItem, Entry);
+
+		if (function(currentItem, searchable))
+			return currentItem;
+	}
+	return nullptr;
 }
 
 /*
