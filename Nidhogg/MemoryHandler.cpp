@@ -486,103 +486,116 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 	HiddenModuleEntry entry = { 0 };
 	time.QuadPart = ONE_SECOND;
 
+	if (!moduleInformation.ModuleName || moduleInformation.Pid == SYSTEM_PROCESS_PID)
+		return STATUS_INVALID_PARAMETER;
+	SIZE_T moduleNameLen = wcslen(moduleInformation.ModuleName);
+
 	// Getting the process's PEB.
 	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation.Pid), &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	KeStackAttachProcess(targetProcess, &state);
-	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+	entry.ModuleName = AllocateMemory<WCHAR*>((moduleNameLen + 1) * sizeof(WCHAR));
 
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
+	if (!entry.ModuleName) {
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED;
+		return STATUS_INSUFFICIENT_RESOURCES;
 	}
+	errno_t err = wcscpy_s(entry.ModuleName, (moduleNameLen + 1) * sizeof(WCHAR), moduleInformation.ModuleName);
 
-	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
+	if (err != 0) {
+		FreeVirtualMemory(entry.ModuleName);
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
+		return STATUS_INVALID_PARAMETER;
 	}
 
-	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
+	do {
+		KeStackAttachProcess(targetProcess, &state);
+		PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
 
-	// Finding the module inside the process.
-	status = STATUS_NOT_FOUND;
+		if (!targetPeb) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED;
+			break;
+		}
 
-	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
-		pListEntry = pListEntry->Flink) {
+		for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+			KeDelayExecutionThread(KernelMode, FALSE, &time);
+		}
 
-		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		if (!targetPeb->LoaderData) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
 
-		if (pebEntry) {
-			if (pebEntry->FullDllName.Length > 0) {
-				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-					entry.OriginalEntry = pListEntry;
-					entry.ModuleName = AllocateMemory<WCHAR*>((static_cast<SIZE_T>(pebEntry->FullDllName.Length) + 1) * sizeof(WCHAR));
+		if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
 
-					if (!entry.ModuleName) {
-						status = STATUS_INSUFFICIENT_RESOURCES;
-						break;
-					}
-					errno_t err = wcscpy_s(entry.ModuleName, pebEntry->FullDllName.Length, pebEntry->FullDllName.Buffer);
+		// Finding the module inside the process.
+		status = STATUS_NOT_FOUND;
 
-					if (err != 0) {
-						FreeVirtualMemory(entry.ModuleName);
-						status = STATUS_INVALID_PARAMETER;
-						break;
-					}
-					entry.ModuleName = moduleInformation.ModuleName;
-					entry.Pid = moduleInformation.Pid;
-					entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
-					entry.Links.InInitializationOrderLinks = pebEntry->InInitializationOrderLinks;
-					entry.Links.InMemoryOrderLinks = pebEntry->InMemoryOrderLinks;
-					entry.Links.HashLinks = pebEntry->HashLinks;
-					moduleBase = pebEntry->DllBase;
-					RemoveEntryList(&pebEntry->InLoadOrderLinks);
-					RemoveEntryList(&pebEntry->InInitializationOrderLinks);
-					RemoveEntryList(&pebEntry->InMemoryOrderLinks);
-					RemoveEntryList(&pebEntry->HashLinks);
-					status = STATUS_SUCCESS;
-					break;
-				}
+		for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+			pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+			pListEntry = pListEntry->Flink) {
+
+			pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (!pebEntry) {
+				continue;
+			}
+
+			if (pebEntry->FullDllName.Length / sizeof(WCHAR) != moduleNameLen) {
+				continue;
+			}
+
+			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, moduleNameLen) == 0) {
+				entry.OriginalEntry = pListEntry;
+				entry.Pid = moduleInformation.Pid;
+				entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
+				entry.Links.InInitializationOrderLinks = pebEntry->InInitializationOrderLinks;
+				entry.Links.InMemoryOrderLinks = pebEntry->InMemoryOrderLinks;
+				entry.Links.HashLinks = pebEntry->HashLinks;
+				moduleBase = pebEntry->DllBase;
+				RemoveEntryList(&pebEntry->InLoadOrderLinks);
+				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+				RemoveEntryList(&pebEntry->HashLinks);
+				status = STATUS_SUCCESS;
+				break;
 			}
 		}
+		KeUnstackDetachProcess(&state);
+	} while (false);
+
+	if (!NT_SUCCESS(status)) {
+		FreeVirtualMemory(entry.ModuleName);
+		ObDereferenceObject(targetProcess);
+		return status;
 	}
-	KeUnstackDetachProcess(&state);
+	status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
 
 	// Need to handle the case where the module is incorrectly hidden carefully to avoid BSOD.
-	if (NT_SUCCESS(status)) {
-		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
-
-		if (!NT_SUCCESS(status)) {
-			if (!NT_SUCCESS(RestorePebModule(targetProcess, &entry)))
-				status = STATUS_UNSUCCESSFUL;
-			ObDereferenceObject(targetProcess);
-			return status;
-		}
-
-		if (!AddHiddenModule(entry)) {
-			ObDereferenceObject(targetProcess);
-			status = RestoreModule(&entry);
-
-			if (NT_SUCCESS(status))
-				status = STATUS_INSUFFICIENT_RESOURCES;
-			return status;
-		}
+	if (!NT_SUCCESS(status)) {
+		if (!NT_SUCCESS(RestorePebModule(targetProcess, &entry)))
+			status = STATUS_UNSUCCESSFUL;
+		FreeVirtualMemory(entry.ModuleName);
+		ObDereferenceObject(targetProcess);
+		return status;
 	}
 
+	if (!AddHiddenModule(entry)) {
+		ObDereferenceObject(targetProcess);
+		status = RestoreModule(&entry);
+
+		if (NT_SUCCESS(status))
+			status = STATUS_INSUFFICIENT_RESOURCES;
+		return status;
+	}
 
 	ObDereferenceObject(targetProcess);
 	return status;
@@ -658,8 +671,9 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 	if (NT_SUCCESS(status))
 		status = VadRestoreObject(targetProcess, moduleEntry->VadNode, moduleEntry->ModuleName);
 	FreeVirtualMemory(moduleEntry->ModuleName);
+	FreeVirtualMemory(moduleEntry->VadModuleName);
 
-	if (!IsInvalidListEntry(&moduleEntry->Entry) && !RemoveListEntry(&hiddenModules, moduleEntry))
+	if (IsValidListEntry(&moduleEntry->Entry) && !RemoveListEntry(&hiddenModules, moduleEntry))
 		status = STATUS_UNSUCCESSFUL;
 	ObDereferenceObject(targetProcess);
 	return status;
@@ -684,20 +698,20 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 	time.QuadPart = ONE_SECOND;
 
 	constexpr auto RestoreEntry = [](PLDR_DATA_TABLE_ENTRY pebEntry, HiddenModuleEntry* entry) -> bool {
-		if ((IsInvalidListEntry(&pebEntry->InLoadOrderLinks) && !IsInvalidListEntry(&entry->Links.InLoadOrderLinks)) || 
-			(IsInvalidListEntry(&pebEntry->InInitializationOrderLinks) && !IsInvalidListEntry(&entry->Links.InInitializationOrderLinks)) ||
-			(IsInvalidListEntry(&pebEntry->InMemoryOrderLinks) && !IsInvalidListEntry(&entry->Links.InMemoryOrderLinks)) ||
-			(IsInvalidListEntry(&pebEntry->HashLinks) && !IsInvalidListEntry(&entry->Links.HashLinks))) {
+		if ((!IsValidListEntry(&pebEntry->InLoadOrderLinks) && IsValidListEntry(&entry->Links.InLoadOrderLinks)) || 
+			(!IsValidListEntry(&pebEntry->InInitializationOrderLinks) && IsValidListEntry(&entry->Links.InInitializationOrderLinks)) ||
+			(!IsValidListEntry(&pebEntry->InMemoryOrderLinks) && IsValidListEntry(&entry->Links.InMemoryOrderLinks)) ||
+			(!IsValidListEntry(&pebEntry->HashLinks) && IsValidListEntry(&entry->Links.HashLinks))) {
 			return false;
 		}
 		__try {
-			if (!IsInvalidListEntry(&entry->Links.InLoadOrderLinks))
+			if (IsValidListEntry(&entry->Links.InLoadOrderLinks))
 				InsertHeadList(&pebEntry->InLoadOrderLinks, &entry->Links.InLoadOrderLinks);
-			if (!IsInvalidListEntry(&entry->Links.InInitializationOrderLinks))
+			if (IsValidListEntry(&entry->Links.InInitializationOrderLinks))
 				InsertHeadList(&pebEntry->InInitializationOrderLinks, &entry->Links.InInitializationOrderLinks);
-			if (!IsInvalidListEntry(&entry->Links.InMemoryOrderLinks))
+			if (IsValidListEntry(&entry->Links.InMemoryOrderLinks))
 				InsertHeadList(&pebEntry->InMemoryOrderLinks, &entry->Links.InMemoryOrderLinks);
-			if (!IsInvalidListEntry(&entry->Links.HashLinks))
+			if (IsValidListEntry(&entry->Links.HashLinks))
 				InsertHeadList(&pebEntry->HashLinks, &entry->Links.HashLinks);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -731,7 +745,7 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 		return STATUS_ABANDONED_WAIT_0;
 	}
 
-	if (moduleEntry->OriginalEntry->Blink) {
+	if (IsValidListEntry(moduleEntry->OriginalEntry->Blink)) {
 		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Blink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 		if (RestoreEntry(pebEntry, moduleEntry)) {
@@ -739,7 +753,7 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 			return STATUS_SUCCESS;
 		}
 	}
-	if (moduleEntry->OriginalEntry->Flink) {
+	if (IsValidListEntry(moduleEntry->OriginalEntry->Flink)) {
 		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 		if (RestoreEntry(pebEntry, moduleEntry)) {
@@ -753,7 +767,7 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 
 		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (pebEntry && !IsInvalidListEntry(&pebEntry->InLoadOrderLinks)) {
+		if (pebEntry && IsValidListEntry(&pebEntry->InLoadOrderLinks)) {
 			if (RestoreEntry(pebEntry, moduleEntry)) {
 				KeUnstackDetachProcess(&state);
 				return STATUS_SUCCESS;
@@ -1328,14 +1342,14 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 		PFILE_OBJECT fileObject = reinterpret_cast<PFILE_OBJECT>(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
 
 		if (fileObject->FileName.Length > 0) {
-			moduleEntry.ModuleName = AllocateMemory<WCHAR*>(fileObject->FileName.MaximumLength + sizeof(wchar_t));
+			moduleEntry.VadModuleName = AllocateMemory<WCHAR*>(fileObject->FileName.MaximumLength + sizeof(wchar_t));
 
-			if (!moduleEntry.ModuleName)
+			if (!moduleEntry.VadModuleName)
 				return STATUS_INSUFFICIENT_RESOURCES;
-			errno_t err = wcscpy_s(moduleEntry.ModuleName, fileObject->FileName.Length + sizeof(wchar_t), fileObject->FileName.Buffer);
+			errno_t err = wcscpy_s(moduleEntry.VadModuleName, fileObject->FileName.Length + sizeof(wchar_t), fileObject->FileName.Buffer);
 
 			if (err != 0) {
-				FreeVirtualMemory(moduleEntry.ModuleName);
+				FreeVirtualMemory(moduleEntry.VadModuleName);
 				return STATUS_UNSUCCESSFUL;
 			}
 			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
@@ -1634,6 +1648,7 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 	if (!entry)
 		return false;
 	entry->ModuleName = item.ModuleName;
+	entry->VadModuleName = item.VadModuleName;
 	entry->Pid = item.Pid;
 	entry->OriginalVadProtection = item.OriginalVadProtection;
 	entry->VadNode = item.VadNode;

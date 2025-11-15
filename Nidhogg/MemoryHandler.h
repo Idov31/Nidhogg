@@ -77,6 +77,7 @@ struct HiddenModuleEntry {
 	PebLinks Links;
 	PLIST_ENTRY OriginalEntry;
 	PMMVAD_SHORT VadNode;
+	wchar_t* VadModuleName;
 	ULONG OriginalVadProtection;
 };
 

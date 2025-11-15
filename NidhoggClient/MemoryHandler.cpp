@@ -79,7 +79,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		}
 		DWORD pid = static_cast<DWORD>(atoi(params.at(0).c_str()));
 		modulePath = std::wstring(params.at(1).begin(), params.at(1).end());
-		HideModule(pid, modulePath, true) ? std::wcout << L"Module " << modulePath << L"hidden successfully." << std::endl :
+		HideModule(pid, modulePath, true) ? std::wcout << L"Module " << modulePath << L" hidden successfully." << std::endl :
 			std::wcerr << L"Failed to hide module " << modulePath << std::endl;
 	}
 	else if (commandName.compare("unhide_module") == 0 || commandName.compare("restore_module") == 0) {
@@ -94,14 +94,8 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 			return;
 		}
 		DWORD pid = static_cast<DWORD>(atoi(params.at(0).c_str()));
+		modulePath = std::wstring(params.at(1).begin(), params.at(1).end());
 
-		try {
-			modulePath = ParsePath<std::string, std::wstring>(params.at(1));
-		}
-		catch (const PathHelperException& e) {
-			std::cerr << e.what() << std::endl;
-			return;
-		}
 		HideModule(pid, modulePath, false) ? std::wcout << L"Module " << modulePath << L" restored successfully." << std::endl :
 			std::wcerr << L"Failed to restore module " << modulePath << std::endl;
 	}
