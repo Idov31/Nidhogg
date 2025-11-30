@@ -688,13 +688,14 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 * @moduleEntry	[_In_ HiddenModuleEntry&] -- Required information, contains the module's entry.
 * 
 * Returns:
-* @NTSTATUS								  -- Whether successfuly restored or not.
+* @status		[NTSTATUS]				  -- Whether successfuly restored or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenModuleEntry* moduleEntry) {
 	KAPC_STATE state = { 0 };
 	PLDR_DATA_TABLE_ENTRY pebEntry = nullptr;
 	LARGE_INTEGER time = { 0 };
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	time.QuadPart = ONE_SECOND;
 
 	constexpr auto RestoreEntry = [](PLDR_DATA_TABLE_ENTRY pebEntry, HiddenModuleEntry* entry) -> bool {
@@ -720,62 +721,74 @@ NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenMod
 		return true;
 	};
 
-	if (!process)
+	if (!process || !moduleEntry)
 		return STATUS_INVALID_PARAMETER;
-
 	KeStackAttachProcess(process, &state);
-	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
 
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
-		return STATUS_ABANDONED;
-	}
+	do {
+		PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
 
-	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
-		KeUnstackDetachProcess(&state);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	if (IsValidListEntry(moduleEntry->OriginalEntry->Blink)) {
-		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Blink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
-		if (RestoreEntry(pebEntry, moduleEntry)) {
-			KeUnstackDetachProcess(&state);
-			return STATUS_SUCCESS;
+		if (!targetPeb) {
+			status = STATUS_ABANDONED;
+			break;
 		}
-	}
-	if (IsValidListEntry(moduleEntry->OriginalEntry->Flink)) {
-		pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (RestoreEntry(pebEntry, moduleEntry)) {
-			KeUnstackDetachProcess(&state);
-			return STATUS_SUCCESS;
+		for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+			KeDelayExecutionThread(KernelMode, FALSE, &time);
 		}
-	}
-	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
-		pListEntry = pListEntry->Flink) {
 
-		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		if (!targetPeb->LoaderData) {
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
 
-		if (pebEntry && IsValidListEntry(&pebEntry->InLoadOrderLinks)) {
+		if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
+
+		// First validate that moduleEntry->OriginalEntry is valid before accessing its members
+		if (!moduleEntry->OriginalEntry || !IsValidListEntry(moduleEntry->OriginalEntry)) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (moduleEntry->OriginalEntry->Blink && IsValidListEntry(moduleEntry->OriginalEntry->Blink)) {
+			pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Blink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
 			if (RestoreEntry(pebEntry, moduleEntry)) {
-				KeUnstackDetachProcess(&state);
-				return STATUS_SUCCESS;
+				status = STATUS_SUCCESS;
+				break;
 			}
 		}
-	}
+			
+		if (moduleEntry->OriginalEntry->Flink && IsValidListEntry(moduleEntry->OriginalEntry->Flink)) {
+			pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (RestoreEntry(pebEntry, moduleEntry)) {
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+
+		// Fallback: iterate through the entire list
+		for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+			pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+			pListEntry = pListEntry->Flink) {
+
+			pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (pebEntry && IsValidListEntry(&pebEntry->InLoadOrderLinks)) {
+				if (RestoreEntry(pebEntry, moduleEntry)) {
+					status = STATUS_SUCCESS;
+					break;
+				}
+			}
+		}
+	} while (false);
+	
 	KeUnstackDetachProcess(&state);
-	return STATUS_UNSUCCESSFUL;
+	return status;
 }
 
 /*
@@ -1651,6 +1664,7 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 	entry->VadModuleName = item.VadModuleName;
 	entry->Pid = item.Pid;
 	entry->OriginalVadProtection = item.OriginalVadProtection;
+	entry->OriginalEntry = item.OriginalEntry;
 	entry->VadNode = item.VadNode;
 	entry->Links.HashLinks = item.Links.HashLinks;
 	entry->Links.InInitializationOrderLinks = item.Links.InInitializationOrderLinks;
