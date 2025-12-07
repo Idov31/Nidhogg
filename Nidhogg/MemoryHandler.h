@@ -130,7 +130,7 @@ private:
 	ULONG GetVadRootOffset() const;
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry* driverEntry = nullptr) const;
+	bool FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry** driverEntry = nullptr) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	bool AddHiddenDriver(_Inout_ HiddenDriverEntry& item);
