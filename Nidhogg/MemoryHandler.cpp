@@ -75,8 +75,9 @@ MemoryHandler::~MemoryHandler() {
 * Returns:
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
+	PVOID dllPathAddress = nullptr;
 	IoctlShellcodeInfo shellcodeInfo{};
 	NTSTATUS status = STATUS_SUCCESS;
 	WCHAR* mainDriveLetter = nullptr;
@@ -88,7 +89,6 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 	if (!fullPath.IsValid())
 		return STATUS_INSUFFICIENT_RESOURCES;
 
-	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
 		mainDriveLetter = GetMainDriveLetter();
 		errno_t err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
@@ -106,27 +106,26 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 		return GetExceptionCode();
 	}
 	FreeVirtualMemory(mainDriveLetter);
-	irqlGuard.UnsetIrql();
 
 	// Creating the shellcode information for APC injection.
-	WindowsMemoryAllocator<PVOID> allocator(shellcodeInfo.Parameter1, &dllPathSize, PAGE_READWRITE, &status);
+	status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &dllPathAddress, 0, &dllPathSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status) || !dllPathAddress) {
+		if (NT_SUCCESS(status))
+			status = STATUS_INSUFFICIENT_RESOURCES;
 		return status;
+	}
+	memset(dllPathAddress, 0, dllPathSize);
 
 	dllPathSize = strlen(dllInfo.DllPath) + 1;
-	status = MmCopyVirtualMemory(
-		PsGetCurrentProcess(), 
-		dllInfo.DllPath, 
-		PsGetCurrentProcess(), 
-		shellcodeInfo.Parameter1, 
-		dllPathSize,
-		KernelMode, 
-		nullptr);
+	status = WriteProcessMemory(&(dllInfo.DllPath), PsGetCurrentProcess(), dllPathAddress, dllPathSize, KernelMode);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(ZwCurrentProcess(), &dllPathAddress, &dllPathSize, MEM_DECOMMIT);
 		return status;
+	}
 
+	shellcodeInfo.Parameter1 = dllPathAddress;
 	shellcodeInfo.Parameter1Size = dllPathSize;
 	shellcodeInfo.Parameter2 = NULL;
 	shellcodeInfo.Parameter3 = NULL;
@@ -135,6 +134,7 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 	shellcodeInfo.ShellcodeSize = sizeof(PVOID);
 
 	status = InjectShellcodeAPC(shellcodeInfo, true);
+	ZwFreeVirtualMemory(ZwCurrentProcess(), &dllPathAddress, &dllPathSize, MEM_DECOMMIT);
 	return status;
 }
 
@@ -149,7 +149,7 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) {
+NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) const {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -374,7 +374,7 @@ NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ IoctlShellcodeInfo& shellcodeInf
 * @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo) {
+NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo) const {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -1474,6 +1474,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 	ULONG guiThread = 0;
 	PETHREAD targetThread = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
+	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	ULONG infoSize = 0;
 
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
@@ -1494,6 +1495,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 		FreeVirtualMemory(info);
 		ExRaiseStatus(status);
 	}
+	originalInfo = info;
 	status = STATUS_NOT_FOUND;
 
 	// Iterating the processes information until our pid is found.
@@ -1506,7 +1508,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 	}
 
 	if (!NT_SUCCESS(status)) {
-		FreeVirtualMemory(info);
+		FreeVirtualMemory(originalInfo);
 		ExRaiseStatus(status);
 	}
 
@@ -1540,7 +1542,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 		}
 		break;
 	}
-	FreeVirtualMemory(info);
+	FreeVirtualMemory(originalInfo);
 
 	if (!targetThread)
 		ExRaiseStatus(STATUS_NOT_FOUND);

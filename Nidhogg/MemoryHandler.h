@@ -183,12 +183,12 @@ public:
 	NTSTATUS InjectShellcodeAPC(_In_ IoctlShellcodeInfo& shellcodeInformation, _In_ bool isInjectedDll = false);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo);
+	NTSTATUS InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS InjectDllThread(_In_ IoctlDllInfo& dllInfo);
+	NTSTATUS InjectDllThread(_In_ IoctlDllInfo& dllInfo) const;
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_(PASSIVE_LEVEL)
 	NTSTATUS InjectDllAPC(_In_ IoctlDllInfo& dllInfo);
 
 	_IRQL_requires_max_(APC_LEVEL)
