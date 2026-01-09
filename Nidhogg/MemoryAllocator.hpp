@@ -142,7 +142,7 @@ public:
 	}
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size, _In_ KPROCESSOR_MODE mode = KernelMode) {
+	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size) {
 		SIZE_T bytesWritten = 0;
 		NTSTATUS status = STATUS_INVALID_PARAMETER;
 
@@ -153,7 +153,7 @@ public:
 			return status;
 
 		status = MmCopyVirtualMemory(PsGetCurrentProcess(), data, PsGetCurrentProcess(), this->allocatedData, size,
-			mode, &bytesWritten);
+			KernelMode, &bytesWritten);
 
 		if (NT_SUCCESS(status))
 			status = bytesWritten == size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;

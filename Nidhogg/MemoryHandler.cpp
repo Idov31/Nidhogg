@@ -379,11 +379,11 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
 	HANDLE hTargetThread = NULL;
-	PEPROCESS TargetProcess = NULL;
+	PEPROCESS targetProcess = NULL;
 	PVOID remoteAddress = NULL;
 	SIZE_T shellcodeSize = shellcodeInfo.ShellcodeSize;
 	HANDLE pid = UlongToHandle(shellcodeInfo.Pid);
-	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -401,7 +401,7 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 		if (!NT_SUCCESS(status))
 			break;
 		shellcodeSize = shellcodeInfo.ShellcodeSize;
-		status = WriteProcessMemory(shellcodeInfo.Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+		status = WriteProcessMemory(shellcodeInfo.Shellcode, targetProcess, remoteAddress, shellcodeSize, KernelMode);
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -426,8 +426,8 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 	if (hProcess)
 		ZwClose(hProcess);
 
-	if (TargetProcess)
-		ObDereferenceObject(TargetProcess);
+	if (targetProcess)
+		ObDereferenceObject(targetProcess);
 
 	return status;
 }
