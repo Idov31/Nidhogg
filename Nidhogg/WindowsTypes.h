@@ -112,7 +112,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
 } IMAGE_OPTIONAL_HEADER, * PIMAGE_OPTIONAL_HEADER;
 
 typedef struct _FULL_IMAGE_NT_HEADERS {
-	DWORD Signature;
+	ULONG Signature;
 	IMAGE_FILE_HEADER FileHeader;
 	IMAGE_OPTIONAL_HEADER OptionalHeader;
 } FULL_IMAGE_NT_HEADERS, * PFULL_IMAGE_NT_HEADERS;
@@ -1034,7 +1034,7 @@ typedef struct _PRIMARY_CREDENTIALS {
 
 typedef struct _MSV1_0_CREDENTIALS {
 	struct _MSV1_0_CREDENTIALS* next;
-	DWORD AuthenticationPackageId;
+	ULONG AuthenticationPackageId;
 	PPRIMARY_CREDENTIALS PrimaryCredentials;
 } MSV1_0_CREDENTIALS, * PMSV1_0_CREDENTIALS;
 
@@ -1197,7 +1197,7 @@ typedef NTSTATUS(NTAPI* tIoCreateDriver)(
 	PUNICODE_STRING DriverName,
 	PDRIVER_INITIALIZE InitializationFunction);
 
-typedef DWORD(NTAPI* PTHREAD_START_ROUTINE)(
+typedef ULONG(NTAPI* PTHREAD_START_ROUTINE)(
 	PVOID lpThreadParameter);
 
 typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
@@ -1207,7 +1207,7 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 	HANDLE ProcessHandle,
 	PTHREAD_START_ROUTINE lpStartAddress,
 	PVOID lpParameter,
-	DWORD Flags,
+	ULONG Flags,
 	SIZE_T StackZeroBits,
 	SIZE_T SizeOfStackCommit,
 	SIZE_T SizeOfStackReserve,

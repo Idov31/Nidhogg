@@ -215,7 +215,7 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 
 	else if (mode == UserMode && (
 		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, static_cast<ULONG>(dataSize))) ||
-		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+		(!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)) &&
 			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
