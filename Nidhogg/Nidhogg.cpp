@@ -2,6 +2,9 @@
 #include "Nidhogg.h"
 
 extern "C"
+_Function_class_(DRIVER_INITIALIZE)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 #ifdef DRIVER_REFLECTIVELY_LOADED
 	UNREFERENCED_PARAMETER(DriverObject);
@@ -41,6 +44,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 * Returns:
 * @status		[NTSTATUS]		  -- Whether the driver is loaded successfuly or not.
 */
+_Function_class_(DRIVER_INITIALIZE)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
 	NTSTATUS status = STATUS_SUCCESS;
@@ -148,6 +154,9 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 * Returns:
 * There is no return value.
 */
+_Function_class_(DRIVER_UNLOAD)
+_IRQL_requires_(PASSIVE_LEVEL)
+_IRQL_requires_same_
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	Print(DRIVER_PREFIX "Unloading...\n");
 

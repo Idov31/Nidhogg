@@ -30,7 +30,7 @@ extern "C" {
 }
 
 // Prototypes.
-NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
+DRIVER_INITIALIZE NidhoggEntry;
 DRIVER_UNLOAD NidhoggUnload;
 
 _IRQL_requires_same_

@@ -13,6 +13,8 @@
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_same_
 NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 
