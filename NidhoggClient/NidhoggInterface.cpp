@@ -6,7 +6,7 @@ NidhoggInterface::NidhoggInterface() {
 
 	if (!IsValidHandle(hNidhogg.get()))
 		throw NidhoggInterfaceException("Failed to open Nidhogg device " + std::to_string(GetLastError()));
-	commandHandlers["antianalysis"] = std::make_unique<AntiAnalysisHandler>(hNidhogg);
+	commandHandlers["anti_analysis"] = std::make_unique<AntiAnalysisHandler>(hNidhogg);
 	commandHandlers["file"] = std::make_unique<FileHandler>(hNidhogg);
 	commandHandlers["memory"] = std::make_unique<MemoryHandler>(hNidhogg);
 	commandHandlers["network"] = std::make_unique<NetworkHandler>(hNidhogg);

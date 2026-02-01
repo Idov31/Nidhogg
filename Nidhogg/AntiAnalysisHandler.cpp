@@ -655,9 +655,12 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 	errno_t err = 0;
 	ULONG index = 0;
 
-	auto CopyDriverName = [&](_In_ POB_CALLBACK_ENTRY currentObjectCallback) {
+	auto CopyDriverName = [&](_In_ POB_CALLBACK_ENTRY currentObjectCallback, _In_ bool isPreCallback) {
 		__try {
-			driverName = MatchCallback(currentObjectCallback->PostOperation);
+			if (isPreCallback)
+				driverName = MatchCallback(currentObjectCallback->PreOperation);
+			else
+				driverName = MatchCallback(currentObjectCallback->PostOperation);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
 			status = GetExceptionCode();
@@ -708,14 +711,14 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 		do {
 			if (currentObjectCallback->Enabled) {
 				if (currentObjectCallback->PostOperation) {
-					status = CopyDriverName(currentObjectCallback);
+					status = CopyDriverName(currentObjectCallback, false);
 
 					if (!NT_SUCCESS(status))
 						break;
 					callbacks->Callbacks[index].PostOperation = currentObjectCallback->PostOperation;
 				}
 				if (currentObjectCallback->PreOperation) {
-					status = CopyDriverName(currentObjectCallback);
+					status = CopyDriverName(currentObjectCallback, true);
 
 					if (!NT_SUCCESS(status))
 						break;
@@ -782,7 +785,7 @@ char* AntiAnalysisHandler::MatchCallback(_In_ PVOID callack) {
 						status = STATUS_UNSUCCESSFUL;
 						break;
 					}
-					err = strcpy_s(driverName, fullPathNameSize, reinterpret_cast<const char*>(modules[i].FullPathName));
+					err = strcpy_s(driverName, fullPathNameSize + 1, reinterpret_cast<const char*>(modules[i].FullPathName));
 
 					if (err != 0) {
 						status = STATUS_UNSUCCESSFUL;
