@@ -125,6 +125,9 @@ NTSTATUS AntiAnalysisHandler::RestoreCallback(_In_ IoctlKernelCallback& callback
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		return GetExceptionCode();
 	}
+
+	if (!callbackEntry)
+		return STATUS_NOT_FOUND;
 	return RestoreCallback(callbackEntry);
 }
 
@@ -255,6 +258,7 @@ NTSTATUS AntiAnalysisHandler::ReplaceCallback(_In_ IoctlKernelCallback& callback
 					callbackEntry.CallbackAddress = callback.CallbackAddress;
 					callbackEntry.CallbackEntry = reinterpret_cast<ULONG64>(currentObjectCallback->Entry);
 					callbackEntry.Type = callback.Type;
+					status = STATUS_SUCCESS;
 					break;
 				}
 			}
