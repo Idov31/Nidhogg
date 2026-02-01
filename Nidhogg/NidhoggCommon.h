@@ -33,7 +33,6 @@ struct EnabledFeatures {
 	bool FileProtection = true;
 	bool EtwTiTamper = true;
 	bool ApcInjection = true;
-	bool CreateThreadInjection = false;
 	bool AutoModuleUnload = true;
 };
 inline EnabledFeatures Features;

@@ -394,8 +394,5 @@ bool InitializeFeatures() {
 	if (!reinterpret_cast<PULONG>(KeInitializeApc) || !reinterpret_cast<PULONG>(KeInsertQueueApc) || 
 		!reinterpret_cast<PULONG>(KeTestAlertThread) || !reinterpret_cast<PULONG>(ZwQuerySystemInformation))
 		Features.ApcInjection = false;
-
-	if (NidhoggMemoryHandler->FoundNtCreateThreadEx())
-		Features.CreateThreadInjection = true;
 	return true;
 }

