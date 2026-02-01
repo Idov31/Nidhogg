@@ -148,7 +148,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		std::string dllPath = params.at(2);
 
 		if (params.at(0).compare("thread") == 0)
-			injectionType = InjectionType::NtCreateThreadExInjection;
+			injectionType = InjectionType::CreateThreadInjection;
 		else if (params.at(0).compare("apc") == 0)
 			injectionType = InjectionType::APCInjection;
 		else {
@@ -200,7 +200,7 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		}
 		
 		if (params.at(0).compare("thread") == 0)
-			injectionType = InjectionType::NtCreateThreadExInjection;
+			injectionType = InjectionType::CreateThreadInjection;
 		else if (params.at(0).compare("apc") == 0)
 			injectionType = InjectionType::APCInjection;
 		else {

@@ -15,7 +15,6 @@ extern "C" {
 
 // Definitions.
 constexpr SIZE_T NO_ACCESS = 0;
-constexpr SIZE_T THREAD_PREVIOUSMODE_OFFSET = 0x232;
 constexpr SIZE_T PATH_OFFSET = 0x190;
 constexpr SIZE_T ALERTABLE_THREAD_FLAG_BIT = 0x10;
 constexpr SIZE_T ALERTABLE_THREAD_FLAG_OFFSET = 0x74;
@@ -118,8 +117,6 @@ class MemoryHandler {
 private:
 	HiddenItemsList hiddenDrivers;
 	HiddenItemsList hiddenModules;
-	PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt;
-	tNtCreateThreadEx NtCreateThreadEx;
 	LsassInformation cachedLsassInfo;
 	LsassMetadata lsassMetadata;
 
@@ -217,9 +214,6 @@ public:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS GetCredentials(_Inout_ IoctlCredentialsInformation* credentials);
-
-	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FoundNtCreateThreadEx() const { return NtCreateThreadEx != NULL; }
 };
 
 inline MemoryHandler* NidhoggMemoryHandler;

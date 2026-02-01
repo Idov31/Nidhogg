@@ -1219,6 +1219,12 @@ typedef PVOID(NTAPI* tExAllocatePool2)(
 	ULONG      Tag
 	);
 
+typedef _Function_class_(USER_THREAD_START_ROUTINE)
+NTSTATUS NTAPI USER_THREAD_START_ROUTINE(
+	_In_ PVOID ThreadParameter
+);
+typedef USER_THREAD_START_ROUTINE* PUSER_THREAD_START_ROUTINE;
+
 extern "C" {
 	PVOID NTAPI PsGetCurrentProcessWow64Process();
 
@@ -1280,5 +1286,20 @@ extern "C" {
 	RtlFindExportedRoutineByName(
 		_In_ PVOID ImageBase,
 		_In_ PCCH RoutineName
+	);
+
+	NTSTATUS
+	NTAPI
+	RtlCreateUserThread(
+		_In_ HANDLE ProcessHandle,
+		_In_opt_ PSECURITY_DESCRIPTOR ThreadSecurityDescriptor,
+		_In_ BOOLEAN CreateSuspended,
+		_In_opt_ ULONG ZeroBits,
+		_In_opt_ SIZE_T MaximumStackSize,
+		_In_opt_ SIZE_T CommittedStackSize,
+		_In_ PUSER_THREAD_START_ROUTINE StartAddress,
+		_In_opt_ PVOID Parameter,
+		_Out_opt_ PHANDLE ThreadHandle,
+		_Out_opt_ PCLIENT_ID ClientId
 	);
 }

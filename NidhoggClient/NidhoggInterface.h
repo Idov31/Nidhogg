@@ -29,8 +29,8 @@ private:
 
 public:
 	NidhoggInterface();
+	~NidhoggInterface();
 	void HandleCommands();
 	void HandleCommand(_In_ std::string handler, _In_ std::string command);
-	~NidhoggInterface();
 };
 

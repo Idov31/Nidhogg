@@ -135,7 +135,7 @@ struct IoctlCredentialsInformation {
 
 enum class InjectionType {
 	APCInjection,
-	NtCreateThreadExInjection
+	CreateThreadInjection
 };
 
 struct IoctlDllInfo {
