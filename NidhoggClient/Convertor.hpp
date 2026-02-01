@@ -90,7 +90,24 @@ inline N ConvertToNumber(_In_ String rawString) {
 		str.erase(0, 2);
 		isHex = true;
 	}
-	if (str.empty() || !std::all_of(str.begin(), str.end(), ::isdigit))
+	if (str.empty() ||
+		(!std::all_of(str.begin(), str.end(), ::isdigit) &&
+			!std::all_of(str.begin(), str.end(), ::isxdigit))) {
 		throw ConvertorException("Invalid integer string");
+	}
+	try {
+		if constexpr (std::is_unsigned_v<N>) {
+			return static_cast<N>(std::stoull(str, nullptr, isHex ? 16 : 10));
+		}
+		else {
+			return static_cast<N>(std::stoll(str, nullptr, isHex ? 16 : 10));
+		}
+	}
+	catch (const std::out_of_range&) {
+		throw ConvertorException("Number out of range for target type");
+	}
+	catch (const std::invalid_argument&) {
+		throw ConvertorException("Invalid number format");
+	}
 	return isHex ? static_cast<N>(std::stoi(str, nullptr, 16)) : static_cast<N>(std::stoi(str));
 }
