@@ -348,6 +348,7 @@ IoctlCallbackList<ObCallback> AntiAnalysisHandler::ListObCallbacks(_In_ Callback
 */
 IoctlCallbackList<PsRoutine> AntiAnalysisHandler::ListPsRoutines(_In_ CallbackType callbackType) {
 	IoctlCallbackList<PsRoutine> routines{};
+	routines.Type = callbackType;
 	DWORD returned = 0;
 
 	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_PSROUTINES, &routines, sizeof(routines), &routines, 

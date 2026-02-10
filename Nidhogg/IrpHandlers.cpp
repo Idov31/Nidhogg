@@ -1016,11 +1016,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto data = static_cast<IoctlCallbackList<PsRoutine>*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (!data->Callbacks) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
 		switch (data->Type) {
 		case PsImageLoadType:
 		case PsCreateProcessTypeEx:
