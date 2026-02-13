@@ -15,6 +15,12 @@ struct VersionRange {
 	ULONG MaxVersion;
 };
 
+struct PatternOffset {
+	ULONG MinVersion;
+	ULONG MaxVersion;
+	LONG Offset;
+};
+
 struct Pattern {
 	VersionRange Versions;
 	ULONG_PTR Length;
@@ -22,6 +28,17 @@ struct Pattern {
 	UCHAR Wildcard;
 	LONG RelativeOffset;
 	bool Reversed;
+	ULONG OffsetsCount;
+	PatternOffset Offsets[SUPPORTED_VERSIONS_COUNT];
+
+	LONG GetOffsetForVersion(ULONG version) const {
+		for (ULONG i = 0; i < OffsetsCount; i++) {
+			if (version >= Offsets[i].MinVersion && version <= Offsets[i].MaxVersion) {
+				return Offsets[i].Offset;
+			}
+		}
+		return 0;
+	}
 };
 
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
@@ -43,11 +60,11 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex, 
+PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex, 
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)

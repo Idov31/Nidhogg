@@ -22,6 +22,7 @@ constexpr ULONG64 WIN_11_23H2 = 22631;
 constexpr ULONG64 WIN_11_24H2 = 26100;
 constexpr ULONG64 WIN_11_25H2 = 26200;
 constexpr ULONG64 LATEST_VERSION = WIN_11_24H2;
+constexpr ULONG64 SUPPORTED_VERSIONS_COUNT = 19;
 
 constexpr USHORT IMAGE_DOS_SIGNATURE = 0x5A4D;
 constexpr ULONG IMAGE_NT_SIGNATURE = 0x00004550;
@@ -1038,26 +1039,37 @@ typedef struct _MSV1_0_CREDENTIALS {
 	PPRIMARY_CREDENTIALS PrimaryCredentials;
 } MSV1_0_CREDENTIALS, * PMSV1_0_CREDENTIALS;
 
+#pragma pack(push, 8)
+typedef struct _RTL_CRITICAL_SECTION
+{
+	PVOID DebugInfo;
+	LONG LockCount;
+	LONG RecursionCount;
+	HANDLE OwningThread;
+	HANDLE LockSemaphore;
+	ULONG_PTR SpinCount;
+} RTL_CRITICAL_SECTION, * PRTL_CRITICAL_SECTION;
+#pragma pack(pop)
+
+typedef struct _RTL_RESOURCE
+{
+	RTL_CRITICAL_SECTION Lock;
+	HANDLE SharedSemaphore;
+	ULONG SharedWaiters;
+	HANDLE ExclusiveSemaphore;
+	ULONG ExclusiveWaiters;
+	LONG NumberActive;
+	HANDLE OwningThread;
+	ULONG TimeoutBoost;
+	PVOID DebugInfo;
+} RTL_RESOURCE, * PRTL_RESOURCE;
+
 typedef struct _LSASRV_CREDENTIALS {
-	struct _LSASRV_CREDENTIALS* Flink;
-	struct _LSASRV_CREDENTIALS* Blink;
-	PVOID unk0;
-	ULONG unk1; // 0FFFFFFFFh
-	PVOID unk2; // 0
-	ULONG unk3; // 0
-	ULONG unk4; // 0
-	ULONG unk5; // 0A0007D0h
-	HANDLE hSemaphore6; // 0F9Ch
-	PVOID unk7; // 0
-	HANDLE hSemaphore8; // 0FB8h
-	PVOID unk9; // 0
-	PVOID unk10; // 0
-	ULONG unk11; // 0
-	ULONG unk12; // 0 
-	PVOID unk13; // unk_2C0A28
-	LUID LocallyUniqueIdentifier;
-	LUID SecondaryLocallyUniqueIdentifier;
-	UCHAR waza[12]; // to do (maybe align)
+	LIST_ENTRY Entry;
+	RTL_RESOURCE Resource;
+	LUID LogonId;
+	LUID SecondaryLogonId;
+	UCHAR pad[12];
 	LSA_UNICODE_STRING UserName;
 	LSA_UNICODE_STRING Domain;
 	PVOID unk14;
@@ -1067,7 +1079,7 @@ typedef struct _LSASRV_CREDENTIALS {
 	ULONG LogonType;
 	PVOID unk18;
 	ULONG Session;
-	LARGE_INTEGER LogonTime; // autoalign x86
+	LARGE_INTEGER LogonTime;
 	LSA_UNICODE_STRING LogonServer;
 	PMSV1_0_CREDENTIALS Credentials;
 	PVOID unk19;
@@ -1083,6 +1095,61 @@ typedef struct _LSASRV_CREDENTIALS {
 	PVOID unk29;
 	PVOID CredentialManager;
 } LSASRV_CREDENTIALS, * PLSASRV_CREDENTIALS;
+
+typedef struct _LSASRV_CREDENTIALS_WIN23H2 {
+	LIST_ENTRY      Entry;
+	RTL_RESOURCE	Resource;
+	LUID            LogonId;
+	LUID            SecondaryLogonId;
+	UCHAR           unk14[32];
+	UNICODE_STRING  UserName;
+	UNICODE_STRING  Domain;
+	PVOID           unk15;
+	PVOID           unk16;
+	UNICODE_STRING  Type;
+	PSID            Sid;
+	ULONG           LogonType;
+	ULONG           _pad2;
+	PVOID           unk18;
+	ULONG           Session;
+	ULONG           _pad3;
+	LARGE_INTEGER   LogonTime;
+	UNICODE_STRING  LogonServer;
+	PMSV1_0_CREDENTIALS Credentials;
+	PVOID           unk19;
+	PVOID           unk20;
+	ULONG 		    unk21;
+	ULONG 			_pad4;
+	ULONG           unk22;
+	ULONG           unk23;
+	LARGE_INTEGER   unk24;
+	ULONG           unk25;
+	ULONG           _pad5;
+	PVOID           unk26;
+	PVOID           unk27;
+	ULONG           unk28;
+	ULONG           _pad6;
+	PVOID           unk29;
+	PVOID           CredentialManager;
+	ULONG           unk31;
+	ULONG           _pad7;
+	ULONG           unk32;
+	ULONG           _pad8;
+	PVOID           unk33;
+	PVOID           unk34;
+	PVOID           LsapDsNameMap;
+	PVOID           unk36;
+	UCHAR            unk37[0x98];
+	ULONG           Flags;
+	ULONG           _pad9;
+	UCHAR            unk38[0x48];
+	LARGE_INTEGER   ExpirationTime;
+	LARGE_INTEGER   unk39;
+	LARGE_INTEGER   PasswordLastSet;
+	LARGE_INTEGER   PasswordCanChange;
+	LARGE_INTEGER   PasswordMustChange;
+	ULONG           unk40;
+} LSASRV_CREDENTIALS_WIN23H2, * PLSASRV_CREDENTIALS_WIN23H2;
 
 typedef struct _HARD_KEY {
 	ULONG cbSecret;

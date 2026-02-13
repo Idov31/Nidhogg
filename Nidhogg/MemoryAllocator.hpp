@@ -123,7 +123,7 @@ public:
 	}
 
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool Realloc(_Inout_ DataType data, _In_ SIZE_T size) {
+	bool Realloc(_In_ SIZE_T size) {
 		if (allocatedData)
 			Free();
 		return Alloc(size);

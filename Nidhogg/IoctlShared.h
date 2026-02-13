@@ -133,6 +133,18 @@ struct IoctlCredentialsInformation {
 	KeyInformation Iv;
 };
 
+struct IoctlCredentialsSize {
+	ULONG UsernameAllocSize;
+	ULONG DomainAllocSize;
+	ULONG EncryptedHashAllocSize;
+};
+
+struct IoctlCredentialsInfoSize {
+	SIZE_T CredentialsCount;
+	SIZE_T DesKeySize;
+	SIZE_T IvSize;
+};
+
 enum class InjectionType {
 	APCInjection,
 	CreateThreadInjection

