@@ -60,11 +60,18 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex, 
+PVOID FindPattern(_In_ Pattern pattern, 
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex, 
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[], 
+	_In_ SIZE_T patternsCount, 
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)

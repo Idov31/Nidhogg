@@ -9,7 +9,7 @@
 * @patterns		 [_In_ Pattern[]]	-- Pattern to search for.
 * @patternsCount [_In_ SIZE_T]		-- Number of patterns to search for.
 * @base			 [_In_ const PVOID] -- Base address for searching.
-* @size			 [_In_ ULONG_PTR]	-- Address range to search in.
+* @size			 [_In_ SIZE_T]		-- Address range to search in.
 * @foundIndex	 [_Out_ PULONG]		-- Index of the found signature.
 * @reversed		 [_In_ bool]		-- If want to reverse search or regular search.
 *
@@ -17,7 +17,11 @@
 * @address		 [PVOID]			-- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[],
+	_In_ SIZE_T patternsCount,
+	_In_ const PVOID base,
+	_In_ SIZE_T size,
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	PVOID address = nullptr;
 
@@ -27,13 +31,8 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 	for (SIZE_T i = 0; i < patternsCount; i++) {
 		address = FindPattern(patterns[i], base, size, foundIndex, mode);
 
-		if (address) {
-			if (!NT_SUCCESS(ProbeAddress(address, patterns[i].Length, sizeof(UCHAR)))) {
-				address = nullptr;
-				continue;
-			}
-			return address;
-		}
+		if (address)
+			break;
 	}
 	return address;
 }
@@ -44,7 +43,7 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 * Parameters:
 * @pattern	  [_In_ Pattern]	 -- Pattern to search for.
 * @base		  [_In_ const PVOID] -- Base address for searching.
-* @size		  [_In_ ULONG_PTR]	 -- Address range to search in.
+* @size		  [_In_ SIZE_T]		 -- Address range to search in.
 * @foundIndex [_Out_ PULONG]	 -- Index of the found signature.
 * @reversed	  [_In_ bool]		 -- If want to reverse search or regular search.
 *
@@ -52,7 +51,10 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 * @address	  [PVOID]			 -- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPattern(_In_ Pattern pattern,
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	bool found = false;
 
