@@ -352,38 +352,22 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 		PUCHAR searchedRoutineAddress = reinterpret_cast<PUCHAR>(CmRegisterCallback);
 		SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
 
-		PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern,
+			searchedRoutineAddress,
+			targetFunctionDistance,
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
 		// Find the function that holds the valuable information: CmpInsertCallbackInListByAltitude.
-		searchedRoutineAddress = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		searchedRoutineAddress = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CallFunctionOffset;
 		targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpInsertCallbackInListByAltitudePattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
-
-		if (!searchedRoutineOffset)
-			return STATUS_NOT_FOUND;
-
-		searchedRoutineAddress = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
-			CmpInsertCallbackInListByAltitudeOffset;
-
-		// Get CallbackListHead and CmpCallBackCount.
-		targetFunctionDistance = CallbackListHeadSignatureDistance;
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallbackListHeadPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
-
-		if (!searchedRoutineOffset)
-			return STATUS_NOT_FOUND;
-
-		PUCHAR callbacksList = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
-
-		searchedRoutineOffset = static_cast<PLONG>(FindPatterns(RoutinesListCountPatterns,
-			RoutinesListCountPatternsCount,
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpInsertCallbackInListByAltitudePattern, 
 			searchedRoutineAddress,
 			targetFunctionDistance, 
 			&foundIndex));
@@ -391,17 +375,67 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		PULONG callbacksListCount = reinterpret_cast<PULONG>(searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
-			CallbacksListCountOffset);
+		searchedRoutineAddress = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
+			CmpInsertCallbackInListByAltitudeOffset;
 
-		// Get CmpCallbackListLock.
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpCallbackListLockPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		// Get CallbackListHead and CmpCallBackCount.
+		targetFunctionDistance = CallbackListHeadSignatureDistance;
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallbackListHeadPattern, 
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		ULONG_PTR callbackListLock = reinterpret_cast<ULONG_PTR>(searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		PUCHAR callbacksList = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex + 
+			RoutinesListOffset;
+
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(RegistryCallbackListCountPattern,
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
+
+		if (!searchedRoutineOffset)
+			return STATUS_NOT_FOUND;
+
+		PULONG callbacksListCount = reinterpret_cast<PULONG>(searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
+			CallbacksListCountOffset);
+
+		// After 22H2, need to find CmpLockCallbackListExclusive.
+		if (WindowsBuildNumber >= WIN_11_22H2) {
+			searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern,
+				searchedRoutineAddress,
+				targetFunctionDistance,
+				&foundIndex));
+
+			if (!searchedRoutineOffset)
+				return STATUS_NOT_FOUND;
+
+			searchedRoutineAddress = searchedRoutineAddress +
+				*(searchedRoutineOffset) +
+				foundIndex +
+				CallFunctionOffset;
+		}
+
+		// Get CmpCallbackListLock.
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpCallbackListLockPattern, 
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
+
+		if (!searchedRoutineOffset)
+			return STATUS_NOT_FOUND;
+
+		ULONG_PTR callbackListLock = reinterpret_cast<ULONG_PTR>(searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CmpCallbackListLockOffset);
 		cmCallbacks.sigCallbackList = callbacksList;
 		cmCallbacks.sigCallbackListLock = callbackListLock;
@@ -415,18 +449,11 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 		return status;
 	}
 	if (callbacks && callbacks->Callbacks) {
-		status = ProbeAddress(callbacks->Callbacks, *cmCallbacks.sigCallbackListCount * sizeof(CmCallback),
-			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback));
-
-		if (!NT_SUCCESS(status)) {
-			callbacks->Count = *cmCallbacks.sigCallbackListCount;
-			ExReleasePushLockExclusiveEx(&cmCallbacks.sigCallbackListLock, 0);
-			return status;
-		}
 		if (!guard.GuardMemory(callbacks->Callbacks, 
-			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback), UserMode)) {
+			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback), 
+			UserMode)) {
 			ExReleasePushLockExclusiveEx(&cmCallbacks.sigCallbackListLock, 0);
-			return STATUS_INSUFFICIENT_RESOURCES;
+			return STATUS_INVALID_ADDRESS;
 		}
 	}
 	currentCallback = reinterpret_cast<PCM_CALLBACK>(cmCallbacks.sigCallbackList);

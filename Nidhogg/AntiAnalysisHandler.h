@@ -58,7 +58,7 @@ constexpr Pattern CallbackListHeadPattern = {
 	sizeof(CallbackListHeadSignature),
 	CallbackListHeadSignature,
 	0xCC,
-	sizeof(CallbackListHeadSignature) - 1,
+	sizeof(CallbackListHeadSignature),
 	false
 };
 constexpr UCHAR CmpCallbackListLockSignature[] = { 0x48, 0x8D, 0xCC };
@@ -91,6 +91,15 @@ constexpr Pattern CallFunctionPattern = {
 constexpr UCHAR RoutinesListCountSignature1[] = { 0xF0, 0xFF, 0x05, 0xCC };
 constexpr UCHAR RoutinesListCountSignature2[] = { 0x75, 0xCC, 0xF0, 0xFF, 0x05, 0xCC };
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
+
+constexpr Pattern RegistryCallbackListCountPattern = {
+	{WIN_1507, WIN_11_24H2},
+	sizeof(RoutinesListCountSignature1),
+	RoutinesListCountSignature1,
+	0xCC,
+	sizeof(RoutinesListCountSignature1) - 1,
+	false,
+};
 
 constexpr Pattern RoutinesListCountPatterns[] = {
 	{

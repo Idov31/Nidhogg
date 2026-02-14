@@ -1046,11 +1046,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<IoctlCallbackList<CmCallback>*>(Irp->AssociatedIrp.SystemBuffer);
-
-		if (!data->Callbacks) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
 		status = NidhoggAntiAnalysisHandler->ListRegistryCallbacks(data);
 
 		if (!NT_SUCCESS(status)) {
