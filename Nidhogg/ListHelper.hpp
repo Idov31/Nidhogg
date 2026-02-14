@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "AutoLock.h"
 #include "MemoryHelper.h"
 
 template<typename List>
@@ -37,6 +38,8 @@ using CleanupFunction = void(*)(_In_ ListItem* item);
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List>
 inline bool InitializeList(_Inout_ List* list) {
+	if (!list)
+		return false;
 	list->Count = 0;
 	list->Items = AllocateMemory<PLIST_ENTRY>(sizeof(LIST_ENTRY));
 
@@ -61,6 +64,8 @@ inline bool InitializeList(_Inout_ List* list) {
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
+	if (!list || !entryToAdd)
+		return;
 	InitializeListHead(&entryToAdd->Entry);
 
 	AutoLock locker(list->Lock);
@@ -80,10 +85,15 @@ inline void AddEntry(_Inout_ List* list, _In_ ListItem* entryToAdd) {
 * Returns:
 * @ListItem*						   -- Pointer to the found list item, or NULL if not found.
 */
-_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem, typename Searchable>
-inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ MatcherFunction<ListItem, Searchable> function) noexcept {
-	AutoLock locker(list.Lock);
+inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable, 
+	_In_ MatcherFunction<ListItem, Searchable> function) noexcept {
+	ListItem* currentItem = nullptr;
+
+	if (!function)
+		return NULL;
+	AutoLock locker(const_cast<FastMutex&>(list.Lock));
 
 	if (list.Count == 0)
 		return NULL;
@@ -91,13 +101,12 @@ inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ 
 
 	while (currentEntry->Flink != list.Items) {
 		currentEntry = currentEntry->Flink;
-		ListItem* item = CONTAINING_RECORD(currentEntry, ListItem, Entry);
+		currentItem = CONTAINING_RECORD(currentEntry, ListItem, Entry);
 
-		if (function(item, searchable))
-			return item;
-		currentEntry = currentEntry->Flink;
+		if (function(currentItem, searchable))
+			return currentItem;
 	}
-	return NULL;
+	return nullptr;
 }
 
 /*
@@ -114,6 +123,9 @@ inline ListItem* FindListEntry(_In_ List list, _In_ Searchable searchable, _In_ 
 _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline bool RemoveListEntry(_Inout_ List* list, _In_ ListItem* entry) {
+	if (!list || !entry)
+		return false;
+
 	AutoLock locker(list->Lock);
 	
 	if (!RemoveEntryList(&entry->Entry))
@@ -137,19 +149,27 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list) {
 	ListItem* entry = nullptr;
+	PLIST_ENTRY next = nullptr;
+
+	if (!list)
+		return;
 	AutoLock locker(list->Lock);
 
 	if (list->Count == 0 || !list->Items)
 		return;
-	PLIST_ENTRY current = list->Items->Flink;
+	PLIST_ENTRY current = list->Items;
 
-	while (current != list->Items) {
+	while (current->Flink != list->Items) {
+		current = current->Flink;
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
+		next = current->Flink;
 		RemoveEntryList(current);
 		FreeVirtualMemory(entry);
-		current = current->Flink;
+		current = next;
 	}
+
 	list->Count = 0;
+	InitializeListHead(list->Items);
 }
 
 /*
@@ -166,18 +186,63 @@ _IRQL_requires_max_(APC_LEVEL)
 template<ListType List, ListItemType ListItem>
 inline void ClearList(_Inout_ List* list, _In_ CleanupFunction<ListItem> function) {
 	ListItem* entry = nullptr;
+
+	if (!list || !function)
+		return;
 	list->Lock.Lock();
 
 	if (list->Count == 0 || !list->Items)
 		return;
-	PLIST_ENTRY current = list->Items->Flink;
+	PLIST_ENTRY current = list->Items;
 
-	while (current != list->Items) {
+	while (current->Flink != list->Items) {
+		current = current->Flink;
 		entry = CONTAINING_RECORD(current, ListItem, Entry);
 		current = current->Flink;
 		list->Lock.Unlock();
 		function(entry);
 		list->Lock.Lock();
 	}
+
 	list->Count = 0;
+	InitializeListHead(list->Items);
+	list->Lock.Unlock();
+}
+
+/*
+* Description:
+* IsValidListEntryUnsafe is responsible for checking whether the entry is null or valid (meaning not empty and has flink or blink).
+*
+* Parameters:
+* @entry [_In_ PLIST_ENTRY] -- Entry to check
+*
+* Returns:
+* @bool						-- True if invalid, else false
+*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+inline bool IsValidListEntryUnsafe(_In_ PLIST_ENTRY entry) {
+	return entry && (entry->Blink != NULL && entry->Flink != NULL) && !IsListEmpty(entry);
+}
+
+/*
+* Description:
+* IsValidListEntry is responsible for checking whether the entry is null or valid (meaning not empty and has flink or blink).
+* 
+* Parameters:
+* @entry [_In_ PLIST_ENTRY] -- Entry to check
+* 
+* Returns:
+* @bool						-- True if invalid, else false
+*/
+_IRQL_requires_max_(APC_LEVEL)
+inline bool IsValidListEntry(_In_ PLIST_ENTRY entry) {
+	bool invalid = false;
+
+	__try {
+		invalid = IsValidListEntryUnsafe(entry);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		invalid = true;
+	}
+	return invalid;
 }

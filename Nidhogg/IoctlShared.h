@@ -120,22 +120,34 @@ struct KeyInformation {
 	PVOID Data;
 };
 
-struct Credentials {
+struct IoctlCredentials {
 	UNICODE_STRING Username;
 	UNICODE_STRING Domain;
 	UNICODE_STRING EncryptedHash;
 };
 
-struct IoctlCredentials {
+struct IoctlCredentialsInformation {
 	SIZE_T Count;
-	Credentials* Creds;
+	IoctlCredentials* Creds;
 	KeyInformation DesKey;
 	KeyInformation Iv;
 };
 
+struct IoctlCredentialsSize {
+	ULONG UsernameAllocSize;
+	ULONG DomainAllocSize;
+	ULONG EncryptedHashAllocSize;
+};
+
+struct IoctlCredentialsInfoSize {
+	SIZE_T CredentialsCount;
+	SIZE_T DesKeySize;
+	SIZE_T IvSize;
+};
+
 enum class InjectionType {
 	APCInjection,
-	NtCreateThreadExInjection
+	CreateThreadInjection
 };
 
 struct IoctlDllInfo {
@@ -208,7 +220,7 @@ enum class ProcessType {
 
 struct IoctlProcessEntry {
 	unsigned long Pid;
-	bool Remove;
+	bool Protect;
 };
 
 struct IoctlProcessSignature {
@@ -251,7 +263,7 @@ enum class ThreadType {
 
 struct IoctlThreadEntry {
 	unsigned long Tid;
-	bool Remove;
+	bool Protect;
 };
 
 struct IoctlThreadList {

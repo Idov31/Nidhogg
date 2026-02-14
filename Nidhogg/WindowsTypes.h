@@ -1,10 +1,6 @@
 #pragma once
 #include "pch.h"
 
-// Globals
-inline ULONG WindowsBuildNumber = 0;
-inline PVOID AllocatePool2 = NULL;
-
 // Documented.
 constexpr ULONG64 WIN_1507 = 10240;
 constexpr ULONG64 WIN_1511 = 10586;
@@ -24,7 +20,9 @@ constexpr ULONG64 WIN_11_21H2 = 22000;
 constexpr ULONG64 WIN_11_22H2 = 22621;
 constexpr ULONG64 WIN_11_23H2 = 22631;
 constexpr ULONG64 WIN_11_24H2 = 26100;
+constexpr ULONG64 WIN_11_25H2 = 26200;
 constexpr ULONG64 LATEST_VERSION = WIN_11_24H2;
+constexpr ULONG64 SUPPORTED_VERSIONS_COUNT = 19;
 
 constexpr USHORT IMAGE_DOS_SIGNATURE = 0x5A4D;
 constexpr ULONG IMAGE_NT_SIGNATURE = 0x00004550;
@@ -115,7 +113,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
 } IMAGE_OPTIONAL_HEADER, * PIMAGE_OPTIONAL_HEADER;
 
 typedef struct _FULL_IMAGE_NT_HEADERS {
-	DWORD Signature;
+	ULONG Signature;
 	IMAGE_FILE_HEADER FileHeader;
 	IMAGE_OPTIONAL_HEADER OptionalHeader;
 } FULL_IMAGE_NT_HEADERS, * PFULL_IMAGE_NT_HEADERS;
@@ -662,6 +660,11 @@ typedef struct _OB_CALLBACK {
 	WCHAR AltitudeBuffer[1];
 } OB_CALLBACK;
 
+typedef struct _PS_ROUTINE {
+	ULONG64 RoutineAddress;
+	DWORD RoutineFlags;
+} PS_ROUTINE, * PPS_ROUTINE;
+
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {
 	HANDLE Section;
@@ -1037,30 +1040,41 @@ typedef struct _PRIMARY_CREDENTIALS {
 
 typedef struct _MSV1_0_CREDENTIALS {
 	struct _MSV1_0_CREDENTIALS* next;
-	DWORD AuthenticationPackageId;
+	ULONG AuthenticationPackageId;
 	PPRIMARY_CREDENTIALS PrimaryCredentials;
 } MSV1_0_CREDENTIALS, * PMSV1_0_CREDENTIALS;
 
+#pragma pack(push, 8)
+typedef struct _RTL_CRITICAL_SECTION
+{
+	PVOID DebugInfo;
+	LONG LockCount;
+	LONG RecursionCount;
+	HANDLE OwningThread;
+	HANDLE LockSemaphore;
+	ULONG_PTR SpinCount;
+} RTL_CRITICAL_SECTION, * PRTL_CRITICAL_SECTION;
+#pragma pack(pop)
+
+typedef struct _RTL_RESOURCE
+{
+	RTL_CRITICAL_SECTION Lock;
+	HANDLE SharedSemaphore;
+	ULONG SharedWaiters;
+	HANDLE ExclusiveSemaphore;
+	ULONG ExclusiveWaiters;
+	LONG NumberActive;
+	HANDLE OwningThread;
+	ULONG TimeoutBoost;
+	PVOID DebugInfo;
+} RTL_RESOURCE, * PRTL_RESOURCE;
+
 typedef struct _LSASRV_CREDENTIALS {
-	struct _LSASRV_CREDENTIALS* Flink;
-	struct _LSASRV_CREDENTIALS* Blink;
-	PVOID unk0;
-	ULONG unk1; // 0FFFFFFFFh
-	PVOID unk2; // 0
-	ULONG unk3; // 0
-	ULONG unk4; // 0
-	ULONG unk5; // 0A0007D0h
-	HANDLE hSemaphore6; // 0F9Ch
-	PVOID unk7; // 0
-	HANDLE hSemaphore8; // 0FB8h
-	PVOID unk9; // 0
-	PVOID unk10; // 0
-	ULONG unk11; // 0
-	ULONG unk12; // 0 
-	PVOID unk13; // unk_2C0A28
-	LUID LocallyUniqueIdentifier;
-	LUID SecondaryLocallyUniqueIdentifier;
-	UCHAR waza[12]; // to do (maybe align)
+	LIST_ENTRY Entry;
+	RTL_RESOURCE Resource;
+	LUID LogonId;
+	LUID SecondaryLogonId;
+	UCHAR pad[12];
 	LSA_UNICODE_STRING UserName;
 	LSA_UNICODE_STRING Domain;
 	PVOID unk14;
@@ -1070,7 +1084,7 @@ typedef struct _LSASRV_CREDENTIALS {
 	ULONG LogonType;
 	PVOID unk18;
 	ULONG Session;
-	LARGE_INTEGER LogonTime; // autoalign x86
+	LARGE_INTEGER LogonTime;
 	LSA_UNICODE_STRING LogonServer;
 	PMSV1_0_CREDENTIALS Credentials;
 	PVOID unk19;
@@ -1086,6 +1100,61 @@ typedef struct _LSASRV_CREDENTIALS {
 	PVOID unk29;
 	PVOID CredentialManager;
 } LSASRV_CREDENTIALS, * PLSASRV_CREDENTIALS;
+
+typedef struct _LSASRV_CREDENTIALS_WIN23H2 {
+	LIST_ENTRY      Entry;
+	RTL_RESOURCE	Resource;
+	LUID            LogonId;
+	LUID            SecondaryLogonId;
+	UCHAR           unk14[32];
+	UNICODE_STRING  UserName;
+	UNICODE_STRING  Domain;
+	PVOID           unk15;
+	PVOID           unk16;
+	UNICODE_STRING  Type;
+	PSID            Sid;
+	ULONG           LogonType;
+	ULONG           _pad2;
+	PVOID           unk18;
+	ULONG           Session;
+	ULONG           _pad3;
+	LARGE_INTEGER   LogonTime;
+	UNICODE_STRING  LogonServer;
+	PMSV1_0_CREDENTIALS Credentials;
+	PVOID           unk19;
+	PVOID           unk20;
+	ULONG 		    unk21;
+	ULONG 			_pad4;
+	ULONG           unk22;
+	ULONG           unk23;
+	LARGE_INTEGER   unk24;
+	ULONG           unk25;
+	ULONG           _pad5;
+	PVOID           unk26;
+	PVOID           unk27;
+	ULONG           unk28;
+	ULONG           _pad6;
+	PVOID           unk29;
+	PVOID           CredentialManager;
+	ULONG           unk31;
+	ULONG           _pad7;
+	ULONG           unk32;
+	ULONG           _pad8;
+	PVOID           unk33;
+	PVOID           unk34;
+	PVOID           LsapDsNameMap;
+	PVOID           unk36;
+	UCHAR            unk37[0x98];
+	ULONG           Flags;
+	ULONG           _pad9;
+	UCHAR            unk38[0x48];
+	LARGE_INTEGER   ExpirationTime;
+	LARGE_INTEGER   unk39;
+	LARGE_INTEGER   PasswordLastSet;
+	LARGE_INTEGER   PasswordCanChange;
+	LARGE_INTEGER   PasswordMustChange;
+	ULONG           unk40;
+} LSASRV_CREDENTIALS_WIN23H2, * PLSASRV_CREDENTIALS_WIN23H2;
 
 typedef struct _HARD_KEY {
 	ULONG cbSecret;
@@ -1200,7 +1269,7 @@ typedef NTSTATUS(NTAPI* tIoCreateDriver)(
 	PUNICODE_STRING DriverName,
 	PDRIVER_INITIALIZE InitializationFunction);
 
-typedef DWORD(NTAPI* PTHREAD_START_ROUTINE)(
+typedef ULONG(NTAPI* PTHREAD_START_ROUTINE)(
 	PVOID lpThreadParameter);
 
 typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
@@ -1210,7 +1279,7 @@ typedef NTSTATUS(NTAPI* tNtCreateThreadEx)(
 	HANDLE ProcessHandle,
 	PTHREAD_START_ROUTINE lpStartAddress,
 	PVOID lpParameter,
-	DWORD Flags,
+	ULONG Flags,
 	SIZE_T StackZeroBits,
 	SIZE_T SizeOfStackCommit,
 	SIZE_T SizeOfStackReserve,
@@ -1221,6 +1290,12 @@ typedef PVOID(NTAPI* tExAllocatePool2)(
 	SIZE_T     NumberOfBytes,
 	ULONG      Tag
 	);
+
+typedef _Function_class_(USER_THREAD_START_ROUTINE)
+NTSTATUS NTAPI USER_THREAD_START_ROUTINE(
+	_In_ PVOID ThreadParameter
+);
+typedef USER_THREAD_START_ROUTINE* PUSER_THREAD_START_ROUTINE;
 
 extern "C" {
 	PVOID NTAPI PsGetCurrentProcessWow64Process();
@@ -1283,5 +1358,20 @@ extern "C" {
 	RtlFindExportedRoutineByName(
 		_In_ PVOID ImageBase,
 		_In_ PCCH RoutineName
+	);
+
+	NTSTATUS
+	NTAPI
+	RtlCreateUserThread(
+		_In_ HANDLE ProcessHandle,
+		_In_opt_ PSECURITY_DESCRIPTOR ThreadSecurityDescriptor,
+		_In_ BOOLEAN CreateSuspended,
+		_In_opt_ ULONG ZeroBits,
+		_In_opt_ SIZE_T MaximumStackSize,
+		_In_opt_ SIZE_T CommittedStackSize,
+		_In_ PUSER_THREAD_START_ROUTINE StartAddress,
+		_In_opt_ PVOID Parameter,
+		_Out_opt_ PHANDLE ThreadHandle,
+		_Out_opt_ PCLIENT_ID ClientId
 	);
 }

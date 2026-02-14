@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "CommandHandler.h"
+#include "ProcessHelper.h"
 
 class ProcessHandlerException : public std::runtime_error {
 private:
@@ -22,9 +23,10 @@ private:
 	std::vector<DWORD> ListProcesses(_In_ ProcessType type);
 	bool ClearProcesses(_In_ ProcessType type);
 	bool CheckInput(_In_ const std::vector<std::string>& params);
+	DWORD testHiddenProcessPid;
 
 public:
-	ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Process", hNidhogg) {};
+	ProcessHandler(_In_ std::shared_ptr<HANDLE> hNidhogg);
 
 	void PrintHelp() override {
 		std::cout << termcolor::bright_magenta << termcolor::underline << "Options:" << termcolor::reset << std::endl;

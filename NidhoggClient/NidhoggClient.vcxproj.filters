@@ -48,6 +48,9 @@
     <ClCompile Include="NidhoggInterface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ProcessHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -89,13 +92,16 @@
     <ClInclude Include="Convertor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PathHelper.hpp">
+    <ClInclude Include="FileHelper.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="NidhoggClient.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="WindowsTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcessHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

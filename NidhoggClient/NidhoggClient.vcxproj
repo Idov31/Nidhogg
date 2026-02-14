@@ -105,6 +105,8 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,8 +145,10 @@
     <ClCompile Include="NidhoggInterface.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="ProcessHandler.cpp" />
+    <ClCompile Include="ProcessHelper.cpp" />
     <ClCompile Include="RegistryHandler.cpp" />
     <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
@@ -158,9 +162,10 @@
     <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggClient.h" />
     <ClInclude Include="NidhoggInterface.h" />
-    <ClInclude Include="PathHelper.hpp" />
+    <ClInclude Include="FileHelper.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHandler.h" />
+    <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="RegistryHandler.h" />
     <ClInclude Include="SafeMemory.hpp" />
     <ClInclude Include="ThreadHandler.h" />

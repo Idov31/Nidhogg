@@ -56,7 +56,10 @@ ULONG FindPidByName(_In_ const wchar_t* processName) {
 	}
 
 	FreeVirtualMemory(originalInfo);
-	return status;
+
+	if (!pid)
+		ExRaiseStatus(STATUS_NOT_FOUND);
+	return pid;
 }
 
 /*

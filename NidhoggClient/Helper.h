@@ -3,7 +3,7 @@
 #include "pch.h"
 #include "SafeMemory.hpp"
 #include "Convertor.hpp"
-#include "PathHelper.hpp"
+#include "FileHelper.hpp"
 
 constexpr DWORD SYSTEM_PID = 4;
 

@@ -14,6 +14,8 @@ ThreadHandler::ThreadHandler() {
 
 _IRQL_requires_max_(APC_LEVEL)
 ThreadHandler::~ThreadHandler() {
+	IrqlGuard guard;
+	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearThreadList(ThreadType::All);
 	FreeVirtualMemory(this->protectedThreads.Items);
 	FreeVirtualMemory(this->hiddenThreads.Items);
@@ -110,6 +112,7 @@ NTSTATUS ThreadHandler::HideThread(_In_ ULONG tid) {
 	if (NT_SUCCESS(status)) {
 		thread.OriginalEntry = threadListEntry;
 		thread.Tid = tid;
+		thread.Pid = HandleToULong(owningPid);
 		status = AddHiddenThread(thread) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 	}
 	ExReleasePushLockExclusive(listLock);
@@ -148,7 +151,7 @@ NTSTATUS ThreadHandler::UnhideThread(_In_ ULONG tid) {
 	if (threadListHeadOffset == 0 || lockOffset == 0)
 		return STATUS_NOT_FOUND;
 
-	status = PsLookupProcessByProcessId(UlongToHandle(thread->Tid), &owningProcess);
+	status = PsLookupProcessByProcessId(UlongToHandle(thread->Pid), &owningProcess);
 
 	// As backup, if the previous owning process is not found attach the thread to explorer.
 	if (!NT_SUCCESS(status)) {
@@ -255,6 +258,9 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		ProtectedThreadEntry* entry = FindListEntry<ThreadList, ProtectedThreadEntry, ULONG>(protectedThreads, tid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ThreadList, ProtectedThreadEntry>(&protectedThreads, entry);
 	}
 
@@ -263,6 +269,9 @@ bool ThreadHandler::RemoveThread(_In_ ULONG tid, _In_ ThreadType type) {
 			return item->Tid == tid;
 			};
 		HiddenThreadEntry* entry = FindListEntry<ThreadList, HiddenThreadEntry, ULONG>(hiddenThreads, tid, finder);
+
+		if (!entry)
+			return false;
 		return RemoveListEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, entry);
 	}
 	default:
@@ -308,15 +317,19 @@ bool ThreadHandler::ProtectThread(_In_ ULONG tid) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool ThreadHandler::AddHiddenThread(_In_ HiddenThreadEntry thread) {
-	if (thread.Tid == 0 || !thread.OriginalEntry)
+	if (thread.Tid == 0 || thread.Pid <= SYSTEM_PROCESS_PID || !thread.OriginalEntry)
 		return false;
 
-	if (FindThread(thread.Tid, ThreadType::Protected))
+	if (FindThread(thread.Tid, ThreadType::Hidden))
 		return false;
 	HiddenThreadEntry* newEntry = AllocateMemory<HiddenThreadEntry*>(sizeof(HiddenThreadEntry));
 
 	if (!newEntry)
 		return false;
+	newEntry->Tid = thread.Tid;
+	newEntry->Pid = thread.Pid;
+	newEntry->OriginalEntry = thread.OriginalEntry;
+	
 	AddEntry<ThreadList, HiddenThreadEntry>(&hiddenThreads, newEntry);
 	return true;
 }
@@ -335,7 +348,6 @@ _IRQL_requires_max_(APC_LEVEL)
 bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 	PLIST_ENTRY currentEntry = nullptr;
 	SIZE_T count = 0;
-	NTSTATUS status = STATUS_SUCCESS;
 
 	if (!threadList)
 		return false;
@@ -360,22 +372,8 @@ bool ThreadHandler::ListProtectedThreads(_Inout_ IoctlThreadList* threadList) {
 		currentEntry = currentEntry->Flink;
 		ProtectedThreadEntry* item = CONTAINING_RECORD(currentEntry, ProtectedThreadEntry, Entry);
 
-		if (item) {
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&item->Tid,
-				PsGetCurrentProcess(),
-				&threadList->Threads[count],
-				sizeof(ULONG),
-				UserMode,
-				nullptr
-			);
-
-			if (!NT_SUCCESS(status)) {
-				threadList->Count = count;
-				return false;
-			}
-		}
+		if (item)
+			threadList->Threads[count] = item->Tid;
 		count++;
 		currentEntry = currentEntry->Flink;
 	}

@@ -1,6 +1,23 @@
 #pragma once
 #include "pch.h"
 
+template <typename Ptr>
+concept RegularPointerType = requires(Ptr ptr) {
+	ptr != nullptr;
+	sizeof(ptr) == sizeof(PVOID);
+	*ptr;
+	std::is_convertible<Ptr, PVOID>::value;
+};
+
+template <typename Ptr>
+concept VoidPointerType = requires(Ptr ptr) {
+	ptr != nullptr;
+	std::is_same_v<Ptr, PVOID>;
+};
+
+template <typename Ptr>
+concept PointerType = RegularPointerType<Ptr> || VoidPointerType<Ptr>;
+
 class SafeMemoryException : public std::runtime_error
 {
 	std::string msg;
@@ -23,7 +40,8 @@ public:
 * Returns:
 * There is no return value.
 */
-inline void SafeFree(_Inout_opt_ PVOID ptr) {
+template<PointerType Pointer>
+inline void SafeFree(_Inout_opt_ Pointer ptr) {
 	if (ptr) {
 		free(ptr);
 		ptr = nullptr;
@@ -40,9 +58,9 @@ inline void SafeFree(_Inout_opt_ PVOID ptr) {
 * Returns:
 * @ptr  [PVOID] -- The pointer to the allocated memory.
 */
-template<typename Ptr>
-inline Ptr SafeAlloc(_In_ SIZE_T size) {
-	Ptr ptr = reinterpret_cast<Ptr>(malloc(size));
+template<PointerType Pointer>
+inline Pointer SafeAlloc(_In_ SIZE_T size) {
+	Pointer ptr = reinterpret_cast<Pointer>(malloc(size));
 
 	if (!ptr)
 		throw SafeMemoryException("Failed to allocate memory");

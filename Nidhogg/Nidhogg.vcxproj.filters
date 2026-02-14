@@ -127,6 +127,9 @@
     <ClInclude Include="IoctlShared.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="IrqlGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FastMutex.cpp">

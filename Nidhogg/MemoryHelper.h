@@ -4,13 +4,21 @@
 extern "C" {
 	#include "WindowsTypes.h"
 }
+#include "IrqlGuard.h"
 #include "ProcessHelper.h"
+#include "FileHelper.h"
 #include "MemoryAllocator.hpp"
 #include "NidhoggCommon.h"
 
 struct VersionRange {
 	ULONG MinVersion;
 	ULONG MaxVersion;
+};
+
+struct PatternOffset {
+	ULONG MinVersion;
+	ULONG MaxVersion;
+	LONG Offset;
 };
 
 struct Pattern {
@@ -20,6 +28,17 @@ struct Pattern {
 	UCHAR Wildcard;
 	LONG RelativeOffset;
 	bool Reversed;
+	ULONG OffsetsCount;
+	PatternOffset Offsets[SUPPORTED_VERSIONS_COUNT];
+
+	LONG GetOffsetForVersion(ULONG version) const {
+		for (ULONG i = 0; i < OffsetsCount; i++) {
+			if (version >= Offsets[i].MinVersion && version <= Offsets[i].MaxVersion) {
+				return Offsets[i].Offset;
+			}
+		}
+		return 0;
+	}
 };
 
 constexpr SIZE_T RETURN_OPCODE = 0xC3;
@@ -30,7 +49,7 @@ constexpr UCHAR SsdtSignature[] = { 0x4C, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0xCC, 0x
 
 constexpr Pattern SsdtPattern = {
 	{WIN_1507, WIN_11_24H2},
-	15,
+	sizeof(SsdtSignature),
 	SsdtSignature,
 	0xCC,
 	3,
@@ -41,11 +60,18 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment);
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPattern(_In_ Pattern pattern, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex, 
+PVOID FindPattern(_In_ Pattern pattern, 
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex, 
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)
-PVOID FindPatterns(_In_ const Pattern patterns[], _In_ SIZE_T patternsCount, _In_ const PVOID& base, _In_ ULONG_PTR size, _Out_opt_ PULONG foundIndex,
+PVOID FindPatterns(_In_ const Pattern patterns[], 
+	_In_ SIZE_T patternsCount, 
+	_In_ const PVOID base, 
+	_In_ SIZE_T size, 
+	_Out_opt_ PULONG foundIndex,
 	_In_ KPROCESSOR_MODE mode = KernelMode) noexcept;
 
 _IRQL_requires_max_(APC_LEVEL)

