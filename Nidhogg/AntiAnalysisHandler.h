@@ -17,34 +17,44 @@ constexpr UCHAR EtwThreatIntProvRegHandleSignature4[] = { 0x4C, 0x8B, 0x15, 0xCC
 
 constexpr Pattern EtwThreatIntProvRegHandlePatterns[] = {
 	{
-		{WIN_1507, WIN_11_24H2},
+		{WIN_1507, WIN_11_22H2},
 		sizeof(EtwThreatIntProvRegHandleSignature1),
 		EtwThreatIntProvRegHandleSignature1,
 		0xCC,
-		sizeof(EtwThreatIntProvRegHandleSignature1),
-		false
+		sizeof(EtwThreatIntProvRegHandleSignature1) - 1,
+		false,
+		1,
+		{WIN_1507, WIN_11_22H2, 8}
 	},
 	{
-		{WIN_1507, WIN_11_24H2},
+		{WIN_1507, WIN_11_22H2},
 		sizeof(EtwThreatIntProvRegHandleSignature2),
 		EtwThreatIntProvRegHandleSignature2,
 		0xCC,
-		sizeof(EtwThreatIntProvRegHandleSignature2),
-		false
+		sizeof(EtwThreatIntProvRegHandleSignature2) - 1,
+		false,
+		1,
+		{WIN_1507, WIN_11_22H2, 8}
 	},
 	{
-		{WIN_1507, WIN_11_24H2},
+		{WIN_1507, WIN_11_22H2},
 		sizeof(EtwThreatIntProvRegHandleSignature3),
 		EtwThreatIntProvRegHandleSignature3,
 		0xCC,
-		false
+		sizeof(EtwThreatIntProvRegHandleSignature3) - 1,
+		false,
+		1,
+		{WIN_1507, WIN_11_22H2, 8}
 	},
 	{
-		{WIN_1507, WIN_11_24H2},
+		{WIN_11_22H2, WIN_11_24H2},
 		sizeof(EtwThreatIntProvRegHandleSignature4),
 		EtwThreatIntProvRegHandleSignature4,
 		0xCC,
-		false
+		sizeof(EtwThreatIntProvRegHandleSignature4) - 1,
+		false,
+		1,
+		{WIN_11_22H2, WIN_11_24H2, 7}
 	}
 };
 constexpr SIZE_T EtwThreatIntProvRegHandlePatternsCount = sizeof(EtwThreatIntProvRegHandlePatterns) / sizeof(Pattern);
@@ -137,7 +147,6 @@ constexpr SIZE_T PsSetLoadImageNotifyRoutineExDistance = 0xF;
 constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xAA820;
 constexpr SIZE_T PspCreateThreadNotifyRoutineDistance = 0x9B;
 constexpr SIZE_T PspLoadImageNotifyRoutineDistance = 0x10B;
-constexpr SIZE_T EtwThreatIntProvRegHandleOffset = 8;
 constexpr SIZE_T CallFunctionOffset = 5;
 constexpr SIZE_T CmpInsertCallbackInListByAltitudeOffset = 7;
 constexpr SIZE_T CmpCallbackListLockOffset = 7;

