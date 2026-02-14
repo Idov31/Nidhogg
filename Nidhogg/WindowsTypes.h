@@ -660,6 +660,11 @@ typedef struct _OB_CALLBACK {
 	WCHAR AltitudeBuffer[1];
 } OB_CALLBACK;
 
+typedef struct _PS_ROUTINE {
+	ULONG64 RoutineAddress;
+	DWORD RoutineFlags;
+} PS_ROUTINE, * PPS_ROUTINE;
+
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {
 	HANDLE Section;

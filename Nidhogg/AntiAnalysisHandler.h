@@ -16,28 +16,36 @@ constexpr UCHAR EtwThreatIntProvRegHandleSignature3[] = { 0x70, 0x48, 0x8B, 0xCC
 constexpr UCHAR EtwThreatIntProvRegHandleSignature4[] = { 0x4C, 0x8B, 0x15, 0xCC };
 
 constexpr Pattern EtwThreatIntProvRegHandlePatterns[] = {
-	{{WIN_1507, WIN_11_24H2},
-	sizeof(EtwThreatIntProvRegHandleSignature1),
-	EtwThreatIntProvRegHandleSignature1,
-	0xCC,
-	sizeof(EtwThreatIntProvRegHandleSignature1),
-	false},
-	{{WIN_1507, WIN_11_24H2},
-	sizeof(EtwThreatIntProvRegHandleSignature2),
-	EtwThreatIntProvRegHandleSignature2,
-	0xCC,
-	sizeof(EtwThreatIntProvRegHandleSignature2),
-	false},
-	{{WIN_1507, WIN_11_24H2},
-	sizeof(EtwThreatIntProvRegHandleSignature3),
-	EtwThreatIntProvRegHandleSignature3,
-	0xCC,
-	false},
-	{{WIN_1507, WIN_11_24H2},
-	sizeof(EtwThreatIntProvRegHandleSignature4),
-	EtwThreatIntProvRegHandleSignature4,
-	0xCC,
-	false}
+	{
+		{WIN_1507, WIN_11_24H2},
+		sizeof(EtwThreatIntProvRegHandleSignature1),
+		EtwThreatIntProvRegHandleSignature1,
+		0xCC,
+		sizeof(EtwThreatIntProvRegHandleSignature1),
+		false
+	},
+	{
+		{WIN_1507, WIN_11_24H2},
+		sizeof(EtwThreatIntProvRegHandleSignature2),
+		EtwThreatIntProvRegHandleSignature2,
+		0xCC,
+		sizeof(EtwThreatIntProvRegHandleSignature2),
+		false
+	},
+	{
+		{WIN_1507, WIN_11_24H2},
+		sizeof(EtwThreatIntProvRegHandleSignature3),
+		EtwThreatIntProvRegHandleSignature3,
+		0xCC,
+		false
+	},
+	{
+		{WIN_1507, WIN_11_24H2},
+		sizeof(EtwThreatIntProvRegHandleSignature4),
+		EtwThreatIntProvRegHandleSignature4,
+		0xCC,
+		false
+	}
 };
 constexpr SIZE_T EtwThreatIntProvRegHandlePatternsCount = sizeof(EtwThreatIntProvRegHandlePatterns) / sizeof(Pattern);
 
@@ -80,15 +88,34 @@ constexpr Pattern CallFunctionPattern = {
 	sizeof(CallFunctionSignature) - 1,
 	false
 };
-constexpr UCHAR RoutinesListCountSignature[] = { 0xF0, 0xFF, 0x05, 0xCC };
-constexpr Pattern RoutinesListCountPattern = {
-	{WIN_1507, WIN_11_24H2},
-	sizeof(RoutinesListCountSignature),
-	RoutinesListCountSignature,
-	0xCC,
-	sizeof(RoutinesListCountSignature) - 1,
-	false
+constexpr UCHAR RoutinesListCountSignature1[] = { 0xF0, 0xFF, 0x05, 0xCC };
+constexpr UCHAR RoutinesListCountSignature2[] = { 0x75, 0xCC, 0xF0, 0xFF, 0x05, 0xCC };
+constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
+
+constexpr Pattern RoutinesListCountPatterns[] = {
+	{
+		{WIN_1507, WIN_11_22H2},
+		sizeof(RoutinesListCountSignature1),
+		RoutinesListCountSignature1,
+		0xCC,
+		sizeof(RoutinesListCountSignature1) - 1,
+		false,
+		1,
+		{WIN_1507, WIN_11_22H2, PsNotifyRoutinesRoutineCountOffset}
+	},
+	{
+		{WIN_11_22H2, WIN_11_24H2},
+		sizeof(RoutinesListCountSignature2),
+		RoutinesListCountSignature2,
+		0xCC,
+		sizeof(RoutinesListCountSignature2) - 1,
+		false,
+		1,
+		{WIN_11_22H2, WIN_11_24H2, -3}
+	}
 };
+constexpr SIZE_T RoutinesListCountPatternsCount = sizeof(RoutinesListCountPatterns) / sizeof(Pattern);
+
 constexpr SIZE_T EtwThreatIntProvRegHandleDistance = 0x29D;
 constexpr SIZE_T EtwGuidEntryOffset = 0x20;
 constexpr SIZE_T CallbackListHeadSignatureDistance = 0xC4;
@@ -98,7 +125,7 @@ constexpr SIZE_T CmpRegisterCallbackInternalSignatureDistance = 0x22;
 constexpr SIZE_T PspSetCreateProcessNotifyRoutineSignatureDistance = 0x20;
 constexpr SIZE_T PspSetCreateThreadNotifyRoutineSignatureDistance = 0xF;
 constexpr SIZE_T PsSetLoadImageNotifyRoutineExDistance = 0xF;
-constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xC3;
+constexpr SIZE_T PspCreateProcessNotifyRoutineDistance = 0xAA820;
 constexpr SIZE_T PspCreateThreadNotifyRoutineDistance = 0x9B;
 constexpr SIZE_T PspLoadImageNotifyRoutineDistance = 0x10B;
 constexpr SIZE_T EtwThreatIntProvRegHandleOffset = 8;
@@ -107,7 +134,6 @@ constexpr SIZE_T CmpInsertCallbackInListByAltitudeOffset = 7;
 constexpr SIZE_T CmpCallbackListLockOffset = 7;
 constexpr SIZE_T CallbacksListCountOffset = 7;
 constexpr SIZE_T RoutinesListOffset = 7;
-constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 constexpr ULONG MAX_ROUTINES = 64;
 constexpr SIZE_T ROUTINE_MASK = ~(1ULL << 3) + 1;
 
@@ -168,11 +194,13 @@ private:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCallbackList<PsRoutine>* callbacks = nullptr, 
-		_In_opt_ ULONG64 replacerFunction = 0, _In_opt_ ULONG64 replacedFunction = 0);
+		_In_opt_ ULONG64 replacerFunction = 0, 
+		_In_opt_ ULONG64 replacedFunction = 0);
 
 	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS ListAndReplaceRegistryCallbacks(_Inout_opt_ IoctlCallbackList<CmCallback>* callbacks = nullptr,
-		_In_opt_ ULONG64 replacerFunction = 0, _In_opt_ ULONG64 replacedFunction = 0);
+		_In_opt_ ULONG64 replacerFunction = 0, 
+		_In_opt_ ULONG64 replacedFunction = 0);
 
 public:
 	void* operator new(size_t size) {
