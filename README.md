@@ -52,8 +52,6 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Driver hiding and unhiding
 - Credential Dumping
 - Port hiding and unhiding
-- Script execution
-- Initial operations
 
 ## Reflective loading
 
@@ -67,9 +65,11 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 - Thread protection
 - Registry operations
 
-## Script Execution
+## Script Execution (DEPRECATED IN V2.0)
 
-Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki)
+Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki).
+
+Due to hard maintainability and the fact that it isn't a popular feature, it has been deprecated in version v2.0 and will be removed in the next major release. It will be replaced with another capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution, which will have access to Nidhogg's API.
 
 ## Initial Operations
 
