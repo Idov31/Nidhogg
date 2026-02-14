@@ -206,7 +206,7 @@ NTSTATUS ThreadHandler::UnhideThread(_In_ ULONG tid) {
 * @bool						-- Whether found or not.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
-bool ThreadHandler::FindThread(_In_ ULONG tid, _In_ ThreadType type) {
+bool ThreadHandler::FindThread(_In_ ULONG tid, _In_ ThreadType type) const {
 	if (tid == 0)
 		return false;
 

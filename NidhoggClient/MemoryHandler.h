@@ -41,7 +41,6 @@ private:
 	bool PatchModule(_In_ DWORD pid, _In_ std::wstring moduleName, _In_ std::string functionName, _In_ std::vector<byte> patch);
 	bool PatchAmsi(_In_ DWORD pid);
 	bool PatchEtw(_In_ DWORD pid);
-	bool ExecuteScript(_In_ std::vector<byte> script);
 
 public:
 	MemoryHandler(_In_ std::shared_ptr<HANDLE> hNidhogg) : CommandHandler("Memory", hNidhogg) {};
@@ -60,7 +59,6 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch [pid] [module name] [function name] [patch comma separated] - Patching a module inside a process" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch_amsi [pid] - Patch AMSI in a process" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "patch_etw [pid] - Patch ETW in a process" << std::endl;
-		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "execute_script [script_file] - Execute a script in the kernel" << std::endl;
 	}
 
 	void HandleCommand(_In_ std::string command) override;

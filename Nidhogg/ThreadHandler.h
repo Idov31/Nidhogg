@@ -63,7 +63,7 @@ public:
 	~ThreadHandler();
 	
 	_IRQL_requires_max_(DISPATCH_LEVEL)
-	bool FindThread(_In_ ULONG tid, _In_ ThreadType type);
+	bool FindThread(_In_ ULONG tid, _In_ ThreadType type) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
 	bool ProtectThread(_In_ ULONG tid);

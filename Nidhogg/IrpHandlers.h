@@ -10,7 +10,6 @@
 #include "RegistryHandler.h"
 #include "AntiAnalysisHandler.h"
 #include "NetworkHandler.h"
-#include "ScriptManager.h"
 
 DRIVER_DISPATCH NidhoggCreateClose;
 DRIVER_DISPATCH NidhoggDeviceControl;
