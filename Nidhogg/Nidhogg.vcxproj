@@ -166,10 +166,12 @@
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
     </Link>
     <PreBuildEvent>
-      <Command>python.exe ..\\post_compilation_operation.py</Command>
+      <Command>
+      </Command>
     </PreBuildEvent>
     <PreBuildEvent>
-      <Message>Executing post compilation operations</Message>
+      <Message>
+      </Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -201,22 +203,17 @@
       <SpecifyDriverVerDirectiveDate>false</SpecifyDriverVerDirectiveDate>
     </Inf>
     <PreBuildEvent>
-      <Command>python.exe ..\\post_compilation_operation.py</Command>
-      <Message>Executing post compilation operations</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="BaseParser.h" />
-    <ClInclude Include="CallbacksParser.h" />
-    <ClInclude Include="DllInjectionParser.h" />
-    <ClInclude Include="DriverParser.h" />
-    <ClInclude Include="EtwTiParser.h" />
     <ClInclude Include="FileHelper.h" />
-    <ClInclude Include="FileParser.h" />
-    <ClInclude Include="InitialOperation.h" />
     <ClInclude Include="IoctlShared.h" />
     <ClInclude Include="IrpHandlers.h" />
     <ClInclude Include="IrqlGuard.h" />
@@ -228,56 +225,33 @@
     <ClInclude Include="FileHandler.h" />
     <ClInclude Include="MemoryHandler.h" />
     <ClInclude Include="MemoryHelper.h" />
-    <ClInclude Include="ModuleParser.h" />
     <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggCommon.h" />
     <ClInclude Include="Nidhogg.h" />
-    <ClInclude Include="Parsers.h" />
-    <ClInclude Include="PatchParser.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="NetworkParser.h" />
     <ClInclude Include="ProcessHelper.h" />
-    <ClInclude Include="ProcessParser.h" />
     <ClInclude Include="ProcessHandler.h" />
     <ClInclude Include="RegistryHandler.h" />
-    <ClInclude Include="RegistryParser.h" />
-    <ClInclude Include="ScriptManager.h" />
-    <ClInclude Include="ShellcodeInjectionParser.h" />
-    <ClInclude Include="ThreadParser.h" />
     <ClInclude Include="ThreadHandler.h" />
     <ClInclude Include="WindowsTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AntiAnalysisHandler.cpp" />
-    <ClCompile Include="BaseParser.cpp" />
-    <ClCompile Include="CallbacksParser.cpp" />
-    <ClCompile Include="DllInjectionParser.cpp" />
-    <ClCompile Include="DriverParser.cpp" />
-    <ClCompile Include="EtwTiParser.cpp" />
     <ClCompile Include="FastMutex.cpp" />
     <ClCompile Include="FileHelper.cpp" />
-    <ClCompile Include="FileParser.cpp" />
     <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="IrpHandlers.cpp" />
     <ClCompile Include="MemoryHelper.cpp" />
     <ClCompile Include="MemoryHandler.cpp" />
-    <ClCompile Include="ModuleParser.cpp" />
     <ClCompile Include="NetworkHandler.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
-    <ClCompile Include="PatchParser.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="NetworkParser.cpp" />
     <ClCompile Include="ProcessHelper.cpp" />
-    <ClCompile Include="ProcessParser.cpp" />
     <ClCompile Include="ProcessHandler.cpp" />
     <ClCompile Include="RegistryHandler.cpp" />
-    <ClCompile Include="RegistryParser.cpp" />
-    <ClCompile Include="ScriptManager.cpp" />
-    <ClCompile Include="ShellcodeInjectionParser.cpp" />
-    <ClCompile Include="ThreadParser.cpp" />
     <ClCompile Include="ThreadHandler.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

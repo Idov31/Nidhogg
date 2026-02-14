@@ -12,9 +12,7 @@ extern "C" {
 #include "RegistryHandler.h"
 #include "AntiAnalysisHandler.h"
 #include "NetworkHandler.h"
-#include "ScriptManager.h"
 #include "IrpHandlers.h"
-#include "InitialOperation.h"
 
 // Definitions.
 constexpr SIZE_T REGISTERED_OB_CALLBACKS = 2;
@@ -39,6 +37,3 @@ void ClearAll();
 
 _IRQL_requires_max_(APC_LEVEL)
 bool InitializeFeatures();
-
-_IRQL_requires_max_(APC_LEVEL)
-void ExecuteInitialOperations();
