@@ -27,10 +27,9 @@ RegistryHandler::RegistryHandler() {
 	}
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 RegistryHandler::~RegistryHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearRegistryList(RegItemType::All);
 	FreeVirtualMemory(this->keysList.Hidden.Items);
 	FreeVirtualMemory(this->keysList.Protected.Items);
@@ -995,7 +994,7 @@ _IRQL_requires_(PASSIVE_LEVEL)
 bool RegistryHandler::GetKeyObject(_In_ PVOID infoObject, _Inout_ PCUNICODE_STRING* keyPath) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (!infoObject || !VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(infoObject)))
+	if (!infoObject || !IsValidKmMemory(reinterpret_cast<ULONG64>(infoObject)))
 		return false;
 
 	if (regCookie.QuadPart == 0)
@@ -1019,7 +1018,7 @@ bool RegistryHandler::GetKeyObject(_In_ PVOID infoObject, _Inout_ PCUNICODE_STRI
 _IRQL_requires_max_(DISPATCH_LEVEL)
 bool RegistryHandler::IsValidKey(_In_ const UNICODE_STRING* key) const {
 	return key->Buffer && key->Length > 0 && key->Length <= key->MaximumLength && 
-		key->Length / sizeof(wchar_t) < REG_KEY_LEN && VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(key->Buffer));
+		key->Length / sizeof(wchar_t) < REG_KEY_LEN && IsValidKmMemory(reinterpret_cast<ULONG64>(key->Buffer));
 }
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -1032,7 +1031,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 bool RegistryHandler::IsValidValue(_In_ const UNICODE_STRING* value) const {
 	return value->Buffer && value->Length > 0 && value->Length <= value->MaximumLength && 
 		value->Length / sizeof(wchar_t) < REG_VALUE_LEN && 
-		VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(value->Buffer));
+		IsValidKmMemory(reinterpret_cast<ULONG64>(value->Buffer));
 }
 
 _IRQL_requires_max_(DISPATCH_LEVEL)

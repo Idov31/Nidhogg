@@ -8,11 +8,9 @@ FileHandler::FileHandler() {
 	memset(callbacks, 0, sizeof(callbacks));
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 FileHandler::~FileHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
-
 	// Uninstalling NTFS hooks if there are any.
 	for (int i = 0; i < SUPPORTED_HOOKED_NTFS_CALLBACKS; i++) {
 		if (callbacks[i].Activated) {

@@ -1,8 +1,13 @@
 #pragma once
 #include "pch.h"
+#include "PushLock.h"
+#include "AutoLock.h"
 #include "NidhoggCommon.h"
 #include "WindowsTypes.h"
 #include "IrqlGuard.h"
+
+constexpr auto IsValidUmMemory = [](_In_ ULONG64 address) { return address > 0 && address < 0x7FFFFFFFFFFFFFFF; };
+constexpr auto IsValidKmMemory = [](_In_ ULONG64 address) { return address > 0x8000000000000000 && address < 0xFFFFFFFFFFFFFFFF; };
 
 template <typename Ptr>
 concept RegularPointerType = requires(Ptr ptr) {
@@ -175,7 +180,7 @@ public:
 
 class MemoryGuard {
 private:
-	FastMutex lock;
+	PushLock lock;
 	PMDL mdl;
 	bool valid;
 

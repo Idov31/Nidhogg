@@ -171,7 +171,7 @@ _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS ProbeAddress(_In_ const PVOID& address, _In_ SIZE_T len, _In_ ULONG alignment) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (!VALID_USERMODE_MEMORY(reinterpret_cast<ULONGLONG>(address)))
+	if (!IsValidUmMemory(reinterpret_cast<ULONGLONG>(address)))
 		return STATUS_INVALID_ADDRESS;
 
 	__try {
@@ -213,8 +213,8 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 		return STATUS_UNSUCCESSFUL;
 
 	// Making sure that the given kernel mode address is valid.
-	if (mode == KernelMode && (!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(sourceDataAddress)) ||
-		(!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)) &&
+	if (mode == KernelMode && (!IsValidKmMemory(reinterpret_cast<ULONG64>(sourceDataAddress)) ||
+		(!IsValidKmMemory(reinterpret_cast<ULONG64>(targetAddress)) &&
 			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;
@@ -222,7 +222,7 @@ NTSTATUS WriteProcessMemory(_In_ PVOID sourceDataAddress, _In_ const PEPROCESS& 
 
 	else if (mode == UserMode && (
 		!NT_SUCCESS(ProbeAddress(sourceDataAddress, dataSize, static_cast<ULONG>(dataSize))) ||
-		(!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONG64>(targetAddress)) &&
+		(!IsValidKmMemory(reinterpret_cast<ULONG64>(targetAddress)) &&
 			!NT_SUCCESS(ProbeAddress(targetAddress, dataSize, alignment))))) {
 		status = STATUS_UNSUCCESSFUL;
 		return status;

@@ -12,9 +12,9 @@ ProcessHandler::ProcessHandler() {
 	}
 }
 
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 ProcessHandler::~ProcessHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearProcessList(ProcessType::All);
 	FreeVirtualMemory(this->protectedProcesses.Items);
 	FreeVirtualMemory(this->hiddenProcesses.Items);

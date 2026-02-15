@@ -15,11 +15,9 @@ NetworkHandler::NetworkHandler() {
 	}
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NetworkHandler::~NetworkHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
-
 	if (callbackActivated) {
 		NTSTATUS status = InstallNsiHook(true);
 
@@ -412,7 +410,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 		do {
 			PNSI_PARAM nsiParameter = static_cast<PNSI_PARAM>(irp->UserBuffer);
 
-			if (!nsiParameter || (!VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(nsiParameter)) &&
+			if (!nsiParameter || (!IsValidKmMemory(reinterpret_cast<ULONGLONG>(nsiParameter)) &&
 				!NT_SUCCESS(ProbeAddress(nsiParameter, sizeof(PNSI_PARAM), __alignof(PNSI_PARAM))))) [[ unlikely ]] {
 				break;
 			}
@@ -429,7 +427,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 						// Edge case of somehow the entries list is empty or invalid address of entry.
 						if (!tcpEntries) [[ unlikely ]]
 							continue;
-						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&tcpEntries[i])) ? 
+						addressMode = IsValidKmMemory(reinterpret_cast<ULONGLONG>(&tcpEntries[i])) ?
 							KernelMode : 
 							UserMode;
 						guard.GuardMemory(&tcpEntries[i], 
@@ -481,7 +479,7 @@ NTSTATUS NsiIrpComplete(_Inout_ PDEVICE_OBJECT deviceObject, _Inout_ PIRP irp, _
 						if (!udpEntries) [[ unlikely ]]
 							continue;
 
-						addressMode = VALID_KERNELMODE_MEMORY(reinterpret_cast<ULONGLONG>(&udpEntries[i])) ? 
+						addressMode = IsValidKmMemory(reinterpret_cast<ULONGLONG>(&udpEntries[i])) ?
 							KernelMode : 
 							UserMode;
 						guard.GuardMemory(&udpEntries[i], 

@@ -1030,7 +1030,7 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		}
 		auto data = static_cast<IoctlKernelCallback*>(Irp->AssociatedIrp.SystemBuffer);
 
-		if (!VALID_KERNELMODE_MEMORY(data->CallbackAddress)) {
+		if (!IsValidKmMemory(data->CallbackAddress)) {
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}

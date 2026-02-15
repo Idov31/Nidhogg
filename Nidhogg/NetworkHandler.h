@@ -23,7 +23,7 @@ struct HiddenPort {
 
 struct HiddenPorts {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 
@@ -70,7 +70,8 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	NetworkHandler();
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_same_
+	_IRQL_requires_(PASSIVE_LEVEL)
 	~NetworkHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)
