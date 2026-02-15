@@ -1,7 +1,6 @@
 #pragma once
 #include "pch.h"
-#include "Nidhogg.h"
-#include "Helper.h"
+#include "NidhoggInterface.h"
 
 #define PRINT_ASCII_ART
 
@@ -30,12 +29,12 @@ constexpr const char* ASCII_ART = R"(
                             5888                             
                               8                                                    
 )";
+
+void PrintAsciiArt() {
+    std::cout << termcolor::bright_magenta << ASCII_ART << termcolor::reset << std::endl;
+}
 #else
 constexpr const char* ASCII_ART = "";
-#endif
 
-enum class Options {
-    Unknown,
-    Add, Remove, Clear, Hide, Unhide, Elevate, Signature, Query, Patch, InjectShellcode, InjectDll, DumpCredentials,
-    ExecuteScript
-};
+void PrintAsciiArt() { }
+#endif
