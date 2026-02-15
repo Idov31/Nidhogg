@@ -79,10 +79,9 @@ NTSTATUS NofLoader::Load() {
 			sizeof(COFF_FILE_HEADER) + 
 			sizeof(COFF_SECTION) * i);
 
-		// Handle BSS sections (uninitialized data) - they have VirtualSize but no raw data
+		// Handle BSS sections (uninitialized data)
 		if (coff.Section->SizeOfRawData == 0) {
 			if (coff.Section->VirtualSize > 0) {
-				// Allocate and zero-initialize BSS section
 				coff.SecMap[i].Ptr = AllocateMemory<PCHAR>(coff.Section->VirtualSize, false);
 				
 				if (!coff.SecMap[i].Ptr) {
@@ -90,7 +89,6 @@ NTSTATUS NofLoader::Load() {
 					break;
 				}
 				coff.SecMap[i].Size = coff.Section->VirtualSize;
-				// Memory is already zero-initialized by AllocateMemory
 			}
 			else {
 				coff.SecMap[i].Ptr = nullptr;
@@ -253,99 +251,12 @@ NTSTATUS NofLoader::ProcessSections() {
 				break;
 			}
 
-			if (coff.Symbol[coff.Reloc->SymbolTableIndex].First.Name[0] != 0) {
-				symbol = static_cast<UINT32>(coff.Symbol[coff.Reloc->SymbolTableIndex].First.Value[1]);
-
-				if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR64) {
-					err = memcpy_s(&offsetLong, 
-						sizeof(UINT64), 
-						coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress, 
-						sizeof(UINT64));
-
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-
-					offsetLong = reinterpret_cast<UINT64>(
-						coff.SecMap[coff.Symbol[coff.Reloc->SymbolTableIndex].SectionNumber - 1].Ptr + 
-						offsetLong);
-					offsetLong += coff.Symbol[coff.Reloc->VirtualAddress].Value;
-					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
-						sizeof(UINT64), 
-						&offsetLong,
-						sizeof(UINT64));
-
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-				}
-				else if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR32NB) {
-					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
-						sizeof(UINT32), 
-						&offset, 
-						sizeof(UINT32));
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-
-					offset = static_cast<UINT32>(
-						static_cast<PCHAR>(coff.SecMap[coff.Symbol[coff.Reloc->SymbolTableIndex].SectionNumber - 1].Ptr + offset) - 
-						static_cast<PCHAR>(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress + 4));
-
-					if (offset > MAX_OFFSET) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-					offset += coff.Symbol[coff.Reloc->VirtualAddress].Value;
-					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
-						sizeof(UINT32),
-						&offset, 
-						sizeof(UINT32));
-
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-				}
-				else if (coff.Reloc->Type <= IMAGE_REL_AMD64_REL32_5 && coff.Reloc->Type >= IMAGE_REL_AMD64_REL32) {
-					err = memcpy_s(&offset, 
-						sizeof(UINT32), 
-						coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress, 
-						sizeof(UINT32));
-
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-					relativeOffset = coff.SecMap[coff.Symbol[coff.Reloc->SymbolTableIndex].SectionNumber - 1].Ptr - 
-						(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress + 4);
-
-					if (relativeOffset > MAX_OFFSET) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-
-					offset += relativeOffset;
-					offset += coff.Symbol[coff.Reloc->VirtualAddress].Value;
-					offset += coff.Reloc->Type - IMAGE_REL_AMD64_REL32;
-
-					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
-						sizeof(UINT32), 
-						&offset, 
-						sizeof(UINT32));
-
-					if (err != 0) {
-						status = STATUS_ABANDONED;
-						break;
-					}
-				}
-			}
-			else
-			{
-				symbol = coff.Symbol[coff.Reloc->SymbolTableIndex].First.Value[1];
+			PCOFF_SYMBOL relocSymbol = &coff.Symbol[coff.Reloc->SymbolTableIndex];
+			
+			// Check if this is an external symbol (needs import resolution) or internal (section-relative)
+			if (relocSymbol->First.Name[0] == 0) {
+				// Symbol name is in string table - this is likely an external symbol
+				symbol = relocSymbol->First.Value[1];
 				symbolName = (reinterpret_cast<PCHAR>(coff.Symbol + coff.Header->NumberOfSymbols)) + symbol;
 				pFunction = ProcessSymbol(symbolName);
 
@@ -354,6 +265,7 @@ NTSTATUS NofLoader::ProcessSections() {
 					break;
 				}
 
+				// Handle external symbol relocations
 				if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR64) {
 					err = memcpy_s(&offsetLong, 
 						sizeof(UINT64), 
@@ -364,10 +276,7 @@ NTSTATUS NofLoader::ProcessSections() {
 						status = STATUS_ABANDONED;
 						break;
 					}
-					offsetLong = reinterpret_cast<UINT64>(
-						coff.SecMap[coff.Symbol[coff.Reloc->SymbolTableIndex].SectionNumber - 1].Ptr + 
-						offsetLong);
-					offsetLong += coff.Symbol[coff.Reloc->VirtualAddress].Value;
+					offsetLong = reinterpret_cast<UINT64>(pFunction) + offsetLong;
 					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
 						sizeof(UINT64),
 						&offsetLong,
@@ -396,7 +305,6 @@ NTSTATUS NofLoader::ProcessSections() {
 					}
 
 					offset = relativeOffset;
-					offset += coff.Symbol[coff.Reloc->SymbolTableIndex].Value;
 					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
 						sizeof(UINT32), 
 						&offset, 
@@ -409,9 +317,9 @@ NTSTATUS NofLoader::ProcessSections() {
 					functionIndex++;
 				}
 				else if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR32NB) {
-					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
+					err = memcpy_s(&offset,
 						sizeof(UINT32),
-						&offset,
+						coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
 						sizeof(UINT32));
 
 					if (err != 0) {
@@ -419,15 +327,14 @@ NTSTATUS NofLoader::ProcessSections() {
 						break;
 					}
 
-					offset = static_cast<UINT32>(static_cast<PCHAR>(
-						coff.SecMap[coff.Symbol[coff.Reloc->SymbolTableIndex].SectionNumber - 1].Ptr + offset) - 
+					offset = static_cast<UINT32>(
+						static_cast<PCHAR>(pFunction + offset) - 
 						static_cast<PCHAR>(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress + 4));
 
 					if (offset > MAX_OFFSET) {
 						status = STATUS_ABANDONED;
 						break;
 					}
-					offset += coff.Symbol[coff.Reloc->VirtualAddress].Value;
 					err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
 						sizeof(UINT32), 
 						&offset, 
@@ -435,6 +342,100 @@ NTSTATUS NofLoader::ProcessSections() {
 					if (err != 0) {
 						status = STATUS_ABANDONED;
 						break;
+					}
+				}
+			}
+			else {
+				// Symbol name is inline or section-relative - handle internal relocations
+				// Check if symbol has a section number (section-relative symbol)
+				if (relocSymbol->SectionNumber > 0 && relocSymbol->SectionNumber <= coff.Header->NumberOfSections) {
+					// This is a section-relative symbol (e.g., .rdata string)
+					PCHAR targetAddress = coff.SecMap[relocSymbol->SectionNumber - 1].Ptr + relocSymbol->Value;
+
+					if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR64) {
+						err = memcpy_s(&offsetLong, 
+							sizeof(UINT64), 
+							coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress, 
+							sizeof(UINT64));
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+
+						offsetLong = reinterpret_cast<UINT64>(targetAddress + offsetLong);
+						err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
+							sizeof(UINT64), 
+							&offsetLong,
+							sizeof(UINT64));
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+					}
+					else if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR32NB) {
+						err = memcpy_s(&offset,
+							sizeof(UINT32), 
+							coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
+							sizeof(UINT32));
+						
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+
+						offset = static_cast<UINT32>(
+							static_cast<PCHAR>(targetAddress + offset) - 
+							static_cast<PCHAR>(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress + 4));
+
+						if (offset > MAX_OFFSET) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+						
+						err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
+							sizeof(UINT32),
+							&offset, 
+							sizeof(UINT32));
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+					}
+					else if (coff.Reloc->Type <= IMAGE_REL_AMD64_REL32_5 && coff.Reloc->Type >= IMAGE_REL_AMD64_REL32) {
+						err = memcpy_s(&offset, 
+							sizeof(UINT32), 
+							coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress, 
+							sizeof(UINT32));
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+						
+						relativeOffset = static_cast<UINT32>(
+							targetAddress - 
+							(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress + 4));
+
+						if (relativeOffset > MAX_OFFSET) {
+							status = STATUS_ABANDONED;
+							break;
+						}
+
+						offset += relativeOffset;
+						offset += coff.Reloc->Type - IMAGE_REL_AMD64_REL32;
+
+						err = memcpy_s(coff.SecMap[sectionIndex].Ptr + coff.Reloc->VirtualAddress,
+							sizeof(UINT32), 
+							&offset, 
+							sizeof(UINT32));
+
+						if (err != 0) {
+							status = STATUS_ABANDONED;
+							break;
+						}
 					}
 				}
 			}
