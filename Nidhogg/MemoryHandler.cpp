@@ -1976,6 +1976,7 @@ ULONG MemoryHandler::GetVadRootOffset() const {
 		vadRootOffset = 0x658;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		vadRootOffset = 0x558;
 		break;
 	default:
@@ -2018,6 +2019,7 @@ ULONG MemoryHandler::GetPageCommitmentLockOffset() const {
 		pageCommitmentLockOffset = 0x378;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		pageCommitmentLockOffset = 0x260;
 		break;
 	default:

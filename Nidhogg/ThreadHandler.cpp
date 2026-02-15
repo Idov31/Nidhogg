@@ -498,6 +498,7 @@ ULONG ThreadHandler::GetThreadListEntryOffset() const {
 		threadListEntry = 0x4e8;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		threadListEntry = 0x578;
 		break;
 	default:
@@ -540,6 +541,7 @@ ULONG ThreadHandler::GetThreadListHeadOffset() const {
 		threadListHead = 0x488;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		threadListHead = 0x370;
 		break;
 	default:
@@ -558,7 +560,7 @@ ULONG ThreadHandler::GetThreadListHeadOffset() const {
 * There are no parameters.
 *
 * Returns:
-* @threadLockOffset [ULONG] -- Offset of ProcessLock.
+* @threadLockOffset [ULONG] -- Offset of ThreadLock.
 */
 _IRQL_requires_max_(APC_LEVEL)
 ULONG ThreadHandler::GetThreadLockOffset() const {
@@ -595,6 +597,7 @@ ULONG ThreadHandler::GetThreadLockOffset() const {
 		threadLockOffset = 0x500;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		threadLockOffset = 0x590;
 		break;
 	default:
