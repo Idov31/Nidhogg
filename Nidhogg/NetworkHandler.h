@@ -23,7 +23,7 @@ struct HiddenPort {
 
 struct HiddenPorts {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 

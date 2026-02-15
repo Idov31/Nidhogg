@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "PushLock.h"
 #include "AutoLock.h"
 #include "MemoryHelper.h"
 
@@ -9,7 +10,7 @@ concept ListType = requires(List list) {
 	list.Lock;
 	list.Items;
 		requires sizeof(list.Count) == sizeof(SIZE_T);
-		requires sizeof(list.Lock) == sizeof(FastMutex);
+		requires sizeof(list.Lock) == sizeof(PushLock);
 		requires sizeof(list.Items) == sizeof(PLIST_ENTRY);
 };
 
@@ -93,7 +94,7 @@ inline ListItem* FindListEntry(_In_ const List& list, _In_ Searchable searchable
 
 	if (!function)
 		return NULL;
-	AutoLock locker(const_cast<FastMutex&>(list.Lock));
+	AutoLock locker(const_cast<PushLock&>(list.Lock));
 
 	if (list.Count == 0)
 		return NULL;

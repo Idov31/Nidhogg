@@ -20,7 +20,7 @@ struct RegItem {
 
 struct RegistryEntryList {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 

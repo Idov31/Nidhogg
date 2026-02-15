@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "PushLock.h"
 #include "IoctlShared.h"
 
 extern "C" {
@@ -164,7 +165,7 @@ struct DisabledKernelCallback {
 
 struct CallbackList {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 	PUCHAR sigCallbackList;
 	ULONG_PTR sigCallbackListLock;

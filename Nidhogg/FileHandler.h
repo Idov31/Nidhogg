@@ -1,6 +1,6 @@
 #pragma once
-
 #include "pch.h"
+#include "PushLock.h"
 #include "IoctlShared.h"
 #include "MemoryHelper.h"
 #include "MemoryAllocator.hpp"
@@ -29,7 +29,7 @@ struct SearchedFile {
 
 struct FilesList {
 	SIZE_T Count;
-	FastMutex Lock;
+	PushLock Lock;
 	PLIST_ENTRY Items;
 };
 
