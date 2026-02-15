@@ -94,6 +94,7 @@ ULONG GetProcessLockOffset() {
 		processLockOffset = 0x2e0;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		processLockOffset = 0x1c8;
 		break;
 	default:

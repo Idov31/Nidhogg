@@ -559,6 +559,7 @@ ULONG ProcessHandler::GetTokenOffset() const {
 		tokenOffset = 0x360;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		tokenOffset = 0x248;
 		break;
 	default:
@@ -602,6 +603,7 @@ ULONG ProcessHandler::GetActiveProcessLinksOffset() const {
 		activeProcessLinks = 0x2e8;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		activeProcessLinks = 0x1d8;
 		break;
 	default:
@@ -650,6 +652,7 @@ ULONG ProcessHandler::GetSignatureLevelOffset() const {
 		signatureLevelOffset = 0x6a8;
 		break;
 	case WIN_11_24H2:
+	case WIN_11_25H2:
 		signatureLevelOffset = 0x5f8;
 		break;
 	default:
