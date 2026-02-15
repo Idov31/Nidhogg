@@ -118,7 +118,6 @@ To compile the project, you will need the following tools:
 
 - [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
-- [Python](https://www.python.org/downloads/) (for the initial operations)
 
 Clone the repository and build the project:
 
