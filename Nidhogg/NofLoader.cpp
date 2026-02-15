@@ -223,6 +223,8 @@ NTSTATUS NofLoader::ProcessSections() {
 	UINT32 offset = 0;
 	UINT32 relativeOffset = 0;
 	errno_t err = 0;
+	PCOFF_SYMBOL relocSymbol = nullptr;
+	PCHAR targetAddress = nullptr;
 
 	// Recalculate the symbol pointer to ensure it points to valid memory
 	coff.Symbol = reinterpret_cast<PCOFF_SYMBOL>(static_cast<PUCHAR>(coff.Data) + coff.Header->PointerToSymbolTable);
@@ -251,11 +253,9 @@ NTSTATUS NofLoader::ProcessSections() {
 				break;
 			}
 
-			PCOFF_SYMBOL relocSymbol = &coff.Symbol[coff.Reloc->SymbolTableIndex];
+			relocSymbol = &coff.Symbol[coff.Reloc->SymbolTableIndex];
 			
-			// Check if this is an external symbol (needs import resolution) or internal (section-relative)
 			if (relocSymbol->First.Name[0] == 0) {
-				// Symbol name is in string table - this is likely an external symbol
 				symbol = relocSymbol->First.Value[1];
 				symbolName = (reinterpret_cast<PCHAR>(coff.Symbol + coff.Header->NumberOfSymbols)) + symbol;
 				pFunction = ProcessSymbol(symbolName);
@@ -265,7 +265,6 @@ NTSTATUS NofLoader::ProcessSections() {
 					break;
 				}
 
-				// Handle external symbol relocations
 				if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR64) {
 					err = memcpy_s(&offsetLong, 
 						sizeof(UINT64), 
@@ -346,11 +345,8 @@ NTSTATUS NofLoader::ProcessSections() {
 				}
 			}
 			else {
-				// Symbol name is inline or section-relative - handle internal relocations
-				// Check if symbol has a section number (section-relative symbol)
 				if (relocSymbol->SectionNumber > 0 && relocSymbol->SectionNumber <= coff.Header->NumberOfSections) {
-					// This is a section-relative symbol (e.g., .rdata string)
-					PCHAR targetAddress = coff.SecMap[relocSymbol->SectionNumber - 1].Ptr + relocSymbol->Value;
+					targetAddress = coff.SecMap[relocSymbol->SectionNumber - 1].Ptr + relocSymbol->Value;
 
 					if (coff.Reloc->Type == IMAGE_REL_AMD64_ADDR64) {
 						err = memcpy_s(&offsetLong, 
