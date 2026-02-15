@@ -82,9 +82,11 @@ Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov
 
 Due to hard maintainability and the fact that it isn't a popular feature, it has been deprecated in version v2.0 and will be removed in the next major release. It will be replaced with another capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution, which will have access to Nidhogg's API.
 
-## Initial Operations
+## Initial Operations (DEPRECATED IN V2.0)
 
 Since version v1.0, Nidhogg can execute [NidhoggScripts](https://github.com/Idov31/NidhoggScript) as initial operations as well. Meaning, that if it spots the file `out.ndhg` in the root of the project directory (the same directory as the Python file) it will execute the file each time the driver is running.
+
+Due to hard maintainability and the fact that it isn't a popular feature, it has been deprecated in version v2.0 and will be removed in the next major release. It will be replaced with another capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution, which will have access to Nidhogg's API.
 
 ## PatchGuard triggering features
 
