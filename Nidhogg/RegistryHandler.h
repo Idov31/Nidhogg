@@ -85,7 +85,8 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	RegistryHandler();
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_same_
+	_IRQL_requires_(PASSIVE_LEVEL)
 	~RegistryHandler();
 
 	_IRQL_requires_max_(APC_LEVEL)

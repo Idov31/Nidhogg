@@ -15,11 +15,9 @@ NetworkHandler::NetworkHandler() {
 	}
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 NetworkHandler::~NetworkHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
-
 	if (callbackActivated) {
 		NTSTATUS status = InstallNsiHook(true);
 

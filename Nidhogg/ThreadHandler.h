@@ -59,7 +59,8 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	ThreadHandler();
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_same_
+	_IRQL_requires_(PASSIVE_LEVEL)
 	~ThreadHandler();
 	
 	_IRQL_requires_max_(DISPATCH_LEVEL)

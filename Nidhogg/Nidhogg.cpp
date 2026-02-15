@@ -198,8 +198,6 @@ void NidhoggUnload(PDRIVER_OBJECT DriverObject) {
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 void ClearAll() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
 	if (NidhoggNetworkHandler) {
 		Print(DRIVER_PREFIX "Deleting NetworkHandler...\n");
 		delete NidhoggNetworkHandler;

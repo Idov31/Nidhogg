@@ -115,7 +115,8 @@ public:
     _IRQL_requires_max_(APC_LEVEL)
     NofLoader(_In_ IoctlCoff& coffData);
 
-    _IRQL_requires_max_(APC_LEVEL)
+    _IRQL_requires_same_
+    _IRQL_requires_(PASSIVE_LEVEL)
     ~NofLoader();
 
     _IRQL_requires_(PASSIVE_LEVEL)

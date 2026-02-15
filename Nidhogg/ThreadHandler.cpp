@@ -12,10 +12,9 @@ ThreadHandler::ThreadHandler() {
 	}
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
 ThreadHandler::~ThreadHandler() {
-	IrqlGuard guard;
-	guard.SetExitIrql(PASSIVE_LEVEL);
 	ClearThreadList(ThreadType::All);
 	FreeVirtualMemory(this->protectedThreads.Items);
 	FreeVirtualMemory(this->hiddenThreads.Items);
