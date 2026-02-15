@@ -96,3 +96,6 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress();
 
 _IRQL_requires_max_(APC_LEVEL)
 PVOID GetSSDTFunctionAddress(_In_ const PSYSTEM_SERVICE_DESCRIPTOR_TABLE ssdt, _In_ const char* functionName);
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS ConvertAnsiToUnicode(_In_ PCHAR ansiString, _Out_ PUNICODE_STRING outString);

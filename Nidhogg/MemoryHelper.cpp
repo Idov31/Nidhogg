@@ -566,3 +566,23 @@ PSYSTEM_SERVICE_DESCRIPTOR_TABLE GetSSDTAddress() {
 		ExRaiseStatus(status);
 	return ssdt;
 }
+
+/*
+* Description:
+* ConvertAnsiToUnicode is responsible for converting ANSI string to UNICODE.
+*
+* Parameters:
+* @ansiString [_In_ PCHAR]			  -- Source string to convert.
+* @outString  [_Out_ PUNICODE_STRING] -- Output unicode string.
+*
+* Returns:
+* @status	  [NTSTATUS]			  -- Whether successfuly converted or not.
+*/
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS ConvertAnsiToUnicode(_In_ PCHAR ansiString, _Out_ PUNICODE_STRING outString) {
+	if (!ansiString || !outString)
+		return STATUS_INVALID_PARAMETER;
+	ANSI_STRING aFunctionName = { 0 };
+	RtlInitAnsiString(&aFunctionName, ansiString);
+	return RtlAnsiStringToUnicodeString(outString, &aFunctionName, TRUE);;
+}

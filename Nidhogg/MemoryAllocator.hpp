@@ -28,13 +28,17 @@ concept PointerType = RegularPointerType<Ptr> || VoidPointerType<Ptr>;
 * @size				    [size_t]	  -- Size to allocate.
 * @paged				[bool]		  -- Paged or non-paged.
 * @forceDeprecatedAlloc [bool]		  -- Force allocation with ExAllocatePoolWithTag.
+* @execute				[bool]		  -- Whether the allocated memory should be executable or not.
 *
 * Returns:
 * @ptr					[Pointer] -- Allocated pointer on success else NULL.
 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 template <PointerType Pointer>
-inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecatedAlloc = false) noexcept {
+inline Pointer AllocateMemory(size_t size, 
+	bool paged = true, 
+	bool forceDeprecatedAlloc = false, 
+	bool execute = false) noexcept {
 	PVOID allocatedMem = NULL;
 	IrqlGuard guard = IrqlGuard();
 
@@ -42,14 +46,16 @@ inline Pointer AllocateMemory(size_t size, bool paged = true, bool forceDeprecat
 		guard.SetIrql(PASSIVE_LEVEL);
 
 	if (AllocatePool2 && WindowsBuildNumber >= WIN_2004 && !forceDeprecatedAlloc) {
-		allocatedMem = paged ? ((tExAllocatePool2)AllocatePool2)(POOL_FLAG_PAGED, size, DRIVER_TAG) :
-			((tExAllocatePool2)AllocatePool2)(POOL_FLAG_NON_PAGED, size, DRIVER_TAG);
+		POOL_FLAGS flags = paged ? POOL_FLAG_PAGED : POOL_FLAG_NON_PAGED;
+		flags = execute ? POOL_FLAG_NON_PAGED_EXECUTE : flags;
+		allocatedMem = ((tExAllocatePool2)AllocatePool2)(flags, size, DRIVER_TAG);
 	}
 	else {
+		POOL_TYPE flags = paged ? PagedPool : NonPagedPool;
+		flags = execute ? NonPagedPoolExecute : flags;
 #pragma warning(push)
 #pragma warning(disable : 4996)
-		allocatedMem = paged ? ExAllocatePoolWithTag(PagedPool, size, DRIVER_TAG) :
-			ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+		allocatedMem = ExAllocatePoolWithTag(flags, size, DRIVER_TAG);
 #pragma warning(pop)
 	}
 
@@ -145,6 +151,7 @@ public:
 	NTSTATUS CopyData(_In_ DataType data, _In_ SIZE_T size) {
 		SIZE_T bytesWritten = 0;
 		NTSTATUS status = STATUS_INVALID_PARAMETER;
+		PEPROCESS currentProcess = PsGetCurrentProcess();
 
 		if (!allocatedData)
 			return STATUS_INVALID_BUFFER_SIZE;
@@ -152,8 +159,13 @@ public:
 		if (!data || size > this->allocatedSize)
 			return status;
 
-		status = MmCopyVirtualMemory(PsGetCurrentProcess(), data, PsGetCurrentProcess(), this->allocatedData, size,
-			KernelMode, &bytesWritten);
+		status = MmCopyVirtualMemory(currentProcess, 
+			data, 
+			currentProcess, 
+			this->allocatedData, 
+			size,
+			KernelMode, 
+			&bytesWritten);
 
 		if (NT_SUCCESS(status))
 			status = bytesWritten == size ? STATUS_SUCCESS : STATUS_INVALID_BUFFER_SIZE;

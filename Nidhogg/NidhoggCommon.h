@@ -34,5 +34,6 @@ struct EnabledFeatures {
 	bool EtwTiTamper = true;
 	bool ApcInjection = true;
 	bool AutoModuleUnload = true;
+	bool NofExecution = true;
 };
 inline EnabledFeatures Features;

@@ -52,6 +52,7 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 - Driver hiding and unhiding
 - Credential Dumping
 - Port hiding and unhiding
+- Nidhogg Object File (NOF) for kernel-mode COFF execution
 
 ## Reflective loading
 
@@ -64,6 +65,16 @@ Since version v0.3, Nidhogg can be reflectively loaded with [kdmapper](https://g
 - Process protection
 - Thread protection
 - Registry operations
+
+## Nidhogg Object File (NOF)
+
+Since version v2.0, Nidhogg has a new capability named "Nidhogg Object File" (NOF) for kernel-mode COFF execution. This means, you can write your own kernel-mode code and compile it to a COFF file which has access to:
+
+- Windows kernel (ntoskrnl) API
+- Syscalls
+- Nidhogg's API (coming in v2.1)
+
+This feature is **not** compatible with Virtualization Based Security (VBS) as it violates both HVCI and kCFG.
 
 ## Script Execution (DEPRECATED IN V2.0)
 

@@ -228,6 +228,7 @@
     <ClInclude Include="NetworkHandler.h" />
     <ClInclude Include="NidhoggCommon.h" />
     <ClInclude Include="Nidhogg.h" />
+    <ClInclude Include="NofLoader.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ProcessHelper.h" />
     <ClInclude Include="ProcessHandler.h" />
@@ -245,6 +246,7 @@
     <ClCompile Include="MemoryHandler.cpp" />
     <ClCompile Include="NetworkHandler.cpp" />
     <ClCompile Include="Nidhogg.cpp" />
+    <ClCompile Include="NofLoader.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

