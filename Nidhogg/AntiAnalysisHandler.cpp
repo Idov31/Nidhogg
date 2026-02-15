@@ -559,7 +559,7 @@ NTSTATUS AntiAnalysisHandler::ListAndReplacePsNotifyRoutines(_Inout_opt_ IoctlCa
 	errno_t err = 0;
 	char* driverName = nullptr;
 	Pattern listSignature = { 0 };
-	listSignature.Versions = { WIN_1507, WIN_11_24H2 };
+	listSignature.Versions = { WIN_1507, WIN_11_25H2 };
 	listSignature.Reversed = false;
 	listSignature.Wildcard = 0xCC;
 

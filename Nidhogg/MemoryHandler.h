@@ -28,41 +28,63 @@ constexpr UCHAR VPN_SHIFT = 32;
 
 constexpr UCHAR IvDesKeyLocation[] = { 0x33, 0xC0, 0x48, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0x00, 0x21, 0x45 };
 constexpr Pattern IvDesKeyLocationPattern = {
-	{WIN_1507, WIN_11_24H2}, sizeof(IvDesKeyLocation), IvDesKeyLocation, 0xCC, 0, false
+	{WIN_1507, WIN_11_25H2}, 
+	sizeof(IvDesKeyLocation), 
+	IvDesKeyLocation, 
+	0xCC, 
+	0, 
+	false
 };
 
 constexpr UCHAR LogonSessionListPattern24H2[] = { 0xCC, 0xC1, 0xCC, 0x04 };
 constexpr UCHAR LogonSessionListPattern23H2[] = { 0x33, 0xC0, 0x48, 0x8D };
 constexpr Pattern LogonSessionListPatterns[] = {
-	{{WIN_1507, WIN_20H2}, sizeof(LogonSessionListPattern24H2), LogonSessionListPattern24H2, 0xCC, 7, false},
-	{{WIN_21H1, WIN_11_23H2}, sizeof(LogonSessionListPattern23H2), LogonSessionListPattern23H2, 0xCC, 5, false},
-	{{WIN_11_24H2, WIN_11_24H2}, sizeof(LogonSessionListPattern24H2), LogonSessionListPattern24H2, 0xCC, -4, false}
+	{
+		{WIN_1507, WIN_20H2}, 
+		sizeof(LogonSessionListPattern24H2), 
+		LogonSessionListPattern24H2, 
+		0xCC, 
+		7, 
+		false
+	},
+	{
+		{WIN_21H1, WIN_11_23H2}, 
+		sizeof(LogonSessionListPattern23H2), 
+		LogonSessionListPattern23H2, 
+		0xCC, 
+		5, 
+		false
+	},
+	{
+		{WIN_11_24H2, WIN_11_25H2}, 
+		sizeof(LogonSessionListPattern24H2), 
+		LogonSessionListPattern24H2, 
+		0xCC, 
+		-4, 
+		false
+	}
 };
 constexpr SIZE_T LogonSessionListPatternCount = sizeof(LogonSessionListPatterns) / sizeof(Pattern);
 
-constexpr UCHAR LogonSessionListCountPattern24H2[] = { 0x41, 0x8B, 0xCC, 0x3B };
-constexpr UCHAR LogonSessionListCountPattern23H2[] = { 0x83, 0x65, 0x38, 0x00 };
-constexpr UCHAR LogonSessionListCountPattern20H2[] = { 0x00, 0x00, 0x44, 0x39 };
-constexpr Pattern LogonSessionListCountPatterns[] = {
-	{{WIN_1507, WIN_20H2}, sizeof(LogonSessionListCountPattern20H2), LogonSessionListCountPattern20H2, 0xCC, 6, false},
-	{{WIN_21H1, WIN_11_23H2}, sizeof(LogonSessionListCountPattern23H2), LogonSessionListCountPattern23H2, 0xCC, 5, false},
-	{{WIN_11_24H2, WIN_11_24H2}, sizeof(LogonSessionListCountPattern24H2), LogonSessionListCountPattern24H2, 0xCC, 5, false}
-};
-
 constexpr UCHAR IvSignature[] = { 0x44, 0x8B, 0xC6, 0x48, 0x8D, 0x15 };
 constexpr Pattern IvSignaturePattern = {
-	{WIN_1507, WIN_11_24H2}, 
+	{WIN_1507, WIN_11_25H2}, 
 	sizeof(IvSignature), 
 	IvSignature, 
 	0xCC, 
 	6, 
 	false,
 	1,
-	{WIN_11_24H2, WIN_11_24H2, 10}
+	{WIN_11_24H2, WIN_11_25H2, 10}
 };
 constexpr UCHAR DesKeySignature[] = { 0x44, 0x8B, 0x4D, 0xD4, 0x48, 0x8D, 0x15 };
 constexpr Pattern DesKeySignaturePattern = {
-	{WIN_1507, WIN_11_24H2}, sizeof(DesKeySignature), DesKeySignature, 0xCC, 7, false
+	{WIN_1507, WIN_11_25H2}, 
+	sizeof(DesKeySignature), 
+	DesKeySignature, 
+	0xCC, 
+	7, 
+	false
 };
 constexpr SIZE_T DesKeyStructOffset = 0xB;
 constexpr SIZE_T LsaInitializeProtectedMemoryDistance = 0x310;

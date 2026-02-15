@@ -47,14 +47,14 @@ constexpr Pattern EtwThreatIntProvRegHandlePatterns[] = {
 		{WIN_1507, WIN_11_22H2, 8}
 	},
 	{
-		{WIN_11_22H2, WIN_11_24H2},
+		{WIN_11_22H2, WIN_11_25H2},
 		sizeof(EtwThreatIntProvRegHandleSignature4),
 		EtwThreatIntProvRegHandleSignature4,
 		0xCC,
 		sizeof(EtwThreatIntProvRegHandleSignature4) - 1,
 		false,
 		1,
-		{WIN_11_22H2, WIN_11_24H2, 7}
+		{WIN_11_22H2, WIN_11_25H2, 7}
 	}
 };
 constexpr SIZE_T EtwThreatIntProvRegHandlePatternsCount = sizeof(EtwThreatIntProvRegHandlePatterns) / sizeof(Pattern);
@@ -64,7 +64,7 @@ constexpr UCHAR PspCreateThreadNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR PspLoadImageNotifyRoutineSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr UCHAR CallbackListHeadSignature[] = { 0x4C, 0x8D, 0xCC };
 constexpr Pattern CallbackListHeadPattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, WIN_11_25H2},
 	sizeof(CallbackListHeadSignature),
 	CallbackListHeadSignature,
 	0xCC,
@@ -73,7 +73,7 @@ constexpr Pattern CallbackListHeadPattern = {
 };
 constexpr UCHAR CmpCallbackListLockSignature[] = { 0x48, 0x8D, 0xCC };
 constexpr Pattern CmpCallbackListLockPattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, WIN_11_25H2},
 	sizeof(CmpCallbackListLockSignature),
 	CmpCallbackListLockSignature,
 	0xCC,
@@ -82,7 +82,7 @@ constexpr Pattern CmpCallbackListLockPattern = {
 };
 constexpr UCHAR CmpInsertCallbackInListByAltitudeSignature[] = { 0x8B, 0xCB, 0xE8, 0xCC };
 constexpr Pattern CmpInsertCallbackInListByAltitudePattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, WIN_11_25H2},
 	sizeof(CmpInsertCallbackInListByAltitudeSignature),
 	CmpInsertCallbackInListByAltitudeSignature,
 	0xCC,
@@ -91,7 +91,7 @@ constexpr Pattern CmpInsertCallbackInListByAltitudePattern = {
 };
 constexpr UCHAR CallFunctionSignature[] = { 0xE8, 0xCC };
 constexpr Pattern CallFunctionPattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, LATEST_VERSION},
 	sizeof(CallFunctionSignature),
 	CallFunctionSignature,
 	0xCC,
@@ -103,7 +103,7 @@ constexpr UCHAR RoutinesListCountSignature2[] = { 0x75, 0xCC, 0xF0, 0xFF, 0x05, 
 constexpr SIZE_T PsNotifyRoutinesRoutineCountOffset = 0xB;
 
 constexpr Pattern RegistryCallbackListCountPattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, WIN_11_25H2},
 	sizeof(RoutinesListCountSignature1),
 	RoutinesListCountSignature1,
 	0xCC,
@@ -123,14 +123,14 @@ constexpr Pattern RoutinesListCountPatterns[] = {
 		{WIN_1507, WIN_11_22H2, PsNotifyRoutinesRoutineCountOffset}
 	},
 	{
-		{WIN_11_22H2, WIN_11_24H2},
+		{WIN_11_22H2, WIN_11_25H2},
 		sizeof(RoutinesListCountSignature2),
 		RoutinesListCountSignature2,
 		0xCC,
 		sizeof(RoutinesListCountSignature2) - 1,
 		false,
 		1,
-		{WIN_11_22H2, WIN_11_24H2, -3}
+		{WIN_11_22H2, WIN_11_25H2, -3}
 	}
 };
 constexpr SIZE_T RoutinesListCountPatternsCount = sizeof(RoutinesListCountPatterns) / sizeof(Pattern);

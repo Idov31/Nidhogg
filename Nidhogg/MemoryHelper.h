@@ -48,7 +48,7 @@ constexpr LONGLONG ONE_SECOND = -100ll * 10 * 1000;
 constexpr UCHAR SsdtSignature[] = { 0x4C, 0x8D, 0x15, 0xCC, 0xCC, 0xCC, 0xCC, 0x4C, 0x8D, 0x1D, 0xCC, 0xCC, 0xCC, 0xCC, 0xF7 };
 
 constexpr Pattern SsdtPattern = {
-	{WIN_1507, WIN_11_24H2},
+	{WIN_1507, WIN_11_25H2},
 	sizeof(SsdtSignature),
 	SsdtSignature,
 	0xCC,
