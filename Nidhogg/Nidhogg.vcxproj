@@ -221,7 +221,7 @@
     <ClInclude Include="MemoryAllocator.hpp" />
     <ClInclude Include="AntiAnalysisHandler.h" />
     <ClInclude Include="AutoLock.h" />
-    <ClInclude Include="FastMutex.h" />
+    <ClInclude Include="PushLock.h" />
     <ClInclude Include="FileHandler.h" />
     <ClInclude Include="MemoryHandler.h" />
     <ClInclude Include="MemoryHelper.h" />
@@ -238,7 +238,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AntiAnalysisHandler.cpp" />
-    <ClCompile Include="FastMutex.cpp" />
+    <ClCompile Include="PushLock.cpp" />
     <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="FileHandler.cpp" />
     <ClCompile Include="IrpHandlers.cpp" />
