@@ -17,7 +17,7 @@ If you want to know more, check out the [wiki](https://github.com/Idov31/Nidhogg
 ## Current Features
 
 > [!IMPORTANT]  
-> All the features have been fully tested up to Windows 11 24H2 and are gradually tested against 25H2.
+> All the features have been fully tested up to Windows 11 25H2.
 > If you encounter a problem, please open an issue after checking there isn't already an open issue.
 
 - Process hiding and unhiding
