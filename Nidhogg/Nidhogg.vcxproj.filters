@@ -22,9 +22,6 @@
     <ClInclude Include="AutoLock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="FastMutex.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="NidhoggCommon.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -61,54 +58,6 @@
     <ClInclude Include="NetworkHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="BaseParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ScriptManager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ProcessParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ThreadParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="CallbacksParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DriverParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DllInjectionParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ShellcodeInjectionParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="FileParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EtwTiParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ModuleParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="PatchParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="RegistryParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="NetworkParser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Parsers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="InitialOperation.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ThreadHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -133,11 +82,17 @@
     <ClInclude Include="Logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PushLock.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NofLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NidhoggConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FastMutex.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Nidhogg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -162,48 +117,6 @@
     <ClCompile Include="NetworkHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="BaseParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ScriptManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ProcessParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ThreadParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CallbacksParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="DriverParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="DllInjectionParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ShellcodeInjectionParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="FileParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="EtwTiParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ModuleParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="PatchParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="RegistryParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="NetworkParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ThreadHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -220,6 +133,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Logger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PushLock.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NofLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

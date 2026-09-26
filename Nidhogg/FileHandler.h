@@ -20,6 +20,8 @@ struct FileItem {
 	LIST_ENTRY Entry;
 	WCHAR FilePath[MAX_PATH];
 	ULONG FileLength;
+	USHORT NormalizedLength;
+	WCHAR NormalizedPath[MAX_PATH];
 };
 
 struct SearchedFile {
@@ -65,6 +67,10 @@ public:
 	bool FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact = true) const;
 
 	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_same_
+	bool FindNormalizedFile(_In_ PCUNICODE_STRING path) const;
+
+	_IRQL_requires_max_(APC_LEVEL)
 	bool ProtectFile(_In_ WCHAR* path);
 
 	_IRQL_requires_max_(APC_LEVEL)
@@ -97,3 +103,8 @@ inline FileHandler* NidhoggFileHandler;
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
 NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp);
+
+_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+FLT_PREOP_CALLBACK_STATUS NidhoggPreCreate(_Inout_ PFLT_CALLBACK_DATA Data,
+	_In_ PCFLT_RELATED_OBJECTS FltObjects, _Flt_CompletionContext_Outptr_ PVOID* CompletionContext);

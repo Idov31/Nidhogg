@@ -42,6 +42,101 @@ void FileHandler::ReleaseRundown() {
 
 /*
 * Description:
+* NidhoggPreCreate denies opens of files in the protected files list.
+*
+* Parameters:
+* @Data              [_Inout_ PFLT_CALLBACK_DATA]           -- Create operation data.
+* @FltObjects        [_In_ PCFLT_RELATED_OBJECTS]            -- Unused.
+* @CompletionContext [_Flt_CompletionContext_Outptr_ PVOID*] -- Unused.
+*
+* Returns:
+* @FLT_PREOP_CALLBACK_STATUS -- Whether the create operation should continue.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+FLT_PREOP_CALLBACK_STATUS NidhoggPreCreate(_Inout_ PFLT_CALLBACK_DATA Data,
+	_In_ PCFLT_RELATED_OBJECTS FltObjects, _Flt_CompletionContext_Outptr_ PVOID* CompletionContext) {
+	UNREFERENCED_PARAMETER(FltObjects);
+	UNREFERENCED_PARAMETER(CompletionContext);
+
+	if (!Features.FltEnabled || !NidhoggFileHandler || !Features.FileProtection)
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+
+	PFLT_FILE_NAME_INFORMATION nameInfo = nullptr;
+	NTSTATUS status = FltGetFileNameInformation(Data,
+		FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+
+	if (!NT_SUCCESS(status))
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+
+	bool protectedFile = NidhoggFileHandler->FindNormalizedFile(&nameInfo->Name);
+	FltReleaseFileNameInformation(nameInfo);
+
+	if (!protectedFile)
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+
+	Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+	Data->IoStatus.Information = 0;
+	return FLT_PREOP_COMPLETE;
+}
+
+/*
+* Description:
+* GetNormalizedFileName obtains the normalized name of a file for protection.
+*
+* Parameters:
+* @path     [_In_ WCHAR*]                         -- File path to normalize.
+* @nameInfo [_Outptr_ PFLT_FILE_NAME_INFORMATION*] -- Referenced name information returned to the caller.
+*
+* Returns:
+* @status [NTSTATUS] -- Whether the name was obtained.
+*/
+_IRQL_requires_(PASSIVE_LEVEL)
+_IRQL_requires_same_
+static NTSTATUS GetNormalizedFileName(_In_ WCHAR* path, _Outptr_ PFLT_FILE_NAME_INFORMATION* nameInfo) {
+	HANDLE fileHandle = nullptr;
+	PFILE_OBJECT fileObject = nullptr;
+	PFLT_VOLUME volume = nullptr;
+	PFLT_INSTANCE instance = nullptr;
+	IO_STATUS_BLOCK ioStatus = {};
+	UNICODE_STRING fileName = {};
+	OBJECT_ATTRIBUTES attributes = {};
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+	*nameInfo = nullptr;
+	RtlInitUnicodeString(&fileName, path);
+	InitializeObjectAttributes(&attributes, &fileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
+	status = ZwOpenFile(&fileHandle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes, &ioStatus,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT);
+
+	if (!NT_SUCCESS(status))
+		return status;
+
+	status = ObReferenceObjectByHandle(fileHandle, FILE_READ_ATTRIBUTES, *IoFileObjectType,
+		KernelMode, reinterpret_cast<PVOID*>(&fileObject), nullptr);
+
+	if (NT_SUCCESS(status))
+		status = FltGetVolumeFromFileObject(NidhoggFilter, fileObject, &volume);
+
+	if (NT_SUCCESS(status))
+		status = FltGetVolumeInstanceFromName(NidhoggFilter, volume, nullptr, &instance);
+
+	if (NT_SUCCESS(status))
+		status = FltGetFileNameInformationUnsafe(fileObject, instance,
+			FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, nameInfo);
+
+	if (instance)
+		FltObjectDereference(instance);
+	if (volume)
+		FltObjectDereference(volume);
+	if (fileObject)
+		ObDereferenceObject(fileObject);
+	ZwClose(fileHandle);
+	return status;
+}
+
+/*
+* Description:
 * HookedNtfsIrpCreate is responsible for handling the NTFS IRP_MJ_CREATE.
 *
 * Parameters:
@@ -93,8 +188,12 @@ NTSTATUS HookedNtfsIrpCreate(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP I
 
 		// Acquiring the lock to prevent accessing to the file from other drivers.
 		KeAcquireSpinLock(&stack->FileObject->IrpListLock, &prevIrql);
-		fullPath.Length = stack->FileObject->FileName.Length;
-		fullPath.MaximumLength = stack->FileObject->FileName.MaximumLength;
+		if (stack->FileObject->FileName.Length > MAXUSHORT - sizeof(WCHAR)) {
+			ReleaseLock();
+			break;
+		}
+		fullPath.Length = 0;
+		fullPath.MaximumLength = stack->FileObject->FileName.Length + sizeof(WCHAR);
 		fullPath.Buffer = AllocateMemory<WCHAR*>(static_cast<SIZE_T>(fullPath.MaximumLength), false);
 
 		if (!fullPath.Buffer) {
@@ -257,11 +356,13 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact
 	auto finder = [](_In_ const FileItem* entry, _In_ SearchedFile searchedFile) -> bool {
 		if (!searchedFile.Exact) [[ likely ]] {
 			SIZE_T prefixSize = (DRIVE_LETTER_SIZE + NT_PREFIX_SIZE);
+			if (entry->FileLength < prefixSize)
+				return false;
 			SIZE_T sizeToSearch = entry->FileLength - prefixSize;
 
 			if (sizeToSearch != searchedFile.Size)
 				return false;
-			return _wcsnicmp(entry->FilePath + (prefixSize * sizeof(WCHAR)), searchedFile.Path, sizeToSearch) == 0;
+			return _wcsnicmp(entry->FilePath + prefixSize, searchedFile.Path, sizeToSearch) == 0;
 		}
 		return _wcsicmp(entry->FilePath, searchedFile.Path) == 0;
 	};
@@ -280,6 +381,37 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact
 
 /*
 * Description:
+* FindNormalizedFile searches the protected files list for a normalized path.
+*
+* Parameters:
+* @path [_In_ PCUNICODE_STRING] -- Normalized path to search.
+*
+* Returns:
+* @bool -- Whether the normalized path is protected.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_same_
+bool FileHandler::FindNormalizedFile(_In_ PCUNICODE_STRING path) const {
+	if (!path || !path->Buffer || !path->Length)
+		return false;
+
+	AutoLock locker(const_cast<PushLock&>(protectedFiles.Lock));
+	PLIST_ENTRY current = protectedFiles.Items->Flink;
+
+	while (current != protectedFiles.Items) {
+		FileItem* item = CONTAINING_RECORD(current, FileItem, Entry);
+		UNICODE_STRING entryName = { item->NormalizedLength, item->NormalizedLength, item->NormalizedPath };
+
+		if (item->NormalizedLength && RtlEqualUnicodeString(&entryName, path, TRUE))
+			return true;
+
+		current = current->Flink;
+	}
+	return false;
+}
+
+/*
+* Description:
 * ProtectFile is responsible for adding a file to the protected files list.
 *
 * Parameters:
@@ -291,25 +423,48 @@ bool FileHandler::FindFile(_In_ WCHAR* path, _In_ FileType type, _In_ bool exact
 _IRQL_requires_max_(APC_LEVEL)
 bool FileHandler::ProtectFile(_In_ WCHAR* path) {
 	IrqlGuard guard(PASSIVE_LEVEL);
+	PFLT_FILE_NAME_INFORMATION nameInfo = nullptr;
 
 	if (!IsFileExists(path))
 		return false;
 
 	if (FindFile(path, FileType::Protected))
 		return false;
+	if (Features.FltEnabled) {
+		if (!NidhoggFilter || !NT_SUCCESS(GetNormalizedFileName(path, &nameInfo)))
+			return false;
+		if (!nameInfo || !nameInfo->Name.Buffer || !nameInfo->Name.Length ||
+			nameInfo->Name.Length % sizeof(WCHAR) ||
+			nameInfo->Name.Length > (MAX_PATH - 1) * sizeof(WCHAR)) {
+			if (nameInfo)
+				FltReleaseFileNameInformation(nameInfo);
+			return false;
+		}
+	}
 	FileItem* newEntry = AllocateMemory<FileItem*>(sizeof(FileItem));
 
-	if (!newEntry)
+	if (!newEntry) {
+		if (nameInfo)
+			FltReleaseFileNameInformation(nameInfo);
 		return false;
+	}
 	errno_t err = wcscpy_s(newEntry->FilePath, path);
 	
 	if (err != 0) {
+		if (nameInfo)
+			FltReleaseFileNameInformation(nameInfo);
 		FreeVirtualMemory(newEntry);
 		return false;
 	}
 	newEntry->FileLength = static_cast<ULONG>(wcslen(newEntry->FilePath));
+	if (nameInfo) {
+		newEntry->NormalizedLength = nameInfo->Name.Length;
+		RtlCopyMemory(newEntry->NormalizedPath, nameInfo->Name.Buffer, nameInfo->Name.Length);
+		newEntry->NormalizedPath[nameInfo->Name.Length / sizeof(WCHAR)] = L'\0';
+		FltReleaseFileNameInformation(nameInfo);
+	}
 	AddEntry<FilesList, FileItem>(&protectedFiles, newEntry);
-	NTSTATUS status = InstallNtfsHook(IRP_MJ_CREATE);
+	NTSTATUS status = Features.FltEnabled ? STATUS_SUCCESS : InstallNtfsHook(IRP_MJ_CREATE);
 
 	if (!NT_SUCCESS(status) && status != STATUS_ABANDONED) {
 		RemoveListEntry<FilesList, FileItem>(&protectedFiles, newEntry);
@@ -348,7 +503,7 @@ bool FileHandler::RemoveFile(_In_ WCHAR* path, _In_ FileType type) {
 		removed = RemoveListEntry<FilesList, FileItem>(&protectedFiles, entry);
 
 		if (removed) {
-			if (protectedFiles.Count == 0)
+			if (!Features.FltEnabled && protectedFiles.Count == 0)
 				UninstallNtfsHook(IRP_MJ_CREATE);
 		}
 		return removed;
@@ -378,6 +533,8 @@ void FileHandler::ClearFilesList(_In_ FileType type) {
 			ClearList<FilesList, FileItem>(&this->protectedFiles);
 			break;
 	}
+	if (!Features.FltEnabled && callbacks[IRP_MJ_CREATE].Activated)
+		UninstallNtfsHook(IRP_MJ_CREATE);
 }
 
 /*

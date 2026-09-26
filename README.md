@@ -94,7 +94,7 @@ Due to hard maintainability and the fact that it isn't a popular feature, it has
 > The following features are known to trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection), you can still use them at your own risk.
 
 - Process hiding
-- File protecting
+- File protecting (only on the fallback NTFS create hook, not on the default configuration).
 - Driver hiding
 
 ## Basic Usage
@@ -138,9 +138,20 @@ bcdedit /set testsigning on
 After rebooting, create a service and run the driver:
 
 ```cmd
-sc create nidhogg type= kernel binPath= C:\Path\To\Driver\Nidhogg.sys
-sc start nidhogg
+sc create Nidhogg type= filesys start= demand binPath= "C:\Path\To\Driver\Nidhogg.sys" group= "FSFilter Top" depend= FltMgr
 ```
+
+The driver creates its default filter instance registry values at startup, using altitude `403120` and the registry layout required by the Windows build.
+
+Load the driver and verify that Filter Manager has attached it:
+
+```cmd
+fltmc load Nidhogg
+fltmc filters
+fltmc instances Nidhogg
+```
+
+If Filter Manager startup fails, the driver logs the error and uses its NTFS create hook for file protection. Use `fltmc unload Nidhogg` to unload an active minifilter in the test VM.
 
 ### Debugging
 

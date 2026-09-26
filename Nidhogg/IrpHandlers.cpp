@@ -375,19 +375,34 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 			break;
 		}
 		auto data = static_cast<IoctlFileItem*>(Irp->AssociatedIrp.SystemBuffer);
-		SIZE_T filePathLen = wcslen(data->FilePath);
+		if (!data || !data->FilePath) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+		SIZE_T filePathLen = 0;
+		__try {
+			filePathLen = wcsnlen_s(data->FilePath, MAX_PATH);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			status = GetExceptionCode();
+			break;
+		}
 
-		if (filePathLen > MAX_PATH) {
+		if (filePathLen == 0 || filePathLen >= MAX_PATH) {
 			NidhoggLogger.Warning(DRIVER_PREFIX "File path is too long.\n");
 			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 
 		MemoryAllocator<WCHAR*> filePath(MAX_PATH * sizeof(WCHAR));
-		status = filePath.CopyData(data->FilePath, filePathLen * sizeof(WCHAR));
+		status = filePath.CopyData(data->FilePath, (filePathLen + 1) * sizeof(WCHAR));
 
 		if (!NT_SUCCESS(status))
 			break;
+		if (filePath.Get()[filePathLen] != L'\0') {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
 
 		if (data->Protect) {
 			if (!NidhoggFileHandler->ProtectFile(filePath.Get())) {
