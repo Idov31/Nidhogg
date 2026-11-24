@@ -110,6 +110,47 @@ void AntiAnalysisHandler::HandleCommand(_In_ std::string command) {
 		std::cout << "Callback 0x" << std::hex << callbackAddress << " of type " << params.at(1) << " restored successfully" << std::endl;
 		std::cout << std::dec << std::endl;
 	}
+	else if (commandName.compare("list_disabled_callbacks") == 0) {
+		if (!params.empty()) {
+			PrintHelp();
+			return;
+		}
+
+		std::vector<IoctlDisabledCallbackEntry> callbacks;
+		try {
+			callbacks = ListDisabledCallbacks();
+		}
+		catch (const AntiAnalysisHandlerException& e) {
+			std::cerr << e.what() << std::endl;
+			return;
+		}
+		catch (const std::bad_alloc&) {
+			std::cerr << "Failed to allocate disabled callback list" << std::endl;
+			return;
+		}
+
+		if (callbacks.empty()) {
+			std::cout << "No disabled callbacks" << std::endl;
+			return;
+		}
+
+		std::cout << "Disabled callbacks:" << std::endl;
+		for (const auto& callback : callbacks) {
+			const char* typeName = "Unknown";
+			switch (callback.Type) {
+			case ObProcessType: typeName = "ObProcessType"; break;
+			case ObThreadType: typeName = "ObThreadType"; break;
+			case PsCreateProcessTypeEx: typeName = "PsCreateProcessTypeEx"; break;
+			case PsCreateProcessType: typeName = "PsCreateProcessType"; break;
+			case PsCreateThreadType: typeName = "PsCreateThreadType"; break;
+			case PsCreateThreadTypeNonSystemThread: typeName = "PsCreateThreadTypeNonSystemThread"; break;
+			case PsImageLoadType: typeName = "PsImageLoadType"; break;
+			case CmRegistryType: typeName = "CmRegistryType"; break;
+			}
+			std::cout << "\tType: " << typeName << ", Address: 0x" << std::hex
+				<< callback.CallbackAddress << std::dec << std::endl;
+		}
+	}
 	else if (commandName.compare("list_registry_callbacks") == 0) {
 		IoctlCallbackList<CmCallback> callbacks;
 		CmCallback currentCallback;
@@ -262,6 +303,58 @@ bool AntiAnalysisHandler::RemoveCallback(_In_ ULONG64 callbackAddress, _In_ Call
 	callback.Type = callbackType;
 	callback.Remove = remove;
 	return DeviceIoControl(*hNidhogg.get(), IOCTL_REMOVE_RESTORE_CALLBACK, &callback, sizeof(callback), nullptr, 0, &returned, nullptr);
+}
+
+/*
+* Description:
+* ListDisabledCallbacks retrieves the callbacks currently disabled by the driver.
+*
+* Parameters:
+* There are no parameters.
+*
+* Returns:
+* @callbacks [std::vector<IoctlDisabledCallbackEntry>] -- Callback types and addresses.
+*/
+std::vector<IoctlDisabledCallbackEntry> AntiAnalysisHandler::ListDisabledCallbacks() {
+	constexpr SIZE_T headerSize = sizeof(SIZE_T);
+	static_assert(offsetof(IoctlDisabledCallbackList, Callbacks) == headerSize);
+	static_assert(headerSize == sizeof(unsigned long long));
+	static_assert(sizeof(IoctlDisabledCallbackEntry) % sizeof(unsigned long long) == 0);
+	static_assert(alignof(IoctlDisabledCallbackEntry) <= alignof(unsigned long long));
+	SIZE_T requiredCount = 0;
+	DWORD returned = 0;
+
+	if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_DISABLED_CALLBACKS, nullptr, 0,
+		&requiredCount, static_cast<DWORD>(headerSize), &returned, nullptr) || returned != headerSize)
+		throw AntiAnalysisHandlerException("Failed to list disabled callbacks");
+
+	for (int attempt = 0; attempt < 3; ++attempt) {
+		if (requiredCount == 0)
+			return {};
+		if (requiredCount > (static_cast<SIZE_T>(MAXDWORD) - headerSize) / sizeof(IoctlDisabledCallbackEntry))
+			throw AntiAnalysisHandlerException("Disabled callback list is too large");
+
+		const SIZE_T bufferSize = headerSize + requiredCount * sizeof(IoctlDisabledCallbackEntry);
+		std::vector<unsigned long long> buffer(bufferSize / sizeof(unsigned long long));
+		auto response = reinterpret_cast<IoctlDisabledCallbackList*>(buffer.data());
+		returned = 0;
+		if (!DeviceIoControl(*hNidhogg.get(), IOCTL_LIST_DISABLED_CALLBACKS, nullptr, 0,
+			response, static_cast<DWORD>(bufferSize), &returned, nullptr) || returned < headerSize)
+			throw AntiAnalysisHandlerException("Failed to list disabled callbacks");
+
+		if (response->Count > requiredCount) {
+			if (returned != headerSize)
+				throw AntiAnalysisHandlerException("Invalid disabled callback response");
+			requiredCount = response->Count;
+			continue;
+		}
+		if (returned != headerSize + response->Count * sizeof(IoctlDisabledCallbackEntry))
+			throw AntiAnalysisHandlerException("Invalid disabled callback response");
+
+		return { response->Callbacks, response->Callbacks + response->Count };
+	}
+
+	throw AntiAnalysisHandlerException("Disabled callback list changed during query");
 }
 
 /*

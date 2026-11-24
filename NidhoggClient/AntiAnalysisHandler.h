@@ -32,6 +32,7 @@ private:
 
 	bool EnableDisableEtwTi(_In_ bool enable);
 	bool RemoveCallback(_In_ ULONG64 callbackAddress, _In_ CallbackType callbackType, _In_ bool remove);
+	std::vector<IoctlDisabledCallbackEntry> ListDisabledCallbacks();
 	IoctlCallbackList<CmCallback> ListRegistryCallbacks();
 	IoctlCallbackList<ObCallback> ListObCallbacks(_In_ CallbackType callbackType);
 	IoctlCallbackList<PsRoutine> ListPsRoutines(_In_ CallbackType callbackType);
@@ -46,6 +47,7 @@ public:
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "disable_etwti - Enabling ETW-TI" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "remove_callback <callback_address> <callback_type> - Remove a callback" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "restore_callback <callback_address> <callback_type> - Restore a removed callback" << std::endl;
+		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list_disabled_callbacks - List callbacks removed by Nidhogg" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list_registry_callbacks - List all registry callbacks" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list_ob_callbacks <callback_type> - List all object callbacks of a specific type" << std::endl;
 		std::cout << termcolor::bright_magenta << "\t[*] " << termcolor::reset << "list_ps_routines <callback_type> - List all PS routines of a specific type" << std::endl;

