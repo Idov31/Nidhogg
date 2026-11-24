@@ -112,13 +112,13 @@ NidhoggClient.exe process hide 3110
 
 ### Building the client
 
-To compile the client, you will need to have [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16) installed and then just build the project like any other Visual Studio project.
+To compile the client, you will need to have [Visual Studio 2026](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&channel=Stable&version=VS18&source=VSLandingPage&cid=2500&passive=false) installed and then just build the project like any other Visual Studio project.
 
 ### Building the driver
 
 To compile the project, you will need the following tools:
 
-- [Visual Studio 2022](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
+- [Visual Studio 2026](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&channel=Stable&version=VS18&source=VSLandingPage&cid=2500&passive=false)
 - [Windows Driver Kit](https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk)
 
 Clone the repository and build the project:
